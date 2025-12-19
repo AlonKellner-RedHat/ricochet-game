@@ -1,234 +1,294 @@
 import { Arrow } from "@/arrow/Arrow";
-import { RicochetSurface, WallSurface } from "@/surfaces";
 import { describe, expect, it } from "vitest";
 
 describe("Arrow", () => {
-  describe("initial state", () => {
-    it("should start in perfect flight state", () => {
-      const arrow = new Arrow("test-1", { x: 100, y: 100 }, { x: 1, y: 0 }, [], 2000);
-
-      expect(arrow.state).toBe("perfect");
-      expect(arrow.isActive).toBe(true);
+  describe("construction", () => {
+    it("should require at least 2 waypoints", () => {
+      expect(() => new Arrow("test", [{ x: 0, y: 0 }])).toThrow();
     });
 
-    it("should have correct initial position", () => {
-      const arrow = new Arrow("test-1", { x: 100, y: 200 }, { x: 1, y: 0 }, [], 2000);
+    it("should start at first waypoint", () => {
+      const arrow = new Arrow("test", [
+        { x: 100, y: 200 },
+        { x: 300, y: 200 },
+      ]);
 
       expect(arrow.position.x).toBe(100);
       expect(arrow.position.y).toBe(200);
     });
 
-    it("should have velocity in aim direction", () => {
-      const arrow = new Arrow("test-1", { x: 100, y: 100 }, { x: 1, y: 0 }, [], 2000);
+    it("should start in flying state", () => {
+      const arrow = new Arrow("test", [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ]);
 
-      expect(arrow.velocity.x).toBeGreaterThan(0);
-      expect(arrow.velocity.y).toBeCloseTo(0, 5);
+      expect(arrow.state).toBe("flying");
+      expect(arrow.isActive).toBe(true);
     });
   });
 
   describe("movement", () => {
-    it("should move in velocity direction", () => {
-      const arrow = new Arrow("test-1", { x: 100, y: 100 }, { x: 1, y: 0 }, [], 2000);
+    it("should move toward next waypoint", () => {
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+        ],
+        { speed: 100 }
+      );
 
-      const initialX = arrow.position.x;
-      arrow.update(0.016, []);
+      arrow.update(0.5); // 0.5 seconds at 100 px/s = 50 px
 
-      expect(arrow.position.x).toBeGreaterThan(initialX);
+      expect(arrow.position.x).toBeCloseTo(50);
+      expect(arrow.position.y).toBeCloseTo(0);
+    });
+
+    it("should follow diagonal path", () => {
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 100 },
+        ],
+        { speed: Math.SQRT2 * 100 }
+      );
+
+      arrow.update(0.5); // Should move 50*sqrt(2) distance
+
+      expect(arrow.position.x).toBeCloseTo(50);
+      expect(arrow.position.y).toBeCloseTo(50);
+    });
+
+    it("should transition between waypoints", () => {
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+          { x: 100, y: 100 },
+        ],
+        { speed: 100 }
+      );
+
+      // Move 150 px - should go through first waypoint
+      arrow.update(1.5);
+
+      // Should be 50 px into second segment
+      expect(arrow.position.x).toBeCloseTo(100);
+      expect(arrow.position.y).toBeCloseTo(50);
     });
 
     it("should not move when stuck", () => {
-      const arrow = new Arrow("test-1", { x: 100, y: 100 }, { x: 1, y: 0 }, [], 2000);
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+        ],
+        { speed: 100 }
+      );
 
-      // Hit a wall to get stuck
-      const wall = new WallSurface("wall", {
-        start: { x: 110, y: 0 },
-        end: { x: 110, y: 200 },
-      });
-
-      // Move until stuck
-      for (let i = 0; i < 10; i++) {
-        arrow.update(0.016, [wall]);
-        if (arrow.state === "stuck") break;
-      }
+      // Move past the end
+      arrow.update(2.0); // 200px at 100px/s
 
       expect(arrow.state).toBe("stuck");
-      const stuckX = arrow.position.x;
+      const stuckPosition = arrow.position;
 
-      // Update again - should not move
-      arrow.update(0.016, [wall]);
-      expect(arrow.position.x).toBe(stuckX);
+      arrow.update(1.0);
+      expect(arrow.position).toEqual(stuckPosition);
     });
   });
 
-  describe("wall collision", () => {
-    it("should stick to wall on collision", () => {
-      const arrow = new Arrow("test-1", { x: 100, y: 100 }, { x: 1, y: 0 }, [], 2000);
+  describe("stuck state", () => {
+    it("should become stuck at final waypoint", () => {
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+        ],
+        { speed: 100 }
+      );
 
-      const wall = new WallSurface("wall", {
-        start: { x: 150, y: 0 },
-        end: { x: 150, y: 200 },
-      });
-
-      // Update until we hit the wall
-      for (let i = 0; i < 100; i++) {
-        arrow.update(0.016, [wall]);
-        if (arrow.state === "stuck") break;
-      }
+      arrow.update(1.0); // Exactly reach the end
 
       expect(arrow.state).toBe("stuck");
+      expect(arrow.position.x).toBeCloseTo(100);
       expect(arrow.isActive).toBe(false);
-      expect(arrow.position.x).toBeCloseTo(150, 0);
-    });
-  });
-
-  describe("ricochet", () => {
-    it("should ricochet off planned surface", () => {
-      const ricochetSurface = new RicochetSurface("ricochet-1", {
-        start: { x: 200, y: 0 },
-        end: { x: 200, y: 200 },
-      });
-
-      const arrow = new Arrow(
-        "test-1",
-        { x: 100, y: 100 },
-        { x: 1, y: 0 },
-        [ricochetSurface], // Planned to hit this surface
-        2000
-      );
-
-      // Update until we hit the surface
-      for (let i = 0; i < 100; i++) {
-        arrow.update(0.016, [ricochetSurface]);
-        if (arrow.position.x >= 190) break;
-      }
-
-      // Arrow should still be active (ricocheted, not stuck)
-      // After ricochet, velocity should change direction
-      expect(arrow.state).toBe("perfect");
     });
 
-    it("should stick to unplanned ricochet surface", () => {
-      const ricochetSurface = new RicochetSurface("ricochet-1", {
-        start: { x: 200, y: 0 },
-        end: { x: 200, y: 200 },
-      });
-
+    it("should preserve angle when stuck", () => {
       const arrow = new Arrow(
-        "test-1",
-        { x: 100, y: 100 },
-        { x: 1, y: 0 },
-        [], // NOT planned
-        2000
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 100 },
+        ],
+        { speed: 200 }
       );
 
-      // Update until we hit the surface
-      for (let i = 0; i < 100; i++) {
-        arrow.update(0.016, [ricochetSurface]);
-        if (arrow.state === "stuck") break;
-      }
+      arrow.update(1.0); // Become stuck
 
-      expect(arrow.state).toBe("stuck");
-    });
-  });
-
-  describe("exhaustion", () => {
-    it("should become exhausted after completing planned ricochets", () => {
-      const arrow = new Arrow(
-        "test-1",
-        { x: 100, y: 100 },
-        { x: 1, y: 0 },
-        [], // No planned surfaces = exhaust immediately
-        2000
-      );
-
-      // Should already be exhausted since no planned surfaces
-      arrow.update(0.016, []);
-
-      expect(arrow.state).toBe("exhausted");
-    });
-
-    it("should apply gravity when exhausted", () => {
-      const arrow = new Arrow(
-        "test-1",
-        { x: 100, y: 100 },
-        { x: 1, y: 0 },
-        [], // No planned surfaces
-        2000
-      );
-
-      // First update - becomes exhausted
-      arrow.update(0.016, []);
-      expect(arrow.state).toBe("exhausted");
-
-      const initialVelY = arrow.velocity.y;
-
-      // More updates - gravity should increase y velocity
-      arrow.update(0.016, []);
-      arrow.update(0.016, []);
-
-      expect(arrow.velocity.y).toBeGreaterThan(initialVelY);
-    });
-
-    it("should stick when exhausted arrow hits any surface", () => {
-      const wall = new WallSurface("floor", {
-        start: { x: 0, y: 300 },
-        end: { x: 500, y: 300 },
-      });
-
-      const arrow = new Arrow(
-        "test-1",
-        { x: 100, y: 100 },
-        { x: 1, y: 0 },
-        [], // No planned surfaces
-        2000
-      );
-
-      // Update many times until stuck
-      for (let i = 0; i < 200; i++) {
-        arrow.update(0.016, [wall]);
-        if (arrow.state === "stuck") break;
-      }
-
-      expect(arrow.state).toBe("stuck");
+      // Angle should be 45 degrees (pi/4)
+      expect(arrow.angle).toBeCloseTo(Math.PI / 4);
     });
   });
 
   describe("angle", () => {
-    it("should report correct angle for horizontal shot", () => {
-      const arrow = new Arrow("test-1", { x: 100, y: 100 }, { x: 1, y: 0 }, [], 2000);
+    it("should report correct angle for horizontal movement", () => {
+      const arrow = new Arrow("test", [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ]);
 
-      expect(arrow.angle).toBeCloseTo(0, 2);
+      expect(arrow.angle).toBeCloseTo(0);
     });
 
-    it("should report correct angle for downward shot", () => {
-      const arrow = new Arrow("test-1", { x: 100, y: 100 }, { x: 0, y: 1 }, [], 2000);
+    it("should report correct angle for downward movement", () => {
+      const arrow = new Arrow("test", [
+        { x: 0, y: 0 },
+        { x: 0, y: 100 },
+      ]);
 
-      expect(arrow.angle).toBeCloseTo(Math.PI / 2, 2);
+      expect(arrow.angle).toBeCloseTo(Math.PI / 2);
     });
 
-    it("should preserve angle when stuck", () => {
-      const wall = new WallSurface("wall", {
-        start: { x: 150, y: 0 },
-        end: { x: 150, y: 200 },
-      });
-
+    it("should update angle after changing segments", () => {
       const arrow = new Arrow(
-        "test-1",
-        { x: 100, y: 100 },
-        { x: 1, y: 0.5 }, // Angled shot
-        [],
-        2000
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 }, // Horizontal
+          { x: 100, y: 100 }, // Vertical
+        ],
+        { speed: 100 }
       );
 
-      // Hit wall
-      for (let i = 0; i < 100; i++) {
-        arrow.update(0.016, [wall]);
-        if (arrow.state === "stuck") break;
-      }
+      // Initially horizontal
+      expect(arrow.angle).toBeCloseTo(0);
 
-      // Angle should be valid when stuck
+      // Move to second segment
+      arrow.update(1.0); // Reach first waypoint
+
+      // Now should be vertical (downward)
+      expect(arrow.angle).toBeCloseTo(Math.PI / 2);
+    });
+  });
+
+  describe("velocity", () => {
+    it("should have velocity in direction of next waypoint", () => {
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+        ],
+        { speed: 200 }
+      );
+
+      expect(arrow.velocity.x).toBeCloseTo(200);
+      expect(arrow.velocity.y).toBeCloseTo(0);
+    });
+
+    it("should have zero velocity when stuck", () => {
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+        ],
+        { speed: 200 }
+      );
+
+      arrow.update(1.0);
+
+      expect(arrow.velocity.x).toBe(0);
+      expect(arrow.velocity.y).toBe(0);
+    });
+  });
+
+  describe("progress", () => {
+    it("should report 0 progress at start", () => {
+      const arrow = new Arrow("test", [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ]);
+
+      expect(arrow.getProgress()).toBeCloseTo(0);
+    });
+
+    it("should report partial progress", () => {
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+        ],
+        { speed: 100 }
+      );
+
+      arrow.update(0.5);
+
+      expect(arrow.getProgress()).toBeCloseTo(0.5);
+    });
+
+    it("should report 1 progress at end", () => {
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+        ],
+        { speed: 100 }
+      );
+
+      arrow.update(1.0);
+
+      expect(arrow.getProgress()).toBeCloseTo(1);
+    });
+  });
+
+  describe("multi-segment paths", () => {
+    it("should follow zigzag path", () => {
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 50 }, // First ricochet
+          { x: 200, y: 0 }, // Final position
+        ],
+        { speed: 100 }
+      );
+
+      // Distance of first segment: sqrt(100^2 + 50^2) = ~111.8
+      // Distance of second segment: sqrt(100^2 + 50^2) = ~111.8
+      // Total: ~223.6
+
+      // Move most of the way
+      arrow.update(2.0); // 200 px
+
+      expect(arrow.state).toBe("flying");
+      expect(arrow.position.x).toBeGreaterThan(100);
+    });
+
+    it("should reach all waypoints in order", () => {
+      const waypoints = [
+        { x: 0, y: 0 },
+        { x: 50, y: 50 },
+        { x: 100, y: 0 },
+        { x: 150, y: 50 },
+      ];
+
+      const arrow = new Arrow("test", waypoints, { speed: 1000 });
+
+      // Move enough to traverse all waypoints
+      arrow.update(1.0);
+
       expect(arrow.state).toBe("stuck");
-      expect(Math.abs(arrow.angle)).toBeLessThan(Math.PI);
+      expect(arrow.position.x).toBeCloseTo(150);
+      expect(arrow.position.y).toBeCloseTo(50);
     });
   });
 });

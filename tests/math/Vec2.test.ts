@@ -256,4 +256,95 @@ describe("Vec2", () => {
       expect(Vec2.pointToSegmentDistance(point, start, end)).toBeCloseTo(expectedDistance);
     });
   });
+
+  describe("reflectPointThroughLine", () => {
+    it("should reflect point through horizontal line", () => {
+      // Point above a horizontal line at y=0
+      const point = { x: 50, y: 10 };
+      const lineStart = { x: 0, y: 0 };
+      const lineEnd = { x: 100, y: 0 };
+
+      const reflected = Vec2.reflectPointThroughLine(point, lineStart, lineEnd);
+
+      // Point should be mirrored below the line
+      expect(reflected.x).toBeCloseTo(50);
+      expect(reflected.y).toBeCloseTo(-10);
+    });
+
+    it("should reflect point through vertical line", () => {
+      // Point to the right of a vertical line at x=0
+      const point = { x: 20, y: 50 };
+      const lineStart = { x: 0, y: 0 };
+      const lineEnd = { x: 0, y: 100 };
+
+      const reflected = Vec2.reflectPointThroughLine(point, lineStart, lineEnd);
+
+      // Point should be mirrored to the left
+      expect(reflected.x).toBeCloseTo(-20);
+      expect(reflected.y).toBeCloseTo(50);
+    });
+
+    it("should reflect point through diagonal line (y=x)", () => {
+      // Point at (0, 100) reflected through y=x should be (100, 0)
+      const point = { x: 0, y: 100 };
+      const lineStart = { x: 0, y: 0 };
+      const lineEnd = { x: 100, y: 100 };
+
+      const reflected = Vec2.reflectPointThroughLine(point, lineStart, lineEnd);
+
+      expect(reflected.x).toBeCloseTo(100);
+      expect(reflected.y).toBeCloseTo(0);
+    });
+
+    it("should return same point if point is on the line", () => {
+      const point = { x: 50, y: 50 };
+      const lineStart = { x: 0, y: 0 };
+      const lineEnd = { x: 100, y: 100 };
+
+      const reflected = Vec2.reflectPointThroughLine(point, lineStart, lineEnd);
+
+      expect(reflected.x).toBeCloseTo(50);
+      expect(reflected.y).toBeCloseTo(50);
+    });
+
+    it("should reflect through offset horizontal line", () => {
+      // Horizontal line at y=50
+      const point = { x: 30, y: 70 };
+      const lineStart = { x: 0, y: 50 };
+      const lineEnd = { x: 100, y: 50 };
+
+      const reflected = Vec2.reflectPointThroughLine(point, lineStart, lineEnd);
+
+      // Point is 20 above line, so reflection is 20 below
+      expect(reflected.x).toBeCloseTo(30);
+      expect(reflected.y).toBeCloseTo(30);
+    });
+
+    it("should reflect through angled line (45 degrees offset)", () => {
+      // Line from (0, 50) to (100, 150) - parallel to y=x but offset
+      const point = { x: 0, y: 150 };
+      const lineStart = { x: 0, y: 50 };
+      const lineEnd = { x: 100, y: 150 };
+
+      const reflected = Vec2.reflectPointThroughLine(point, lineStart, lineEnd);
+
+      // The reflection of (0, 150) through line y = x + 50 is (100, 50)
+      expect(reflected.x).toBeCloseTo(100);
+      expect(reflected.y).toBeCloseTo(50);
+    });
+
+    it("should preserve distance from line after reflection", () => {
+      const point = { x: 30, y: 80 };
+      const lineStart = { x: 10, y: 20 };
+      const lineEnd = { x: 90, y: 60 };
+
+      const reflected = Vec2.reflectPointThroughLine(point, lineStart, lineEnd);
+
+      // Distance from original to line should equal distance from reflected to line
+      const originalDist = Vec2.pointToSegmentDistance(point, lineStart, lineEnd);
+      const reflectedDist = Vec2.pointToSegmentDistance(reflected, lineStart, lineEnd);
+
+      expect(reflectedDist).toBeCloseTo(originalDist);
+    });
+  });
 });

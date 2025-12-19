@@ -1,4 +1,3 @@
-import type { Surface } from "@/surfaces";
 import type { Vector2 } from "@/types";
 import type Phaser from "phaser";
 import { Arrow, DEFAULT_ARROW_CONFIG } from "./Arrow";
@@ -6,6 +5,9 @@ import type { ArrowConfig } from "./Arrow";
 
 /**
  * ArrowManager - Manages all active arrows, updates, and rendering
+ *
+ * Arrows follow pre-computed waypoint paths (from trajectory calculation).
+ * Stuck arrows persist up to MAX_STUCK_ARROWS (100).
  */
 export class ArrowManager {
   private arrows: Arrow[] = [];
@@ -13,10 +15,8 @@ export class ArrowManager {
   private config: ArrowConfig;
   private nextId = 1;
 
-  // Stuck arrows cleanup
-  private readonly maxStuckArrows = 20;
-  private readonly stuckArrowLifetime = 5000; // ms
-  private stuckArrowTimestamps: Map<string, number> = new Map();
+  // Count-based cleanup: only stuck arrows count toward limit
+  private static readonly MAX_STUCK_ARROWS = 100;
 
   constructor(scene: Phaser.Scene, config: ArrowConfig = DEFAULT_ARROW_CONFIG) {
     this.graphics = scene.add.graphics();
@@ -24,16 +24,18 @@ export class ArrowManager {
   }
 
   /**
-   * Create a new arrow
+   * Create a new arrow from waypoints
+   *
+   * @param waypoints - Path for the arrow to follow [start, hit1, hit2, ..., end]
+   * @returns The created arrow
    */
-  createArrow(
-    position: Vector2,
-    direction: Vector2,
-    plannedSurfaces: Surface[],
-    maxDistance: number
-  ): Arrow {
+  createArrow(waypoints: Vector2[]): Arrow {
+    if (waypoints.length < 2) {
+      throw new Error("Arrow requires at least 2 waypoints");
+    }
+
     const id = `arrow-${this.nextId++}`;
-    const arrow = new Arrow(id, position, direction, plannedSurfaces, maxDistance, this.config);
+    const arrow = new Arrow(id, waypoints, this.config);
     this.arrows.push(arrow);
     return arrow;
   }
@@ -41,21 +43,13 @@ export class ArrowManager {
   /**
    * Update all arrows
    */
-  update(delta: number, surfaces: readonly Surface[]): void {
-    const now = performance.now();
-
+  update(delta: number): void {
     for (const arrow of this.arrows) {
-      const wasActive = arrow.isActive;
-      arrow.update(delta, surfaces);
-
-      // Track when arrows become stuck
-      if (wasActive && !arrow.isActive) {
-        this.stuckArrowTimestamps.set(arrow.id, now);
-      }
+      arrow.update(delta);
     }
 
-    // Cleanup old stuck arrows
-    this.cleanupStuckArrows(now);
+    // Cleanup excess stuck arrows
+    this.cleanupStuckArrows();
   }
 
   /**
@@ -90,19 +84,13 @@ export class ArrowManager {
     // Arrow color based on state
     let color: number;
     let alpha: number;
-    switch (arrow.state) {
-      case "perfect":
-        color = 0x00ff88;
-        alpha = 1;
-        break;
-      case "exhausted":
-        color = 0xffaa00;
-        alpha = 0.9;
-        break;
-      case "stuck":
-        color = 0x888888;
-        alpha = 0.6;
-        break;
+
+    if (arrow.state === "flying") {
+      color = 0x00ff88; // Green for flying
+      alpha = 1;
+    } else {
+      color = 0x888888; // Gray for stuck
+      alpha = 0.6;
     }
 
     // Draw arrow shaft
@@ -124,8 +112,8 @@ export class ArrowManager {
     this.graphics.closePath();
     this.graphics.fillPath();
 
-    // Draw fletching (tail feathers) for active arrows
-    if (arrow.state !== "stuck") {
+    // Draw fletching (tail feathers) for flying arrows
+    if (arrow.state === "flying") {
       const fletchLength = 5;
       const fletchX = tailX - Math.cos(angle) * fletchLength;
       const fletchY = tailY - Math.sin(angle) * fletchLength;
@@ -147,40 +135,24 @@ export class ArrowManager {
   }
 
   /**
-   * Clean up old stuck arrows
+   * Remove oldest stuck arrows when exceeding limit
+   * Only stuck arrows count toward the limit
    */
-  private cleanupStuckArrows(now: number): void {
-    // Remove arrows that have been stuck too long
-    this.arrows = this.arrows.filter((arrow) => {
-      if (!arrow.isActive) {
-        const stuckTime = this.stuckArrowTimestamps.get(arrow.id);
-        if (stuckTime && now - stuckTime > this.stuckArrowLifetime) {
-          this.stuckArrowTimestamps.delete(arrow.id);
+  private cleanupStuckArrows(): void {
+    const stuckArrows = this.arrows.filter((a) => !a.isActive);
+
+    if (stuckArrows.length > ArrowManager.MAX_STUCK_ARROWS) {
+      // Remove the oldest stuck arrows (they're at the front of the array)
+      const toRemove = stuckArrows.length - ArrowManager.MAX_STUCK_ARROWS;
+
+      let removed = 0;
+      this.arrows = this.arrows.filter((arrow) => {
+        if (!arrow.isActive && removed < toRemove) {
+          removed++;
           return false;
         }
-      }
-      return true;
-    });
-
-    // Limit total stuck arrows
-    const stuckArrows = this.arrows.filter((a) => !a.isActive);
-    if (stuckArrows.length > this.maxStuckArrows) {
-      const toRemove = stuckArrows.length - this.maxStuckArrows;
-      const oldestStuck = stuckArrows
-        .map((a) => ({
-          arrow: a,
-          time: this.stuckArrowTimestamps.get(a.id) || 0,
-        }))
-        .sort((a, b) => a.time - b.time)
-        .slice(0, toRemove);
-
-      for (const { arrow } of oldestStuck) {
-        this.stuckArrowTimestamps.delete(arrow.id);
-        const idx = this.arrows.indexOf(arrow);
-        if (idx >= 0) {
-          this.arrows.splice(idx, 1);
-        }
-      }
+        return true;
+      });
     }
   }
 
@@ -199,11 +171,17 @@ export class ArrowManager {
   }
 
   /**
+   * Get count of stuck arrows
+   */
+  getStuckArrowCount(): number {
+    return this.arrows.filter((a) => !a.isActive).length;
+  }
+
+  /**
    * Clear all arrows
    */
   clear(): void {
     this.arrows = [];
-    this.stuckArrowTimestamps.clear();
     this.graphics.clear();
   }
 }

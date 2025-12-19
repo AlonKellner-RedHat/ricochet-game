@@ -108,53 +108,77 @@ describe("AimingSystem", () => {
   });
 
   describe("shooting", () => {
-    it("should return arrow data when shooting", () => {
+    it("should return arrow data with waypoints when shooting", () => {
       const playerPos = { x: 100, y: 100 };
       const mousePos = { x: 200, y: 100 };
 
       aimingSystem.update(mousePos, playerPos, []);
 
-      const arrowData = aimingSystem.shoot(playerPos);
+      const arrowData = aimingSystem.shoot();
 
       expect(arrowData).not.toBeNull();
-      expect(arrowData?.position).toEqual(playerPos);
-      expect(arrowData?.direction.x).toBeCloseTo(1, 5);
+      expect(arrowData?.waypoints.length).toBeGreaterThanOrEqual(2);
+      // First waypoint should be player position
+      expect(arrowData?.waypoints[0]?.x).toBeCloseTo(playerPos.x);
+      expect(arrowData?.waypoints[0]?.y).toBeCloseTo(playerPos.y);
     });
 
     it("should clear plan after shooting", () => {
       const surface = new RicochetSurface("test", {
-        start: { x: 0, y: 0 },
-        end: { x: 100, y: 0 },
+        start: { x: 0, y: 50 },
+        end: { x: 200, y: 50 },
       });
 
-      aimingSystem.toggleSurfaceInPlan(surface);
-      aimingSystem.shoot({ x: 100, y: 100 });
+      // Player at (0,0), cursor at (200, 0), surface at y=50
+      // Path bounces off surface at (100, 50)
+      const playerPos = { x: 0, y: 0 };
+      const mousePos = { x: 200, y: 0 };
 
+      aimingSystem.toggleSurfaceInPlan(surface);
+      aimingSystem.update(mousePos, playerPos, [surface]);
+      const arrowData = aimingSystem.shoot();
+
+      expect(arrowData).not.toBeNull();
       expect(aimingSystem.plannedSurfaces.length).toBe(0);
     });
 
-    it("should include planned surfaces in arrow data", () => {
+    it("should include waypoints through planned surfaces", () => {
       const surface = new RicochetSurface("test", {
-        start: { x: 0, y: 0 },
-        end: { x: 100, y: 0 },
+        start: { x: 0, y: 50 },
+        end: { x: 200, y: 50 },
       });
 
-      aimingSystem.toggleSurfaceInPlan(surface);
-      const arrowData = aimingSystem.shoot({ x: 100, y: 100 });
+      // Player at (0,0), cursor at (200, 0), surface at y=50
+      // Image reflection should give path: (0,0) -> (100, 50) -> (200, 0)
+      const playerPos = { x: 0, y: 0 };
+      const mousePos = { x: 200, y: 0 };
 
-      expect(arrowData?.plannedSurfaces.length).toBe(1);
-      expect(arrowData?.plannedSurfaces[0]?.id).toBe("test");
+      aimingSystem.toggleSurfaceInPlan(surface);
+      aimingSystem.update(mousePos, playerPos, [surface]);
+      const arrowData = aimingSystem.shoot();
+
+      // Should have: player -> hit point on surface -> cursor
+      expect(arrowData).not.toBeNull();
+      expect(arrowData?.waypoints.length).toBe(3);
+      expect(arrowData?.waypoints[1]?.x).toBeCloseTo(100);
+      expect(arrowData?.waypoints[1]?.y).toBeCloseTo(50);
     });
 
     it("should respect shoot cooldown", () => {
       const playerPos = { x: 100, y: 100 };
+      const mousePos = { x: 200, y: 100 };
+
+      aimingSystem.update(mousePos, playerPos, []);
 
       // First shot should work
-      const firstShot = aimingSystem.shoot(playerPos);
+      const firstShot = aimingSystem.shoot();
       expect(firstShot).not.toBeNull();
 
+      // Need to update to recalculate trajectory for second shot
+      aimingSystem.update(mousePos, playerPos, []);
+
       // Immediate second shot should fail (cooldown)
-      const secondShot = aimingSystem.shoot(playerPos);
+      const secondShot = aimingSystem.shoot();
       expect(secondShot).toBeNull();
     });
   });

@@ -134,4 +134,42 @@ export const Vec2 = {
     const projection = Vec2.add(segmentStart, Vec2.scale(v, t));
     return Vec2.distance(point, projection);
   },
+
+  /**
+   * Reflect a point through an infinite line defined by two points
+   *
+   * First principles derivation:
+   * 1. Find direction of line: d = normalize(lineEnd - lineStart)
+   * 2. Find vector from line to point: v = point - lineStart
+   * 3. Project v onto line direction: proj_scalar = dot(v, d)
+   * 4. Find projection point on line: P_proj = lineStart + proj_scalar * d
+   * 5. Reflection is: P' = 2 * P_proj - point
+   *
+   * @param point - The point to reflect
+   * @param lineStart - First point defining the line
+   * @param lineEnd - Second point defining the line
+   * @returns The reflected point
+   */
+  reflectPointThroughLine(point: Vector2, lineStart: Vector2, lineEnd: Vector2): Vector2 {
+    // Line direction (not normalized, we'll use squared length)
+    const lineDir = Vec2.subtract(lineEnd, lineStart);
+    const lineLengthSq = Vec2.lengthSquared(lineDir);
+
+    // Handle degenerate line (both points same)
+    if (lineLengthSq === 0) {
+      return { ...point };
+    }
+
+    // Vector from line start to point
+    const toPoint = Vec2.subtract(point, lineStart);
+
+    // Scalar projection onto line (as fraction of line length)
+    const t = Vec2.dot(toPoint, lineDir) / lineLengthSq;
+
+    // Projection point on the line
+    const projection = Vec2.add(lineStart, Vec2.scale(lineDir, t));
+
+    // Reflection: P' = 2 * projection - point
+    return Vec2.subtract(Vec2.scale(projection, 2), point);
+  },
 };

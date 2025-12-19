@@ -1,65 +1,57 @@
-import { RayUtils, raySegmentIntersect } from "@/math/Ray";
 import { Vec2 } from "@/math/Vec2";
-import type { Surface } from "@/surfaces";
 import type { Vector2 } from "@/types";
 
 /**
  * Arrow flight states
  */
-export type ArrowState = "perfect" | "exhausted" | "stuck";
+export type ArrowState = "flying" | "stuck";
 
 /**
  * Arrow configuration
  */
 export interface ArrowConfig {
-  speed: number; // Pixels per second during perfect flight
-  exhaustionGravity: number; // Gravity applied when exhausted
-  maxExhaustionSpeed: number; // Terminal velocity when exhausted
-  exhaustionDrag: number; // Horizontal drag when exhausted
+  speed: number; // Pixels per second
 }
 
 export const DEFAULT_ARROW_CONFIG: ArrowConfig = {
   speed: 800,
-  exhaustionGravity: 1200,
-  maxExhaustionSpeed: 600,
-  exhaustionDrag: 0.98,
 };
 
 /**
- * Arrow - Projectile that follows planned trajectory
+ * Arrow - Projectile that follows pre-computed waypoint path
  *
- * States:
- * - perfect: Travels in straight lines, ricochets off planned surfaces
- * - exhausted: Gravity affects trajectory, slows down
- * - stuck: Embedded in a surface, no longer moving
+ * First Principles:
+ * - Arrow follows exact trajectory computed by image reflection
+ * - No physics simulation - deterministic path
+ * - Moves at constant speed between waypoints
+ * - Becomes stuck when reaching final waypoint
  */
 export class Arrow {
   private _id: string;
   private _position: Vector2;
-  private _velocity: Vector2;
-  private _state: ArrowState = "perfect";
-  // Stuck position tracked via _position when state is "stuck"
+  private _state: ArrowState = "flying";
   private _stuckAngle = 0;
 
-  private plannedSurfaces: Surface[];
-  private nextPlannedIndex = 0;
-  private distanceTraveled = 0;
-  private maxDistance: number;
+  private waypoints: Vector2[];
+  private currentWaypointIndex = 0;
   private config: ArrowConfig;
 
-  constructor(
-    id: string,
-    position: Vector2,
-    direction: Vector2,
-    plannedSurfaces: Surface[],
-    maxDistance: number,
-    config: ArrowConfig = DEFAULT_ARROW_CONFIG
-  ) {
+  /**
+   * Create an arrow that follows a waypoint path
+   *
+   * @param id - Unique identifier
+   * @param waypoints - Array of points to follow [start, hit1, hit2, ..., end]
+   * @param config - Arrow configuration
+   */
+  constructor(id: string, waypoints: Vector2[], config: ArrowConfig = DEFAULT_ARROW_CONFIG) {
     this._id = id;
-    this._position = { ...position };
-    this._velocity = Vec2.scale(Vec2.normalize(direction), config.speed);
-    this.plannedSurfaces = [...plannedSurfaces];
-    this.maxDistance = maxDistance;
+
+    if (waypoints.length < 2) {
+      throw new Error("Arrow requires at least 2 waypoints");
+    }
+
+    this.waypoints = waypoints.map((p) => ({ ...p }));
+    this._position = { ...waypoints[0]! };
     this.config = config;
   }
 
@@ -71,10 +63,6 @@ export class Arrow {
     return { ...this._position };
   }
 
-  get velocity(): Vector2 {
-    return { ...this._velocity };
-  }
-
   get state(): ArrowState {
     return this._state;
   }
@@ -83,7 +71,15 @@ export class Arrow {
     if (this._state === "stuck") {
       return this._stuckAngle;
     }
-    return Math.atan2(this._velocity.y, this._velocity.x);
+
+    // Calculate angle from current position toward next waypoint
+    const nextWaypoint = this.waypoints[this.currentWaypointIndex + 1];
+    if (!nextWaypoint) {
+      return this._stuckAngle;
+    }
+
+    const direction = Vec2.subtract(nextWaypoint, this._position);
+    return Math.atan2(direction.y, direction.x);
   }
 
   get isActive(): boolean {
@@ -91,159 +87,109 @@ export class Arrow {
   }
 
   /**
-   * Update arrow physics and handle collisions
+   * Get the velocity vector (direction * speed)
+   */
+  get velocity(): Vector2 {
+    if (this._state === "stuck") {
+      return { x: 0, y: 0 };
+    }
+
+    const nextWaypoint = this.waypoints[this.currentWaypointIndex + 1];
+    if (!nextWaypoint) {
+      return { x: 0, y: 0 };
+    }
+
+    const direction = Vec2.direction(this._position, nextWaypoint);
+    return Vec2.scale(direction, this.config.speed);
+  }
+
+  /**
+   * Update arrow position along waypoint path
    *
    * @param delta - Time since last frame in seconds
-   * @param surfaces - All surfaces to check collisions against
    */
-  update(delta: number, surfaces: readonly Surface[]): void {
+  update(delta: number): void {
     if (this._state === "stuck") {
       return;
     }
 
-    // Calculate movement this frame
-    const movement = Vec2.scale(this._velocity, delta);
-    const moveDistance = Vec2.length(movement);
+    let remainingDistance = this.config.speed * delta;
 
-    // Check for collisions along the path
-    const collision = this.checkCollision(movement, surfaces);
+    while (remainingDistance > 0 && this._state === "flying") {
+      const nextWaypoint = this.waypoints[this.currentWaypointIndex + 1];
 
-    if (collision) {
-      this.handleCollision(collision, surfaces);
-    } else {
-      // No collision - move normally
-      this._position = Vec2.add(this._position, movement);
-      this.distanceTraveled += moveDistance;
-
-      // Check for exhaustion
-      if (this._state === "perfect" && this.shouldExhaust()) {
-        this._state = "exhausted";
+      if (!nextWaypoint) {
+        // No more waypoints - we're done
+        this.stick();
+        break;
       }
 
-      // Apply exhaustion physics
-      if (this._state === "exhausted") {
-        this.applyExhaustionPhysics(delta);
-      }
-    }
-  }
+      const distanceToNext = Vec2.distance(this._position, nextWaypoint);
 
-  /**
-   * Check for collision along movement path
-   */
-  private checkCollision(movement: Vector2, surfaces: readonly Surface[]): CollisionInfo | null {
-    const ray = RayUtils.create(this._position, Vec2.normalize(movement));
-    const moveDistance = Vec2.length(movement);
+      if (remainingDistance >= distanceToNext) {
+        // Move to waypoint and continue to next segment
+        this._position = { ...nextWaypoint };
+        remainingDistance -= distanceToNext;
+        this.currentWaypointIndex++;
 
-    let closestHit: CollisionInfo | null = null;
-
-    for (const surface of surfaces) {
-      const hit = raySegmentIntersect(ray, surface.segment);
-
-      if (hit.hit && hit.point && hit.normal && hit.t >= 0 && hit.t <= moveDistance) {
-        if (!closestHit || hit.t < closestHit.distance) {
-          closestHit = {
-            surface,
-            point: hit.point,
-            normal: hit.normal,
-            distance: hit.t,
-          };
+        // Check if we've reached the final waypoint
+        if (this.currentWaypointIndex >= this.waypoints.length - 1) {
+          this.stick();
+          break;
         }
+      } else {
+        // Move partway toward next waypoint
+        const direction = Vec2.direction(this._position, nextWaypoint);
+        this._position = Vec2.add(this._position, Vec2.scale(direction, remainingDistance));
+        remainingDistance = 0;
       }
     }
-
-    return closestHit;
   }
 
   /**
-   * Handle collision with a surface
+   * Make the arrow stick at current position
    */
-  private handleCollision(collision: CollisionInfo, _surfaces: readonly Surface[]): void {
-    const surface = collision.surface;
-
-    // Move to collision point
-    this._position = { ...collision.point };
-    this.distanceTraveled += collision.distance;
-
-    // Check if this is the next planned surface
-    const isPlannedHit =
-      this._state === "perfect" &&
-      this.nextPlannedIndex < this.plannedSurfaces.length &&
-      this.plannedSurfaces[this.nextPlannedIndex]?.id === surface.id;
-
-    if (isPlannedHit && surface.isPlannable()) {
-      // Ricochet off planned surface
-      this.nextPlannedIndex++;
-
-      // Reflect velocity
-      const hitResult = surface.onArrowHit(collision.point, this._velocity);
-
-      if (hitResult.type === "reflect" && hitResult.reflectedDirection) {
-        this._velocity = Vec2.scale(
-          Vec2.normalize(hitResult.reflectedDirection),
-          this.config.speed
-        );
-
-        // Move slightly away from surface to prevent re-collision
-        this._position = Vec2.add(this._position, Vec2.scale(collision.normal, 0.1));
-      }
-    } else if (surface.isPlannable() && this._state === "perfect") {
-      // Hit a ricochet surface that wasn't planned - invalid trajectory
-      // Arrow sticks
-      this.stick(collision.point);
-    } else {
-      // Hit a wall or exhausted arrow hitting any surface
-      this.stick(collision.point);
-    }
-  }
-
-  /**
-   * Check if arrow should become exhausted
-   */
-  private shouldExhaust(): boolean {
-    // Exhaust if we've completed all planned ricochets
-    if (this.nextPlannedIndex >= this.plannedSurfaces.length) {
-      return true;
-    }
-
-    // Exhaust if we've traveled too far
-    if (this.distanceTraveled >= this.maxDistance) {
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Apply physics for exhausted state
-   */
-  private applyExhaustionPhysics(delta: number): void {
-    // Apply gravity
-    this._velocity = {
-      x: this._velocity.x * this.config.exhaustionDrag,
-      y: Math.min(
-        this._velocity.y + this.config.exhaustionGravity * delta,
-        this.config.maxExhaustionSpeed
-      ),
-    };
-  }
-
-  /**
-   * Make the arrow stick to a surface
-   */
-  private stick(position: Vector2): void {
+  private stick(): void {
     this._state = "stuck";
-    this._stuckAngle = Math.atan2(this._velocity.y, this._velocity.x);
-    this._position = { ...position };
-    this._velocity = { x: 0, y: 0 };
-  }
-}
 
-/**
- * Collision information
- */
-interface CollisionInfo {
-  surface: Surface;
-  point: Vector2;
-  normal: Vector2;
-  distance: number;
+    // Preserve angle from last movement direction
+    const prevWaypoint = this.waypoints[this.currentWaypointIndex];
+    if (prevWaypoint && this.currentWaypointIndex > 0) {
+      const prevPrev = this.waypoints[this.currentWaypointIndex - 1];
+      if (prevPrev) {
+        const direction = Vec2.subtract(prevWaypoint, prevPrev);
+        this._stuckAngle = Math.atan2(direction.y, direction.x);
+      }
+    }
+  }
+
+  /**
+   * Get the waypoints this arrow follows
+   */
+  getWaypoints(): readonly Vector2[] {
+    return this.waypoints;
+  }
+
+  /**
+   * Get progress through the waypoint path (0 to 1)
+   */
+  getProgress(): number {
+    if (this.waypoints.length <= 1) return 1;
+
+    let totalDistance = 0;
+    let traveledDistance = 0;
+
+    for (let i = 0; i < this.waypoints.length - 1; i++) {
+      const segmentDist = Vec2.distance(this.waypoints[i]!, this.waypoints[i + 1]!);
+      totalDistance += segmentDist;
+
+      if (i < this.currentWaypointIndex) {
+        traveledDistance += segmentDist;
+      } else if (i === this.currentWaypointIndex) {
+        traveledDistance += Vec2.distance(this.waypoints[i]!, this._position);
+      }
+    }
+
+    return totalDistance > 0 ? traveledDistance / totalDistance : 1;
+  }
 }

@@ -23,6 +23,9 @@ export class GameScene extends Phaser.Scene {
   private surfaces: Surface[] = [];
   private surfaceGraphics!: Phaser.GameObjects.Graphics;
 
+  // Hover state
+  private hoveredSurface: Surface | null = null;
+
   // Player
   private player!: Player;
   private playerGraphics!: Phaser.GameObjects.Graphics;
@@ -100,6 +103,16 @@ export class GameScene extends Phaser.Scene {
     const movementInput = this.inputManager.getMovementInput();
     const pointer = this.inputManager.getPointerPosition();
 
+    // Update hover state
+    this.hoveredSurface = this.inputManager.findClickedSurface(pointer, this.surfaces, true);
+
+    // Update cursor based on hover state
+    if (this.hoveredSurface?.isPlannable()) {
+      this.input.setDefaultCursor("pointer");
+    } else {
+      this.input.setDefaultCursor("default");
+    }
+
     // Update player (movement + aiming)
     this.player.update(deltaSeconds, movementInput, pointer, this.surfaces);
 
@@ -108,8 +121,8 @@ export class GameScene extends Phaser.Scene {
       this.handleClick(pointer);
     }
 
-    // Update arrows
-    this.arrowManager.update(deltaSeconds, this.surfaces);
+    // Update arrows (they follow pre-computed waypoints)
+    this.arrowManager.update(deltaSeconds);
 
     // Redraw player at new position
     this.drawPlayer();
@@ -154,15 +167,10 @@ export class GameScene extends Phaser.Scene {
       // Toggle surface in plan
       this.player.toggleSurfaceInPlan(clickedSurface);
     } else {
-      // Shoot arrow
+      // Shoot arrow with pre-computed waypoints
       const arrowData = this.player.shoot();
-      if (arrowData) {
-        this.arrowManager.createArrow(
-          arrowData.position,
-          arrowData.direction,
-          arrowData.plannedSurfaces,
-          arrowData.maxDistance
-        );
+      if (arrowData && arrowData.waypoints.length >= 2) {
+        this.arrowManager.createArrow(arrowData.waypoints);
       }
     }
   }
@@ -244,11 +252,23 @@ export class GameScene extends Phaser.Scene {
       const props = surface.getVisualProperties();
       const planIndex = this.player.getSurfacePlanIndex(surface);
       const isPlanned = planIndex > 0;
+      const isHovered = this.hoveredSurface?.id === surface.id && surface.isPlannable();
 
-      // Use different color for planned surfaces
-      const color = isPlanned ? 0xffff00 : props.color; // Yellow for planned
-      const lineWidth = isPlanned ? props.lineWidth + 2 : props.lineWidth;
-      const alpha = isPlanned ? 1 : props.alpha;
+      // Determine visual properties based on state
+      let color = props.color;
+      let lineWidth = props.lineWidth;
+      let alpha = props.alpha;
+
+      if (isPlanned) {
+        color = 0xffff00; // Yellow for planned
+        lineWidth = props.lineWidth + 2;
+        alpha = 1;
+      } else if (isHovered) {
+        // Brighter color for hover - shift toward white
+        color = this.brightenColor(props.color, 0.5);
+        lineWidth = props.lineWidth + 1;
+        alpha = 1;
+      }
 
       this.surfaceGraphics.lineStyle(lineWidth, color, alpha);
       this.surfaceGraphics.lineBetween(
@@ -258,16 +278,30 @@ export class GameScene extends Phaser.Scene {
         surface.segment.end.y
       );
 
-      // Add glow effect for ricochet surfaces
-      if (props.glow || isPlanned) {
-        const glowColor = isPlanned ? 0xffff00 : props.color;
-        this.surfaceGraphics.lineStyle(lineWidth + 4, glowColor, isPlanned ? 0.4 : 0.2);
+      // Add glow effect for ricochet surfaces or hovered surfaces
+      if (props.glow || isPlanned || isHovered) {
+        const glowColor = isPlanned ? 0xffff00 : isHovered ? 0xffffff : props.color;
+        const glowAlpha = isPlanned ? 0.4 : isHovered ? 0.5 : 0.2;
+        const glowWidth = isHovered ? lineWidth + 8 : lineWidth + 4;
+
+        this.surfaceGraphics.lineStyle(glowWidth, glowColor, glowAlpha);
         this.surfaceGraphics.lineBetween(
           surface.segment.start.x,
           surface.segment.start.y,
           surface.segment.end.x,
           surface.segment.end.y
         );
+
+        // Extra outer glow for hovered surfaces
+        if (isHovered) {
+          this.surfaceGraphics.lineStyle(glowWidth + 6, glowColor, 0.2);
+          this.surfaceGraphics.lineBetween(
+            surface.segment.start.x,
+            surface.segment.start.y,
+            surface.segment.end.x,
+            surface.segment.end.y
+          );
+        }
       }
 
       // Draw plan number for planned surfaces
@@ -287,6 +321,24 @@ export class GameScene extends Phaser.Scene {
         // The number effect is achieved by the order being visually apparent
       }
     }
+  }
+
+  /**
+   * Brighten a color by blending it toward white
+   * @param color - The original color (0xRRGGBB)
+   * @param amount - How much to brighten (0-1)
+   * @returns The brightened color
+   */
+  private brightenColor(color: number, amount: number): number {
+    const r = (color >> 16) & 0xff;
+    const g = (color >> 8) & 0xff;
+    const b = color & 0xff;
+
+    const newR = Math.min(255, Math.floor(r + (255 - r) * amount));
+    const newG = Math.min(255, Math.floor(g + (255 - g) * amount));
+    const newB = Math.min(255, Math.floor(b + (255 - b) * amount));
+
+    return (newR << 16) | (newG << 8) | newB;
   }
 
   /**

@@ -123,22 +123,26 @@ export class AimingSystem {
   /**
    * Attempt to shoot an arrow
    *
-   * @param playerPosition - Position to spawn arrow from
-   * @returns Arrow creation data if shot was fired, null if on cooldown
+   * @returns Arrow creation data if shot was fired, null if on cooldown or invalid trajectory
    */
-  shoot(playerPosition: Vector2): ArrowCreationData | null {
+  shoot(): ArrowCreationData | null {
     if (!this.canShoot()) {
+      return null;
+    }
+
+    // Need at least 2 points for a valid trajectory
+    if (this._trajectoryResult.points.length < 2) {
       return null;
     }
 
     this.lastShotTime = performance.now() / 1000;
 
-    // Create arrow data with current aim and plan
+    // Extract waypoints from trajectory result
+    const waypoints = this._trajectoryResult.points.map((p) => ({ ...p.position }));
+
+    // Create arrow data with waypoints
     const arrowData: ArrowCreationData = {
-      position: { ...playerPosition },
-      direction: { ...this._aimDirection },
-      plannedSurfaces: [...this._plannedSurfaces],
-      maxDistance: this.config.maxArrowDistance,
+      waypoints,
     };
 
     // Clear plan after shooting
@@ -159,8 +163,5 @@ export class AimingSystem {
  * Data needed to create an arrow
  */
 export interface ArrowCreationData {
-  position: Vector2;
-  direction: Vector2;
-  plannedSurfaces: Surface[];
-  maxDistance: number;
+  waypoints: Vector2[];
 }

@@ -172,10 +172,10 @@ export class Player {
 
   /**
    * Attempt to shoot an arrow
-   * @returns Arrow creation data if shot was fired, null if on cooldown
+   * @returns Arrow creation data with waypoints, null if on cooldown or invalid trajectory
    */
   shoot(): ArrowCreationData | null {
-    return this.aimingSystem.shoot(this.bowPosition);
+    return this.aimingSystem.shoot();
   }
 
   // =========================================================================

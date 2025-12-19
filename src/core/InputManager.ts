@@ -3,8 +3,8 @@ import type { Surface } from "@/surfaces";
 import type { InputState, MovementInput, Vector2 } from "@/types";
 import type Phaser from "phaser";
 
-/** Click threshold distance for surface detection (in pixels) */
-const SURFACE_CLICK_THRESHOLD = 15;
+/** Hover/click threshold distance for surface detection (in pixels) */
+const SURFACE_HOVER_THRESHOLD = 25;
 
 /** Mutable internal state for input tracking */
 interface MutableInputState {
@@ -143,7 +143,7 @@ export class InputManager {
     onlyPlannable = true
   ): Surface | null {
     let closestSurface: Surface | null = null;
-    let closestDistance = SURFACE_CLICK_THRESHOLD;
+    let closestDistance = SURFACE_HOVER_THRESHOLD;
 
     for (const surface of surfaces) {
       if (onlyPlannable && !surface.isPlannable()) {
