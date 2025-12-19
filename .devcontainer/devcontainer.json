@@ -1,6 +1,13 @@
 {
   "name": "Ricochet Game Dev",
   "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
+
+  // Persist GitHub CLI auth and SSH keys across rebuilds
+  "mounts": [
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/node/.ssh,type=bind,consistency=cached",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh,target=/home/node/.config/gh,type=bind,consistency=cached"
+  ],
+
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
