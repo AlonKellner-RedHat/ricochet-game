@@ -7,6 +7,10 @@ dist/
 # Test coverage
 coverage/
 
+# Playwright
+playwright-report/
+test-results/
+
 # IDE
 .idea/
 *.swp

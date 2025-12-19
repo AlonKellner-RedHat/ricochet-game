@@ -60,16 +60,14 @@ export class GameScene extends Phaser.Scene {
     // Create demo surfaces
     this.createDemoSurfaces();
 
-    // Create graphics for surfaces
-    this.surfaceGraphics = this.add.graphics();
-    this.drawSurfaces();
-
-    // Create player (with integrated aiming system)
+    // Create player BEFORE drawing surfaces (drawSurfaces needs player.getSurfacePlanIndex)
     const spawnPoint = { x: 150, y: 450 };
     this.player = new Player(spawnPoint);
-
-    // Create player graphics
     this.playerGraphics = this.add.graphics();
+
+    // Create graphics for surfaces (after player exists)
+    this.surfaceGraphics = this.add.graphics();
+    this.drawSurfaces();
 
     // Add title and control hints
     this.add
