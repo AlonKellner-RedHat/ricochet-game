@@ -194,4 +194,66 @@ describe("Vec2", () => {
       expect(Vec2.zero()).toEqual({ x: 0, y: 0 });
     });
   });
+
+  describe("pointToSegmentDistance", () => {
+    it("should return 0 when point is on segment", () => {
+      const point = { x: 50, y: 0 };
+      const start = { x: 0, y: 0 };
+      const end = { x: 100, y: 0 };
+
+      expect(Vec2.pointToSegmentDistance(point, start, end)).toBeCloseTo(0);
+    });
+
+    it("should return perpendicular distance when point projects onto segment", () => {
+      const point = { x: 50, y: 10 };
+      const start = { x: 0, y: 0 };
+      const end = { x: 100, y: 0 };
+
+      expect(Vec2.pointToSegmentDistance(point, start, end)).toBeCloseTo(10);
+    });
+
+    it("should return distance to start when point is before segment", () => {
+      const point = { x: -10, y: 0 };
+      const start = { x: 0, y: 0 };
+      const end = { x: 100, y: 0 };
+
+      expect(Vec2.pointToSegmentDistance(point, start, end)).toBeCloseTo(10);
+    });
+
+    it("should return distance to end when point is after segment", () => {
+      const point = { x: 110, y: 0 };
+      const start = { x: 0, y: 0 };
+      const end = { x: 100, y: 0 };
+
+      expect(Vec2.pointToSegmentDistance(point, start, end)).toBeCloseTo(10);
+    });
+
+    it("should handle vertical segments", () => {
+      const point = { x: 10, y: 50 };
+      const start = { x: 0, y: 0 };
+      const end = { x: 0, y: 100 };
+
+      expect(Vec2.pointToSegmentDistance(point, start, end)).toBeCloseTo(10);
+    });
+
+    it("should handle diagonal segments", () => {
+      const point = { x: 50, y: 50 };
+      const start = { x: 0, y: 0 };
+      const end = { x: 100, y: 100 };
+
+      // Point is on the diagonal
+      expect(Vec2.pointToSegmentDistance(point, start, end)).toBeCloseTo(0);
+    });
+
+    it("should handle diagonal segments with offset point", () => {
+      const point = { x: 0, y: 100 };
+      const start = { x: 0, y: 0 };
+      const end = { x: 100, y: 100 };
+
+      // Distance from (0,100) to line y=x is perpendicular distance
+      // The perpendicular distance from (0,100) to y=x is |0-100|/sqrt(2) = 100/sqrt(2)
+      const expectedDistance = 100 / Math.SQRT2;
+      expect(Vec2.pointToSegmentDistance(point, start, end)).toBeCloseTo(expectedDistance);
+    });
+  });
 });

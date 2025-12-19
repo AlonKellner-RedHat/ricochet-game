@@ -24,6 +24,7 @@ const PASSTHROUGH_CHECK_DISTANCE = 20; // Larger range to catch high-velocity pa
 /**
  * Check for ground by casting rays downward
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Collision detection requires many condition checks
 function checkGroundDown(
   position: Vector2,
   halfWidth: number,
@@ -61,6 +62,7 @@ function checkGroundDown(
  * Check for ground above (in case we fell through floor)
  * Uses larger check distance to catch high-velocity pass-through
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Collision detection requires many condition checks
 function checkGroundUp(
   position: Vector2,
   halfWidth: number,
@@ -126,6 +128,7 @@ function checkCeiling(
 /**
  * Check for left wall (outward - wall is to the left of player)
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Collision detection requires many condition checks
 function checkLeftWallOutward(
   position: Vector2,
   halfWidth: number,
@@ -162,6 +165,7 @@ function checkLeftWallOutward(
  * Check for vertical walls that the player's body overlaps with
  * This handles cases where the player moved through a wall in a single frame
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Collision detection requires many condition checks
 function checkWallOverlap(
   position: Vector2,
   halfWidth: number,
@@ -215,6 +219,7 @@ function checkWallOverlap(
 /**
  * Check for right wall (outward - wall is to the right of player)
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Collision detection requires many condition checks
 function checkRightWallOutward(
   position: Vector2,
   halfWidth: number,

@@ -112,12 +112,12 @@ describe("Wall Collision", () => {
       const surfaces = [leftWall, floor];
 
       // First, ground the player
-      player.update(0.016, noInput(), surfaces);
+      player.updateMovement(0.016, noInput(), surfaces);
       expect(player.isGrounded).toBe(true);
 
       // Now move left for many frames
       for (let i = 0; i < 100; i++) {
-        player.update(0.016, leftInput(), surfaces);
+        player.updateMovement(0.016, leftInput(), surfaces);
       }
 
       // Player should be stopped at wall (left edge at wall x + half width)
@@ -140,12 +140,12 @@ describe("Wall Collision", () => {
       const surfaces = [rightWall, floor];
 
       // First, ground the player
-      player.update(0.016, noInput(), surfaces);
+      player.updateMovement(0.016, noInput(), surfaces);
       expect(player.isGrounded).toBe(true);
 
       // Now move right for many frames
       for (let i = 0; i < 100; i++) {
-        player.update(0.016, rightInput(), surfaces);
+        player.updateMovement(0.016, rightInput(), surfaces);
       }
 
       // Player should be stopped at wall (right edge at wall x - half width)
@@ -168,12 +168,12 @@ describe("Wall Collision", () => {
       const surfaces = [leftWall, floor];
 
       // Ground the player
-      player.update(0.016, noInput(), surfaces);
+      player.updateMovement(0.016, noInput(), surfaces);
       expect(player.isGrounded).toBe(true);
 
       // Move left until hitting wall
       for (let i = 0; i < 50; i++) {
-        player.update(0.016, leftInput(), surfaces);
+        player.updateMovement(0.016, leftInput(), surfaces);
       }
 
       // Player should be at wall
@@ -182,7 +182,7 @@ describe("Wall Collision", () => {
 
       // Now move RIGHT - player should be able to move away
       for (let i = 0; i < 20; i++) {
-        player.update(0.016, rightInput(), surfaces);
+        player.updateMovement(0.016, rightInput(), surfaces);
       }
 
       // Player should have moved right, away from wall
@@ -205,12 +205,12 @@ describe("Wall Collision", () => {
       const surfaces = [floor, leftEdgeWall];
 
       // Ground the player
-      player.update(0.016, noInput(), surfaces);
+      player.updateMovement(0.016, noInput(), surfaces);
       expect(player.isGrounded).toBe(true);
 
       // Move left towards edge
       for (let i = 0; i < 50; i++) {
-        player.update(0.016, leftInput(), surfaces);
+        player.updateMovement(0.016, leftInput(), surfaces);
       }
 
       // Player should be stopped at wall

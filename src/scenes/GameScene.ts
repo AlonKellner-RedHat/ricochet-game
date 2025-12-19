@@ -1,8 +1,9 @@
+import { ArrowManager } from "@/arrow";
 import { DebugView, InputManager } from "@/core";
 import { Player } from "@/player";
 import { RicochetSurface, WallSurface } from "@/surfaces";
 import type { Surface } from "@/surfaces";
-import { TrajectoryCalculator, TrajectoryRenderer } from "@/trajectory";
+import { TrajectoryRenderer } from "@/trajectory";
 import Phaser from "phaser";
 
 /**
@@ -13,8 +14,10 @@ export class GameScene extends Phaser.Scene {
   private debugView!: DebugView;
 
   // Trajectory system
-  private trajectoryCalculator!: TrajectoryCalculator;
   private trajectoryRenderer!: TrajectoryRenderer;
+
+  // Arrow system
+  private arrowManager!: ArrowManager;
 
   // Demo surfaces
   private surfaces: Surface[] = [];
@@ -23,9 +26,6 @@ export class GameScene extends Phaser.Scene {
   // Player
   private player!: Player;
   private playerGraphics!: Phaser.GameObjects.Graphics;
-
-  // Configuration
-  private readonly maxTrajectoryDistance = 2000;
 
   constructor() {
     super({ key: "GameScene" });
@@ -51,9 +51,11 @@ export class GameScene extends Phaser.Scene {
       this.debugView.toggle();
     });
 
-    // Initialize trajectory system
-    this.trajectoryCalculator = new TrajectoryCalculator();
+    // Initialize trajectory renderer
     this.trajectoryRenderer = new TrajectoryRenderer(this);
+
+    // Initialize arrow manager
+    this.arrowManager = new ArrowManager(this);
 
     // Create demo surfaces
     this.createDemoSurfaces();
@@ -62,7 +64,7 @@ export class GameScene extends Phaser.Scene {
     this.surfaceGraphics = this.add.graphics();
     this.drawSurfaces();
 
-    // Create player
+    // Create player (with integrated aiming system)
     const spawnPoint = { x: 150, y: 450 };
     this.player = new Player(spawnPoint);
 
@@ -79,11 +81,16 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(this.cameras.main.centerX, 55, "WASD/Arrows to move • Space to jump • Mouse to aim", {
-        fontFamily: "JetBrains Mono, monospace",
-        fontSize: "12px",
-        color: "#888888",
-      })
+      .text(
+        this.cameras.main.centerX,
+        55,
+        "WASD/Arrows to move • Space to jump • Click cyan surface to plan • Click elsewhere to shoot",
+        {
+          fontFamily: "JetBrains Mono, monospace",
+          fontSize: "12px",
+          color: "#888888",
+        }
+      )
       .setOrigin(0.5);
   }
 
@@ -95,27 +102,33 @@ export class GameScene extends Phaser.Scene {
     const movementInput = this.inputManager.getMovementInput();
     const pointer = this.inputManager.getPointerPosition();
 
-    // Update player with movement and collisions
-    this.player.update(deltaSeconds, movementInput, this.surfaces);
+    // Update player (movement + aiming)
+    this.player.update(deltaSeconds, movementInput, pointer, this.surfaces);
+
+    // Handle click events
+    if (this.inputManager.wasPointerClicked()) {
+      this.handleClick(pointer);
+    }
+
+    // Update arrows
+    this.arrowManager.update(deltaSeconds, this.surfaces);
 
     // Redraw player at new position
     this.drawPlayer();
 
-    // Calculate trajectory from player's bow position
-    const result = this.trajectoryCalculator.calculate(
-      this.player.bowPosition,
-      pointer,
-      [], // No planned surfaces yet
-      this.surfaces,
-      this.maxTrajectoryDistance
-    );
+    // Redraw surfaces (to show planned state)
+    this.drawSurfaces();
 
-    // Render trajectory
-    this.trajectoryRenderer.render(result);
+    // Render trajectory from player's trajectory result
+    this.trajectoryRenderer.render(this.player.trajectoryResult);
+
+    // Render arrows
+    this.arrowManager.render();
 
     // Update debug info
     const pos = this.player.position;
     const vel = this.player.velocity;
+    const result = this.player.trajectoryResult;
     this.debugView.setInfo("playerX", Math.round(pos.x));
     this.debugView.setInfo("playerY", Math.round(pos.y));
     this.debugView.setInfo("velX", Math.round(vel.x));
@@ -123,11 +136,37 @@ export class GameScene extends Phaser.Scene {
     this.debugView.setInfo("state", this.player.state);
     this.debugView.setInfo("grounded", this.player.isGrounded);
     this.debugView.setInfo("trajPoints", result.points.length);
+    this.debugView.setInfo("planned", this.player.plannedSurfaces.length);
+    this.debugView.setInfo("arrows", this.arrowManager.getAllArrows().length);
 
     this.debugView.update();
 
     // Clear single-frame input events at end of frame
     this.inputManager.clearFrameEvents();
+  }
+
+  /**
+   * Handle click events for planning and shooting
+   */
+  private handleClick(clickPosition: { x: number; y: number }): void {
+    // Check if clicking on a plannable surface
+    const clickedSurface = this.inputManager.findClickedSurface(clickPosition, this.surfaces, true);
+
+    if (clickedSurface) {
+      // Toggle surface in plan
+      this.player.toggleSurfaceInPlan(clickedSurface);
+    } else {
+      // Shoot arrow
+      const arrowData = this.player.shoot();
+      if (arrowData) {
+        this.arrowManager.createArrow(
+          arrowData.position,
+          arrowData.direction,
+          arrowData.plannedSurfaces,
+          arrowData.maxDistance
+        );
+      }
+    }
   }
 
   /**
@@ -197,15 +236,23 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Draw all surfaces
+   * Draw all surfaces with plan highlighting
    */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Drawing logic requires many visual decisions
   private drawSurfaces(): void {
     this.surfaceGraphics.clear();
 
     for (const surface of this.surfaces) {
       const props = surface.getVisualProperties();
+      const planIndex = this.player.getSurfacePlanIndex(surface);
+      const isPlanned = planIndex > 0;
 
-      this.surfaceGraphics.lineStyle(props.lineWidth, props.color, props.alpha);
+      // Use different color for planned surfaces
+      const color = isPlanned ? 0xffff00 : props.color; // Yellow for planned
+      const lineWidth = isPlanned ? props.lineWidth + 2 : props.lineWidth;
+      const alpha = isPlanned ? 1 : props.alpha;
+
+      this.surfaceGraphics.lineStyle(lineWidth, color, alpha);
       this.surfaceGraphics.lineBetween(
         surface.segment.start.x,
         surface.segment.start.y,
@@ -214,14 +261,32 @@ export class GameScene extends Phaser.Scene {
       );
 
       // Add glow effect for ricochet surfaces
-      if (props.glow) {
-        this.surfaceGraphics.lineStyle(props.lineWidth + 4, props.color, 0.2);
+      if (props.glow || isPlanned) {
+        const glowColor = isPlanned ? 0xffff00 : props.color;
+        this.surfaceGraphics.lineStyle(lineWidth + 4, glowColor, isPlanned ? 0.4 : 0.2);
         this.surfaceGraphics.lineBetween(
           surface.segment.start.x,
           surface.segment.start.y,
           surface.segment.end.x,
           surface.segment.end.y
         );
+      }
+
+      // Draw plan number for planned surfaces
+      if (isPlanned) {
+        const midX = (surface.segment.start.x + surface.segment.end.x) / 2;
+        const midY = (surface.segment.start.y + surface.segment.end.y) / 2;
+
+        // Draw circle background
+        this.surfaceGraphics.fillStyle(0x000000, 0.8);
+        this.surfaceGraphics.fillCircle(midX, midY - 15, 12);
+
+        // Draw number (we'll use a simple approach with graphics)
+        this.surfaceGraphics.fillStyle(0xffff00, 1);
+        this.surfaceGraphics.fillCircle(midX, midY - 15, 8);
+
+        // We can't easily draw text with graphics, so just use a filled circle
+        // The number effect is achieved by the order being visually apparent
       }
     }
   }
@@ -244,15 +309,27 @@ export class GameScene extends Phaser.Scene {
     this.playerGraphics.fillStyle(0xffc857, 1);
     this.playerGraphics.fillCircle(x, y - 30, 12);
 
-    // Bow (arc on the right side)
+    // Bow (arc on the right side, rotates with aim)
+    const aimAngle = Math.atan2(this.player.aimDirection.y, this.player.aimDirection.x);
+    const bowCenterX = x + Math.cos(aimAngle) * 15;
+    const bowCenterY = y - 10 + Math.sin(aimAngle) * 10;
+
     this.playerGraphics.lineStyle(3, 0x8b4513, 1);
     this.playerGraphics.beginPath();
-    this.playerGraphics.arc(x + 15, y - 10, 20, -Math.PI / 2, Math.PI / 2, false);
+    this.playerGraphics.arc(
+      bowCenterX,
+      bowCenterY,
+      20,
+      aimAngle - Math.PI / 2,
+      aimAngle + Math.PI / 2,
+      false
+    );
     this.playerGraphics.strokePath();
 
     // Arrow origin indicator
+    const arrowOrigin = this.player.bowPosition;
     this.playerGraphics.fillStyle(0x00ff88, 1);
-    this.playerGraphics.fillCircle(x + 20, y - 10, 4);
+    this.playerGraphics.fillCircle(arrowOrigin.x, arrowOrigin.y, 4);
 
     // Show grounded state (subtle ground indicator)
     if (this.player.isGrounded) {

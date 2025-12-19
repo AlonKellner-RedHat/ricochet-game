@@ -17,6 +17,7 @@ export class TrajectoryCalculator {
    * @param maxDistance - Maximum distance the arrow can travel
    * @returns TrajectoryResult with path points and validation status
    */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Trajectory calculation involves many conditional paths
   calculate(
     origin: Vector2,
     aimPoint: Vector2,
@@ -50,6 +51,12 @@ export class TrajectoryCalculator {
 
       const { surface, intersection } = hit;
 
+      // Intersection must have point and normal when hit is true
+      if (!intersection.point || !intersection.normal) {
+        break;
+      }
+      const hitPoint = intersection.point;
+
       // Check if this matches the next planned surface
       const plannedSurface = plannedSurfaces[planIndex];
       const isPlannedHit =
@@ -59,7 +66,7 @@ export class TrajectoryCalculator {
 
       // Add hit point to trajectory
       points.push({
-        position: intersection.point!,
+        position: hitPoint,
         surfaceId: surface.id,
         isPlanned: isPlannedHit,
       });
@@ -77,7 +84,7 @@ export class TrajectoryCalculator {
       }
 
       // Handle surface behavior
-      const hitResult = surface.onArrowHit(intersection.point!, currentRay.direction);
+      const hitResult = surface.onArrowHit(hitPoint, currentRay.direction);
 
       if (hitResult.type === "stick" || hitResult.type === "destroy") {
         // Arrow stops here
@@ -87,10 +94,7 @@ export class TrajectoryCalculator {
       if (hitResult.type === "reflect" && hitResult.reflectedDirection) {
         // Bounce off - create new ray from hit point in reflected direction
         // Move origin slightly away from surface to avoid self-intersection
-        const newOrigin = Vec2.add(
-          intersection.point!,
-          Vec2.scale(hitResult.reflectedDirection, 0.001)
-        );
+        const newOrigin = Vec2.add(hitPoint, Vec2.scale(hitResult.reflectedDirection, 0.001));
         currentRay = RayUtils.create(newOrigin, hitResult.reflectedDirection);
       }
     }

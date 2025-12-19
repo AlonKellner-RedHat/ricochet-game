@@ -28,21 +28,21 @@ describe("Collision Snapping Issues", () => {
       const surfaces = [leftWall, floor];
 
       // Ground and jump
-      player.update(0.016, noInput(), surfaces);
-      player.update(0.016, { left: false, right: false, jump: true, jumpHeld: true }, surfaces);
+      player.updateMovement(0.016, noInput(), surfaces);
+      player.updateMovement(
+        0.016,
+        { left: false, right: false, jump: true, jumpHeld: true },
+        surfaces
+      );
       expect(player.isGrounded).toBe(false);
 
       const initialX = player.position.x;
-      console.log("Jumping - Initial position:", initialX, "left edge:", initialX - 16);
 
       // Move left for ONE frame while in air
-      player.update(0.016, leftInput(), surfaces);
+      player.updateMovement(0.016, leftInput(), surfaces);
 
       const afterOneFrame = player.position.x;
-      console.log("Jumping - After 1 frame:", afterOneFrame, "left edge:", afterOneFrame - 16);
-
       const distanceMoved = initialX - afterOneFrame;
-      console.log("Jumping - Distance moved:", distanceMoved);
 
       // Should have moved less than 5 pixels while airborne
       expect(distanceMoved).toBeLessThan(5);
@@ -66,23 +66,20 @@ describe("Collision Snapping Issues", () => {
       const surfaces = [leftWall, floor];
 
       // Ground the player
-      player.update(0.016, noInput(), surfaces);
+      player.updateMovement(0.016, noInput(), surfaces);
       expect(player.isGrounded).toBe(true);
 
       const initialX = player.position.x;
-      console.log("Initial position:", initialX, "left edge:", initialX - 16);
 
       // Move left for ONE frame
-      player.update(0.016, leftInput(), surfaces);
+      player.updateMovement(0.016, leftInput(), surfaces);
 
       const afterOneFrame = player.position.x;
-      console.log("After 1 frame:", afterOneFrame, "left edge:", afterOneFrame - 16);
 
       // Player should have moved slightly, not teleported to wall
       // With acceleration 4000, after 1 frame: v = 4000 * 0.016 = 64 px/s
       // distance = 64 * 0.016 = ~1 pixel
       const distanceMoved = initialX - afterOneFrame;
-      console.log("Distance moved:", distanceMoved);
 
       // Should have moved less than 5 pixels, definitely not 15
       expect(distanceMoved).toBeLessThan(5);
@@ -103,12 +100,12 @@ describe("Collision Snapping Issues", () => {
       const player = new Player({ x: 120, y: 476 });
       const surfaces = [leftWall, floor];
 
-      player.update(0.016, noInput(), surfaces);
+      player.updateMovement(0.016, noInput(), surfaces);
 
       // Record positions as we move left
       const positions: number[] = [player.position.x];
       for (let i = 0; i < 30; i++) {
-        player.update(0.016, leftInput(), surfaces);
+        player.updateMovement(0.016, leftInput(), surfaces);
         positions.push(player.position.x);
       }
 
@@ -142,7 +139,7 @@ describe("Collision Snapping Issues", () => {
       // Record Y positions as player falls
       const positions: number[] = [player.position.y];
       for (let i = 0; i < 60; i++) {
-        player.update(0.016, noInput(), surfaces);
+        player.updateMovement(0.016, noInput(), surfaces);
         positions.push(player.position.y);
 
         if (player.isGrounded) break;

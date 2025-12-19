@@ -1,5 +1,10 @@
+import { Vec2 } from "@/math/Vec2";
+import type { Surface } from "@/surfaces";
 import type { InputState, MovementInput, Vector2 } from "@/types";
 import type Phaser from "phaser";
+
+/** Click threshold distance for surface detection (in pixels) */
+const SURFACE_CLICK_THRESHOLD = 15;
 
 /** Mutable internal state for input tracking */
 interface MutableInputState {
@@ -122,6 +127,42 @@ export class InputManager {
       isPointerDown: this.internalState.isPointerDown,
       keys: new Set(this.internalState.keys),
     };
+  }
+
+  /**
+   * Find the surface closest to the click position
+   * Returns null if no surface is close enough
+   *
+   * @param clickPosition - World position of the click
+   * @param surfaces - All surfaces to check
+   * @param onlyPlannable - If true, only return plannable surfaces
+   */
+  findClickedSurface(
+    clickPosition: Vector2,
+    surfaces: readonly Surface[],
+    onlyPlannable = true
+  ): Surface | null {
+    let closestSurface: Surface | null = null;
+    let closestDistance = SURFACE_CLICK_THRESHOLD;
+
+    for (const surface of surfaces) {
+      if (onlyPlannable && !surface.isPlannable()) {
+        continue;
+      }
+
+      const distance = Vec2.pointToSegmentDistance(
+        clickPosition,
+        surface.segment.start,
+        surface.segment.end
+      );
+
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestSurface = surface;
+      }
+    }
+
+    return closestSurface;
   }
 
   /**

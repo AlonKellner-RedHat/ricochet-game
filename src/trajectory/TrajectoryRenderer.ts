@@ -43,6 +43,7 @@ export class TrajectoryRenderer {
   /**
    * Render a trajectory result
    */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Rendering logic requires many visual decisions
   render(result: TrajectoryResult): void {
     this.graphics.clear();
 

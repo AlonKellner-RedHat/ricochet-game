@@ -36,7 +36,7 @@ describe("Player", () => {
       // Simulate falling for several frames (16ms each at 60fps)
       const surfaces = [floor];
       for (let i = 0; i < 60; i++) {
-        player.update(0.016, noInput(), surfaces);
+        player.updateMovement(0.016, noInput(), surfaces);
       }
 
       // Player should now be grounded
@@ -47,7 +47,7 @@ describe("Player", () => {
       expect(playerBottom).toBeLessThanOrEqual(floorY + 1); // Allow 1px tolerance
 
       // Now try to jump
-      player.update(0.016, jumpInput(), surfaces);
+      player.updateMovement(0.016, jumpInput(), surfaces);
 
       // Player should be jumping (upward velocity)
       expect(player.velocity.y).toBeLessThan(0);
@@ -66,7 +66,7 @@ describe("Player", () => {
       const player = new Player({ x: 100, y: 476 });
 
       // First update should detect ground
-      player.update(0.016, noInput(), [floor]);
+      player.updateMovement(0.016, noInput(), [floor]);
 
       expect(player.isGrounded).toBe(true);
     });
@@ -83,7 +83,7 @@ describe("Player", () => {
 
       // Simulate many frames of falling
       for (let i = 0; i < 300; i++) {
-        player.update(0.016, noInput(), [floor]);
+        player.updateMovement(0.016, noInput(), [floor]);
       }
 
       // Player should be grounded and not have fallen through

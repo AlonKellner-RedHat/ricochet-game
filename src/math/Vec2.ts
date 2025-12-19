@@ -105,4 +105,33 @@ export const Vec2 = {
     const dotProduct = Vec2.dot(d, n);
     return Vec2.subtract(d, Vec2.scale(n, 2 * dotProduct));
   },
+
+  /**
+   * Calculate the shortest distance from a point to a line segment
+   * @param point - The point to measure from
+   * @param segmentStart - Start of the line segment
+   * @param segmentEnd - End of the line segment
+   * @returns The shortest distance from point to segment
+   */
+  pointToSegmentDistance(point: Vector2, segmentStart: Vector2, segmentEnd: Vector2): number {
+    const v = Vec2.subtract(segmentEnd, segmentStart);
+    const w = Vec2.subtract(point, segmentStart);
+
+    const c1 = Vec2.dot(w, v);
+    if (c1 <= 0) {
+      // Point is before segment start
+      return Vec2.distance(point, segmentStart);
+    }
+
+    const c2 = Vec2.dot(v, v);
+    if (c2 <= c1) {
+      // Point is after segment end
+      return Vec2.distance(point, segmentEnd);
+    }
+
+    // Point projects onto segment
+    const t = c1 / c2;
+    const projection = Vec2.add(segmentStart, Vec2.scale(v, t));
+    return Vec2.distance(point, projection);
+  },
 };
