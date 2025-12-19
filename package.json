@@ -1,0 +1,41 @@
+{
+  "name": "ricochet-game",
+  "version": "0.1.0",
+  "description": "A 2D ricochet game built with Phaser and WebGPU",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 8000",
+    "build": "tsc && vite build",
+    "preview": "vite preview --port 8000",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check src tests",
+    "lint:fix": "biome check --write src tests",
+    "format": "biome format --write src tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "phaser",
+    "webgpu",
+    "game",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.10.2",
+    "@vitest/coverage-v8": "^2.1.8",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "phaser": "^3.86.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
+
