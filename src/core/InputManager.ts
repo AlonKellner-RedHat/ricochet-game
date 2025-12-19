@@ -1,5 +1,12 @@
+import type { InputState, MovementInput, Vector2 } from "@/types";
 import type Phaser from "phaser";
-import type { InputState, Vector2 } from "@/types";
+
+/** Mutable internal state for input tracking */
+interface MutableInputState {
+  pointer: { x: number; y: number };
+  isPointerDown: boolean;
+  keys: Set<string>;
+}
 
 /**
  * Manages input handling for the game
@@ -7,12 +14,17 @@ import type { InputState, Vector2 } from "@/types";
  */
 export class InputManager {
   private scene: Phaser.Scene;
-  private state: InputState;
+  private internalState: MutableInputState;
   private keyCallbacks: Map<string, () => void> = new Map();
+
+  // Single-frame event tracking
+  private keysJustPressed: Set<string> = new Set();
+  private keysJustReleased: Set<string> = new Set();
+  private pointerJustClicked = false;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
-    this.state = {
+    this.internalState = {
       pointer: { x: 0, y: 0 },
       isPointerDown: false,
       keys: new Set(),
@@ -24,43 +36,64 @@ export class InputManager {
   private setupInputListeners(): void {
     // Pointer tracking
     this.scene.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
-      this.state.pointer.x = pointer.worldX;
-      this.state.pointer.y = pointer.worldY;
+      this.internalState.pointer.x = pointer.worldX;
+      this.internalState.pointer.y = pointer.worldY;
     });
 
     this.scene.input.on("pointerdown", () => {
-      this.state.isPointerDown = true;
+      this.internalState.isPointerDown = true;
+      this.pointerJustClicked = true;
     });
 
     this.scene.input.on("pointerup", () => {
-      this.state.isPointerDown = false;
+      this.internalState.isPointerDown = false;
     });
 
     // Keyboard tracking
     this.scene.input.keyboard?.on("keydown", (event: KeyboardEvent) => {
-      this.state.keys.add(event.code);
+      // Only register as "just pressed" if not already held
+      if (!this.internalState.keys.has(event.code)) {
+        this.keysJustPressed.add(event.code);
+      }
+      this.internalState.keys.add(event.code);
       const callback = this.keyCallbacks.get(event.code);
       if (callback) callback();
     });
 
     this.scene.input.keyboard?.on("keyup", (event: KeyboardEvent) => {
-      this.state.keys.delete(event.code);
+      this.internalState.keys.delete(event.code);
+      this.keysJustReleased.add(event.code);
     });
   }
 
   /** Get current pointer world position */
   getPointerPosition(): Vector2 {
-    return { ...this.state.pointer };
+    return { ...this.internalState.pointer };
   }
 
   /** Check if pointer is currently pressed */
   isPointerDown(): boolean {
-    return this.state.isPointerDown;
+    return this.internalState.isPointerDown;
+  }
+
+  /** Check if pointer was just clicked this frame */
+  wasPointerClicked(): boolean {
+    return this.pointerJustClicked;
   }
 
   /** Check if a specific key is currently held */
   isKeyDown(keyCode: string): boolean {
-    return this.state.keys.has(keyCode);
+    return this.internalState.keys.has(keyCode);
+  }
+
+  /** Check if a key was pressed this frame (single-frame detection) */
+  wasKeyPressed(keyCode: string): boolean {
+    return this.keysJustPressed.has(keyCode);
+  }
+
+  /** Check if a key was released this frame */
+  wasKeyReleased(keyCode: string): boolean {
+    return this.keysJustReleased.has(keyCode);
   }
 
   /** Register a callback for a specific key press */
@@ -68,13 +101,36 @@ export class InputManager {
     this.keyCallbacks.set(keyCode, callback);
   }
 
+  /**
+   * Get movement input state for platformer controls
+   * Supports both WASD and Arrow keys
+   */
+  getMovementInput(): MovementInput {
+    return {
+      left: this.isKeyDown("KeyA") || this.isKeyDown("ArrowLeft"),
+      right: this.isKeyDown("KeyD") || this.isKeyDown("ArrowRight"),
+      jump:
+        this.wasKeyPressed("Space") || this.wasKeyPressed("KeyW") || this.wasKeyPressed("ArrowUp"),
+      jumpHeld: this.isKeyDown("Space") || this.isKeyDown("KeyW") || this.isKeyDown("ArrowUp"),
+    };
+  }
+
   /** Get the full input state snapshot */
   getState(): InputState {
     return {
-      pointer: { ...this.state.pointer },
-      isPointerDown: this.state.isPointerDown,
-      keys: new Set(this.state.keys),
+      pointer: { ...this.internalState.pointer },
+      isPointerDown: this.internalState.isPointerDown,
+      keys: new Set(this.internalState.keys),
     };
+  }
+
+  /**
+   * Clear single-frame events - call at end of each frame
+   */
+  clearFrameEvents(): void {
+    this.keysJustPressed.clear();
+    this.keysJustReleased.clear();
+    this.pointerJustClicked = false;
   }
 
   /** Clean up input listeners */
@@ -85,4 +141,3 @@ export class InputManager {
     this.keyCallbacks.clear();
   }
 }
-

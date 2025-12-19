@@ -1,5 +1,5 @@
-import type Phaser from "phaser";
 import type { DebugInfo } from "@/types";
+import Phaser from "phaser";
 
 /**
  * Debug overlay for displaying runtime information
@@ -7,7 +7,7 @@ import type { DebugInfo } from "@/types";
 export class DebugView {
   private scene: Phaser.Scene;
   private textObject: Phaser.GameObjects.Text | null = null;
-  private visible: boolean = false;
+  private visible = false;
   private customInfo: Record<string, string | number | boolean> = {};
 
   constructor(scene: Phaser.Scene) {
@@ -84,4 +84,3 @@ export class DebugView {
     this.customInfo = {};
   }
 }
-

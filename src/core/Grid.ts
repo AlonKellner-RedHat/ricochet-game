@@ -59,7 +59,9 @@ export class Grid {
 
   /** Check if a grid position is within bounds */
   isValidPosition(gridPos: GridPosition): boolean {
-    return gridPos.row >= 0 && gridPos.row < this.rows && gridPos.col >= 0 && gridPos.col < this.cols;
+    return (
+      gridPos.row >= 0 && gridPos.row < this.rows && gridPos.col >= 0 && gridPos.col < this.cols
+    );
   }
 
   /** Get all valid grid positions */
@@ -73,4 +75,3 @@ export class Grid {
     return positions;
   }
 }
-

@@ -286,13 +286,13 @@ export interface DebugInfo {
 
 /** Default movement physics configuration */
 export const DEFAULT_MOVEMENT_CONFIG: MovementConfig = {
-  maxSpeed: 300,
-  acceleration: 1500,
-  deceleration: 2000,
-  airControl: 0.7,
-  jumpVelocity: 500,
+  maxSpeed: 280,
+  acceleration: 4000, // Much faster acceleration for snappy response
+  deceleration: 5000, // Much faster deceleration - stops almost instantly
+  airControl: 0.85, // Better air control
+  jumpVelocity: 480,
   jumpCutMultiplier: 0.5,
-  gravity: 1200,
+  gravity: 1400, // Slightly stronger gravity for tighter jumps
   maxFallSpeed: 800,
   playerWidth: 32,
   playerHeight: 48,

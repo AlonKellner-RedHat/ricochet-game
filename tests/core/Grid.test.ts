@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { Grid } from "@/core/Grid";
+import { describe, expect, it } from "vitest";
 
 describe("Grid", () => {
   describe("constructor", () => {
@@ -107,4 +107,3 @@ describe("Grid", () => {
     });
   });
 });
-

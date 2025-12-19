@@ -1,5 +1,5 @@
-import Phaser from "phaser";
 import type { GameOptions } from "@/types";
+import Phaser from "phaser";
 
 /**
  * Default game options
@@ -46,4 +46,3 @@ export function createGameConfig(
     },
   };
 }
-

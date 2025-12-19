@@ -1,6 +1,6 @@
-import Phaser from "phaser";
 import { createGameConfig } from "@/config/gameConfig";
 import { GameScene } from "@/scenes";
+import Phaser from "phaser";
 
 /**
  * Main entry point for the Ricochet game
@@ -9,11 +9,13 @@ import { GameScene } from "@/scenes";
 
 // Detect WebGPU support
 async function checkWebGPUSupport(): Promise<boolean> {
-  if (!navigator.gpu) {
+  // Type guard for WebGPU navigator
+  const nav = navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown | null> } };
+  if (!nav.gpu) {
     return false;
   }
   try {
-    const adapter = await navigator.gpu.requestAdapter();
+    const adapter = await nav.gpu.requestAdapter();
     return adapter !== null;
   } catch {
     return false;
@@ -38,4 +40,3 @@ async function startGame(): Promise<void> {
 
 // Start the game
 startGame().catch(console.error);
-

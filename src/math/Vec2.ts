@@ -1,0 +1,108 @@
+import type { Vector2 } from "@/types";
+
+/**
+ * Vec2 - Pure utility functions for 2D vector operations
+ * All functions are immutable and return new vectors
+ */
+export const Vec2 = {
+  /**
+   * Create a new vector
+   */
+  create(x: number, y: number): Vector2 {
+    return { x, y };
+  },
+
+  /**
+   * Return a zero vector
+   */
+  zero(): Vector2 {
+    return { x: 0, y: 0 };
+  },
+
+  /**
+   * Add two vectors
+   */
+  add(a: Vector2, b: Vector2): Vector2 {
+    return { x: a.x + b.x, y: a.y + b.y };
+  },
+
+  /**
+   * Subtract vector b from vector a
+   */
+  subtract(a: Vector2, b: Vector2): Vector2 {
+    return { x: a.x - b.x, y: a.y - b.y };
+  },
+
+  /**
+   * Scale a vector by a scalar
+   */
+  scale(v: Vector2, scalar: number): Vector2 {
+    return { x: v.x * scalar, y: v.y * scalar };
+  },
+
+  /**
+   * Calculate dot product of two vectors
+   */
+  dot(a: Vector2, b: Vector2): number {
+    return a.x * b.x + a.y * b.y;
+  },
+
+  /**
+   * Calculate squared length of a vector (faster than length, useful for comparisons)
+   */
+  lengthSquared(v: Vector2): number {
+    return v.x * v.x + v.y * v.y;
+  },
+
+  /**
+   * Calculate length (magnitude) of a vector
+   */
+  length(v: Vector2): number {
+    return Math.sqrt(Vec2.lengthSquared(v));
+  },
+
+  /**
+   * Normalize a vector to unit length
+   * Returns zero vector if input is zero vector
+   */
+  normalize(v: Vector2): Vector2 {
+    const len = Vec2.length(v);
+    if (len === 0) return { x: 0, y: 0 };
+    return { x: v.x / len, y: v.y / len };
+  },
+
+  /**
+   * Get perpendicular vector (90° counter-clockwise rotation)
+   */
+  perpendicular(v: Vector2): Vector2 {
+    return { x: -v.y, y: v.x };
+  },
+
+  /**
+   * Calculate distance between two points
+   */
+  distance(a: Vector2, b: Vector2): number {
+    return Vec2.length(Vec2.subtract(b, a));
+  },
+
+  /**
+   * Get normalized direction vector from point a to point b
+   */
+  direction(from: Vector2, to: Vector2): Vector2 {
+    return Vec2.normalize(Vec2.subtract(to, from));
+  },
+
+  /**
+   * Reflect a direction vector off a surface with given normal
+   * Uses formula: r = d - 2(d · n)n
+   * @param direction - The incident direction (will be normalized)
+   * @param normal - The surface normal (will be normalized)
+   * @returns The reflected direction (normalized)
+   */
+  reflect(direction: Vector2, normal: Vector2): Vector2 {
+    const d = Vec2.normalize(direction);
+    const n = Vec2.normalize(normal);
+    const dotProduct = Vec2.dot(d, n);
+    return Vec2.subtract(d, Vec2.scale(n, 2 * dotProduct));
+  },
+};
