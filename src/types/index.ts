@@ -47,16 +47,104 @@ export interface TrajectoryPoint {
 /** Status of trajectory validation */
 export type TrajectoryStatus =
   | "valid" // All planned surfaces hit in order
-  | "missed_surface" // A planned surface was not hit
+  | "missed_segment" // Cursor position misses the surface segment (but hits infinite line)
   | "hit_obstacle" // Hit a non-ricochet surface before completing plan
   | "out_of_range"; // Path exceeded max distance
 
-/** Result of trajectory calculation */
+/** A point along the ghost (extended) trajectory */
+export interface GhostPoint {
+  readonly position: Vector2;
+  readonly surfaceId: string | null;
+  readonly willStick: boolean; // True if arrow will stick here (exhausted or hit wall)
+}
+
+/** Result of trajectory calculation (legacy - use DualTrajectoryResult for new code) */
 export interface TrajectoryResult {
   readonly points: TrajectoryPoint[];
+  readonly ghostPoints: GhostPoint[]; // Extended path past cursor
   readonly status: TrajectoryStatus;
   readonly failedAtPlanIndex: number; // -1 if valid
   readonly totalDistance: number;
+  readonly exhaustionDistance: number; // Distance at which arrow becomes exhausted
+}
+
+// =============================================================================
+// DUAL TRAJECTORY TYPES (Single source of truth for validity AND rendering)
+// =============================================================================
+
+/**
+ * Result from image reflection calculation
+ * Both trajectories share these computed values for exact alignment
+ */
+export interface ImageReflectionResult {
+  /** Path points: [player, hit1, hit2, ..., cursor] */
+  readonly path: Vector2[];
+  /** Per-surface: did the hit land on the actual segment (not infinite extension)? */
+  readonly hitOnSegment: boolean[];
+  /** Convenience: all hits landed on segments */
+  readonly isFullyAligned: boolean;
+  /** Index of first miss (-1 if fully aligned) */
+  readonly firstMissIndex: number;
+}
+
+/**
+ * Alignment result - SINGLE SOURCE OF TRUTH for both rendering and validity
+ * If isFullyAligned is true, arrow follows planned path
+ * If false, arrow follows actual path
+ */
+export interface AlignmentResult {
+  /** True if all planned surfaces are hit on their actual segments */
+  readonly isFullyAligned: boolean;
+  /** Number of consecutive segments that align (for rendering green solid) */
+  readonly alignedSegmentCount: number;
+  /** Index of first mismatch (-1 if fully aligned) */
+  readonly firstMismatchIndex: number;
+  /**
+   * Point where paths diverge (undefined if fully aligned)
+   * - Solid green: player to divergencePoint
+   * - Solid red: divergencePoint to cursor (planned)
+   * - Dashed yellow: divergencePoint onward (actual)
+   */
+  readonly divergencePoint?: Vector2;
+}
+
+/**
+ * A trajectory path (either planned or actual)
+ */
+export interface TrajectoryPath {
+  /** Main path points from player to cursor/endpoint */
+  readonly points: Vector2[];
+  /** Extended ghost path beyond the main path */
+  readonly ghostPoints: GhostPoint[];
+}
+
+/**
+ * Information about a surface that was bypassed (temporarily skipped)
+ */
+export interface BypassedSurfaceInfo {
+  /** The surface that was bypassed */
+  readonly surfaceId: string;
+  /** Reason for bypassing */
+  readonly reason: string;
+  /** Original index in planned surfaces list */
+  readonly index: number;
+}
+
+/**
+ * Dual trajectory result containing both planned and actual paths
+ * Uses shared calculation to ensure exact value matches for aligned segments
+ */
+export interface DualTrajectoryResult {
+  /** Planned trajectory - follows all planned surfaces (may hit infinite extensions) */
+  readonly planned: TrajectoryPath;
+  /** Actual trajectory - follows plan until miss, then forward ray-cast */
+  readonly actual: TrajectoryPath;
+  /** Alignment info - used for BOTH rendering colors AND arrow waypoint selection */
+  readonly alignment: AlignmentResult;
+  /** True if cursor can be reached by arrow (no obstacles blocking, valid reflection) */
+  readonly isCursorReachable: boolean;
+  /** Surfaces that were bypassed (temporarily skipped) during path building */
+  readonly bypassedSurfaces: BypassedSurfaceInfo[];
 }
 
 // =============================================================================
@@ -305,5 +393,5 @@ export const DEFAULT_AIMING_CONFIG: AimingConfig = {
   shootCooldown: 0.3,
 };
 
-/** Arrow speed constant */
-export const ARROW_SPEED = 800;
+/** Arrow speed constant (legacy - use DEFAULT_ARROW_CONFIG) */
+export const ARROW_SPEED = 5000;

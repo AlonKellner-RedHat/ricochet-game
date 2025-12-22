@@ -1,43 +1,30 @@
 import type { Surface } from "@/surfaces";
-import { TrajectoryCalculator } from "@/trajectory/TrajectoryCalculator";
 import type {
-  AimingConfig,
   MovementConfig,
   MovementInput,
   MovementState,
-  TrajectoryResult,
   Vector2,
 } from "@/types";
-import { DEFAULT_AIMING_CONFIG, DEFAULT_MOVEMENT_CONFIG } from "@/types";
-import type { ArrowCreationData } from "./AimingSystem";
-import { AimingSystem } from "./AimingSystem";
+import { DEFAULT_MOVEMENT_CONFIG } from "@/types";
 import { checkCollisions } from "./CollisionHelper";
 import { MovementSystem } from "./MovementSystem";
 
 /**
- * Player - Main player entity that composes movement and aiming systems
+ * Player - Main player entity for movement
  *
- * The two systems are independent:
- * - MovementSystem: Handles physics-based platformer movement (keyboard)
- * - AimingSystem: Handles trajectory planning and shooting (mouse)
+ * Handles physics-based platformer movement (keyboard).
+ * Aiming and trajectory are now handled by the trajectory-v2 system.
  */
 export class Player {
   private movementSystem: MovementSystem;
-  private aimingSystem: AimingSystem;
   private movementConfig: MovementConfig;
 
   constructor(
     spawnPoint: Vector2,
-    movementConfig: MovementConfig = DEFAULT_MOVEMENT_CONFIG,
-    aimingConfig: AimingConfig = DEFAULT_AIMING_CONFIG,
-    trajectoryCalculator?: TrajectoryCalculator
+    movementConfig: MovementConfig = DEFAULT_MOVEMENT_CONFIG
   ) {
     this.movementConfig = movementConfig;
     this.movementSystem = new MovementSystem(spawnPoint, movementConfig);
-    this.aimingSystem = new AimingSystem(
-      trajectoryCalculator ?? new TrajectoryCalculator(),
-      aimingConfig
-    );
   }
 
   // =========================================================================
@@ -73,22 +60,6 @@ export class Player {
   }
 
   // =========================================================================
-  // Aiming System Getters
-  // =========================================================================
-
-  get aimDirection(): Vector2 {
-    return this.aimingSystem.aimDirection;
-  }
-
-  get plannedSurfaces(): readonly Surface[] {
-    return this.aimingSystem.plannedSurfaces;
-  }
-
-  get trajectoryResult(): TrajectoryResult {
-    return this.aimingSystem.trajectoryResult;
-  }
-
-  // =========================================================================
   // Update Methods
   // =========================================================================
 
@@ -99,7 +70,7 @@ export class Player {
    * @param input - Movement input from keyboard
    * @param surfaces - All surfaces for collision detection
    */
-  updateMovement(delta: number, input: MovementInput, surfaces: readonly Surface[]): void {
+  update(delta: number, input: MovementInput, surfaces: readonly Surface[]): void {
     // Update movement physics
     this.movementSystem.update(delta, input);
 
@@ -108,74 +79,10 @@ export class Player {
   }
 
   /**
-   * Update aiming system
-   *
-   * @param mousePosition - Current mouse position in world coordinates
-   * @param surfaces - All surfaces in the level
+   * Alias for update() - for backwards compatibility with tests
    */
-  updateAiming(mousePosition: Vector2, surfaces: readonly Surface[]): void {
-    this.aimingSystem.update(mousePosition, this.bowPosition, surfaces);
-  }
-
-  /**
-   * Combined update for both movement and aiming
-   */
-  update(
-    delta: number,
-    movementInput: MovementInput,
-    mousePosition: Vector2,
-    surfaces: readonly Surface[]
-  ): void {
-    this.updateMovement(delta, movementInput, surfaces);
-    this.updateAiming(mousePosition, surfaces);
-  }
-
-  // =========================================================================
-  // Aiming Actions
-  // =========================================================================
-
-  /**
-   * Toggle a surface in the shot plan
-   * @returns true if added, false if removed
-   */
-  toggleSurfaceInPlan(surface: Surface): boolean {
-    return this.aimingSystem.toggleSurfaceInPlan(surface);
-  }
-
-  /**
-   * Check if a surface is in the current plan
-   */
-  isSurfaceInPlan(surface: Surface): boolean {
-    return this.aimingSystem.isSurfaceInPlan(surface);
-  }
-
-  /**
-   * Get the index of a surface in the plan (1-based for display)
-   */
-  getSurfacePlanIndex(surface: Surface): number {
-    return this.aimingSystem.getSurfacePlanIndex(surface);
-  }
-
-  /**
-   * Clear all planned surfaces
-   */
-  clearPlan(): void {
-    this.aimingSystem.clearPlan();
-  }
-
-  /**
-   * Check if player can shoot
-   */
-  canShoot(): boolean {
-    return this.aimingSystem.canShoot();
-  }
-
-  /**
-   * Attempt to shoot an arrow
-   * @returns Arrow creation data with waypoints, null if on cooldown or invalid trajectory
-   */
-  shoot(): ArrowCreationData | null {
-    return this.aimingSystem.shoot();
+  updateMovement(delta: number, input: MovementInput, surfaces: readonly Surface[]): void {
+    this.update(delta, input, surfaces);
   }
 
   // =========================================================================
@@ -227,7 +134,6 @@ export class Player {
   reset(spawnPoint: Vector2): void {
     this.movementSystem.setPosition(spawnPoint);
     this.movementSystem.resetVelocity();
-    this.aimingSystem.clearPlan();
   }
 
   /**

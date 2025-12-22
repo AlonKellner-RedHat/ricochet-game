@@ -1,5 +1,22 @@
-import { Arrow } from "@/arrow/Arrow";
+import { Arrow, type ArrowConfig, DEFAULT_ARROW_CONFIG } from "@/arrow/Arrow";
 import { describe, expect, it } from "vitest";
+
+// Test config with no decay for predictable movement tests
+const NO_DECAY_CONFIG: ArrowConfig = {
+  initialSpeed: 100,
+  normalDecay: 1, // No decay
+  exhaustedDecay: 1,
+  exhaustionDistance: 100000, // Very high so we don't hit it
+  minSpeed: 1,
+};
+
+// Helper to create config with specific speed
+function configWithSpeed(speed: number): ArrowConfig {
+  return {
+    ...NO_DECAY_CONFIG,
+    initialSpeed: speed,
+  };
+}
 
 describe("Arrow", () => {
   describe("construction", () => {
@@ -26,6 +43,15 @@ describe("Arrow", () => {
       expect(arrow.state).toBe("flying");
       expect(arrow.isActive).toBe(true);
     });
+
+    it("should start at initial speed", () => {
+      const arrow = new Arrow("test", [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ]);
+
+      expect(arrow.currentSpeed).toBe(DEFAULT_ARROW_CONFIG.initialSpeed);
+    });
   });
 
   describe("movement", () => {
@@ -36,7 +62,7 @@ describe("Arrow", () => {
           { x: 0, y: 0 },
           { x: 100, y: 0 },
         ],
-        { speed: 100 }
+        configWithSpeed(100)
       );
 
       arrow.update(0.5); // 0.5 seconds at 100 px/s = 50 px
@@ -52,7 +78,7 @@ describe("Arrow", () => {
           { x: 0, y: 0 },
           { x: 100, y: 100 },
         ],
-        { speed: Math.SQRT2 * 100 }
+        configWithSpeed(Math.SQRT2 * 100)
       );
 
       arrow.update(0.5); // Should move 50*sqrt(2) distance
@@ -69,7 +95,7 @@ describe("Arrow", () => {
           { x: 100, y: 0 },
           { x: 100, y: 100 },
         ],
-        { speed: 100 }
+        configWithSpeed(100)
       );
 
       // Move 150 px - should go through first waypoint
@@ -87,7 +113,7 @@ describe("Arrow", () => {
           { x: 0, y: 0 },
           { x: 100, y: 0 },
         ],
-        { speed: 100 }
+        configWithSpeed(100)
       );
 
       // Move past the end
@@ -109,7 +135,7 @@ describe("Arrow", () => {
           { x: 0, y: 0 },
           { x: 100, y: 0 },
         ],
-        { speed: 100 }
+        configWithSpeed(100)
       );
 
       arrow.update(1.0); // Exactly reach the end
@@ -126,7 +152,7 @@ describe("Arrow", () => {
           { x: 0, y: 0 },
           { x: 100, y: 100 },
         ],
-        { speed: 200 }
+        configWithSpeed(200)
       );
 
       arrow.update(1.0); // Become stuck
@@ -163,7 +189,7 @@ describe("Arrow", () => {
           { x: 100, y: 0 }, // Horizontal
           { x: 100, y: 100 }, // Vertical
         ],
-        { speed: 100 }
+        configWithSpeed(100)
       );
 
       // Initially horizontal
@@ -185,7 +211,7 @@ describe("Arrow", () => {
           { x: 0, y: 0 },
           { x: 100, y: 0 },
         ],
-        { speed: 200 }
+        configWithSpeed(200)
       );
 
       expect(arrow.velocity.x).toBeCloseTo(200);
@@ -199,7 +225,7 @@ describe("Arrow", () => {
           { x: 0, y: 0 },
           { x: 100, y: 0 },
         ],
-        { speed: 200 }
+        configWithSpeed(200)
       );
 
       arrow.update(1.0);
@@ -226,7 +252,7 @@ describe("Arrow", () => {
           { x: 0, y: 0 },
           { x: 100, y: 0 },
         ],
-        { speed: 100 }
+        configWithSpeed(100)
       );
 
       arrow.update(0.5);
@@ -241,7 +267,7 @@ describe("Arrow", () => {
           { x: 0, y: 0 },
           { x: 100, y: 0 },
         ],
-        { speed: 100 }
+        configWithSpeed(100)
       );
 
       arrow.update(1.0);
@@ -259,7 +285,7 @@ describe("Arrow", () => {
           { x: 100, y: 50 }, // First ricochet
           { x: 200, y: 0 }, // Final position
         ],
-        { speed: 100 }
+        configWithSpeed(100)
       );
 
       // Distance of first segment: sqrt(100^2 + 50^2) = ~111.8
@@ -281,7 +307,7 @@ describe("Arrow", () => {
         { x: 150, y: 50 },
       ];
 
-      const arrow = new Arrow("test", waypoints, { speed: 1000 });
+      const arrow = new Arrow("test", waypoints, configWithSpeed(1000));
 
       // Move enough to traverse all waypoints
       arrow.update(1.0);
@@ -289,6 +315,150 @@ describe("Arrow", () => {
       expect(arrow.state).toBe("stuck");
       expect(arrow.position.x).toBeCloseTo(150);
       expect(arrow.position.y).toBeCloseTo(50);
+    });
+  });
+
+  describe("speed decay", () => {
+    it("should slow down during normal flight", () => {
+      const config: ArrowConfig = {
+        initialSpeed: 1000,
+        normalDecay: 0.5, // 50% per second for easy testing
+        exhaustedDecay: 0.1,
+        exhaustionDistance: 100000,
+        minSpeed: 10,
+      };
+
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 10000, y: 0 },
+        ],
+        config
+      );
+
+      const initialSpeed = arrow.currentSpeed;
+      arrow.update(1.0); // 1 second
+
+      // Speed should have decayed by factor of 0.5
+      expect(arrow.currentSpeed).toBeCloseTo(initialSpeed * 0.5);
+    });
+
+    it("should stick when speed drops below minimum", () => {
+      const config: ArrowConfig = {
+        initialSpeed: 100,
+        normalDecay: 0.1, // Very aggressive decay
+        exhaustedDecay: 0.1,
+        exhaustionDistance: 100000,
+        minSpeed: 50,
+      };
+
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 10000, y: 0 },
+        ],
+        config
+      );
+
+      // Update until speed drops below minimum
+      arrow.update(1.0);
+
+      expect(arrow.state).toBe("stuck");
+    });
+  });
+
+  describe("exhaustion", () => {
+    it("should become exhausted after traveling exhaustion distance", () => {
+      const config: ArrowConfig = {
+        initialSpeed: 1000,
+        normalDecay: 1, // No decay for this test
+        exhaustedDecay: 1,
+        exhaustionDistance: 500, // Short distance for test
+        minSpeed: 10,
+      };
+
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 2000, y: 0 },
+        ],
+        config
+      );
+
+      // Move past exhaustion distance
+      arrow.update(0.6); // 600 px at 1000 px/s
+
+      expect(arrow.state).toBe("exhausted");
+      expect(arrow.getDistanceTraveled()).toBeGreaterThan(500);
+    });
+
+    it("should decay faster when exhausted", () => {
+      const config: ArrowConfig = {
+        initialSpeed: 1000,
+        normalDecay: 1, // No normal decay
+        exhaustedDecay: 0.5, // 50% per second when exhausted
+        exhaustionDistance: 100, // Get exhausted quickly
+        minSpeed: 10,
+      };
+
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 10000, y: 0 },
+        ],
+        config
+      );
+
+      // Get exhausted
+      arrow.update(0.2); // Travel 200px, become exhausted
+
+      expect(arrow.state).toBe("exhausted");
+      const exhaustedSpeed = arrow.currentSpeed;
+
+      // Now update again and check rapid decay
+      arrow.update(1.0);
+
+      expect(arrow.currentSpeed).toBeCloseTo(exhaustedSpeed * 0.5);
+    });
+  });
+
+  describe("distance tracking", () => {
+    it("should track total distance traveled", () => {
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+          { x: 100, y: 100 },
+        ],
+        configWithSpeed(100)
+      );
+
+      arrow.update(1.5); // Travel 150 px
+
+      expect(arrow.getDistanceTraveled()).toBeCloseTo(150);
+    });
+
+    it("should track distance through multiple segments", () => {
+      const arrow = new Arrow(
+        "test",
+        [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+          { x: 100, y: 100 },
+          { x: 0, y: 100 },
+        ],
+        configWithSpeed(1000)
+      );
+
+      // Traverse all segments (total: 300px)
+      arrow.update(0.5);
+
+      expect(arrow.getDistanceTraveled()).toBeGreaterThan(299);
     });
   });
 });

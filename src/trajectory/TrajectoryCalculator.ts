@@ -1,25 +1,30 @@
 import { RayUtils, raySegmentIntersect } from "@/math/Ray";
 import { Vec2 } from "@/math/Vec2";
 import type { Surface } from "@/surfaces";
-import type { TrajectoryPoint, TrajectoryResult, TrajectoryStatus, Vector2 } from "@/types";
-import { calculatePlannedTrajectory } from "./ImageReflectionCalculator";
+import type {
+  GhostPoint,
+  TrajectoryPoint,
+  TrajectoryResult,
+  TrajectoryStatus,
+  Vector2,
+} from "@/types";
+import { calculatePlannedTrajectoryWithValidation } from "./ImageReflectionCalculator";
 
 /**
  * TrajectoryCalculator - Computes arrow paths through surfaces
  *
- * Uses image reflection geometry for planned surfaces to ensure
- * the trajectory ends exactly at the cursor position.
+ * Features:
+ * - Uses image reflection for planned surfaces (trajectory ends at cursor)
+ * - Validates that planned surfaces are actually hit on the segment
+ * - Extends trajectory past cursor as "ghost path" bouncing off all ricochet surfaces
+ * - Tracks exhaustion distance (10 screen lengths)
  */
+
+const EXHAUSTION_DISTANCE = 10000; // 10 screen lengths (~1000px each)
+
 export class TrajectoryCalculator {
   /**
-   * Calculate the trajectory from origin toward aimPoint, bouncing off surfaces
-   *
-   * @param origin - Starting position (player's bow)
-   * @param aimPoint - Where the player is aiming (mouse position)
-   * @param plannedSurfaces - Ordered list of surfaces the player wants to hit
-   * @param allSurfaces - All surfaces in the level (for collision detection)
-   * @param maxDistance - Maximum distance the arrow can travel
-   * @returns TrajectoryResult with path points and validation status
+   * Calculate the trajectory from origin toward aimPoint
    */
   calculate(
     origin: Vector2,
@@ -28,12 +33,9 @@ export class TrajectoryCalculator {
     allSurfaces: readonly Surface[],
     maxDistance: number
   ): TrajectoryResult {
-    // Use image reflection for planned trajectory
     if (plannedSurfaces.length > 0) {
       return this.calculateWithPlan(origin, aimPoint, plannedSurfaces, allSurfaces, maxDistance);
     }
-
-    // No plan - use simple ray tracing
     return this.calculateWithoutPlan(origin, aimPoint, allSurfaces, maxDistance);
   }
 
@@ -48,42 +50,41 @@ export class TrajectoryCalculator {
     allSurfaces: readonly Surface[],
     maxDistance: number
   ): TrajectoryResult {
-    // Get ideal path through planned surfaces using image reflection
-    const idealPath = calculatePlannedTrajectory(origin, aimPoint, plannedSurfaces);
-
     const points: TrajectoryPoint[] = [];
     let status: TrajectoryStatus = "valid";
     let failedAtPlanIndex = -1;
     let totalDistance = 0;
 
-    // Validate that we got enough points (should be plannedSurfaces.length + 2)
-    // If not, some surfaces couldn't be hit
-    const expectedPoints = plannedSurfaces.length + 2; // origin + hits + cursor
-    if (idealPath.length < expectedPoints) {
-      // Some planned surfaces couldn't be reached
-      return {
-        points: [{ position: origin, surfaceId: null, isPlanned: false }],
-        status: "missed_surface",
-        failedAtPlanIndex: idealPath.length - 2, // Which surface was missed
-        totalDistance: 0,
-      };
+    // Get planned path using image reflection with validation
+    const trajectoryResult = calculatePlannedTrajectoryWithValidation(
+      origin,
+      aimPoint,
+      plannedSurfaces
+    );
+    const plannedPath = trajectoryResult.path;
+
+    // Check if any hit missed the segment
+    if (!trajectoryResult.isFullyAligned && status === "valid") {
+      status = "missed_segment";
+      failedAtPlanIndex = trajectoryResult.firstMissIndex;
     }
 
-    // Check each segment for obstacles
-    for (let i = 0; i < idealPath.length - 1; i++) {
-      const segStart = idealPath[i];
-      const segEnd = idealPath[i + 1];
+    // Validate each segment and check for obstacles
+    points.push({ position: origin, surfaceId: null, isPlanned: false });
+
+    // Direction of first segment (for final direction)
+    let lastDirection = Vec2.direction(origin, aimPoint);
+
+    for (let i = 0; i < plannedPath.length - 1; i++) {
+      const segStart = plannedPath[i];
+      const segEnd = plannedPath[i + 1];
 
       if (!segStart || !segEnd) continue;
 
       const segmentDistance = Vec2.distance(segStart, segEnd);
+      lastDirection = Vec2.direction(segStart, segEnd);
 
-      // Add start point
-      if (i === 0) {
-        points.push({ position: segStart, surfaceId: null, isPlanned: false });
-      }
-
-      // Check for obstacles along this segment (excluding planned surfaces)
+      // Check if this segment hits an obstacle (non-planned surface)
       const expectedSurface = i < plannedSurfaces.length ? plannedSurfaces[i] : null;
       const obstacle = this.findObstacleOnSegment(
         segStart,
@@ -94,7 +95,6 @@ export class TrajectoryCalculator {
       );
 
       if (obstacle) {
-        // Hit an obstacle before reaching target
         points.push({
           position: obstacle.point,
           surfaceId: obstacle.surface.id,
@@ -106,46 +106,58 @@ export class TrajectoryCalculator {
         break;
       }
 
-      // Check if we've exceeded max distance
+      // Check max distance
       if (totalDistance + segmentDistance > maxDistance) {
-        // Truncate at max distance
         const remainingDist = maxDistance - totalDistance;
         const direction = Vec2.direction(segStart, segEnd);
         const endpoint = Vec2.add(segStart, Vec2.scale(direction, remainingDist));
         points.push({ position: endpoint, surfaceId: null, isPlanned: false });
         totalDistance = maxDistance;
-        status = "missed_surface";
+        status = "out_of_range";
         failedAtPlanIndex = i;
         break;
       }
 
       totalDistance += segmentDistance;
 
-      // Add end point (either hit point on planned surface or final cursor)
+      // Add the hit point on the planned surface
       if (i < plannedSurfaces.length) {
-        // This is a hit on a planned surface
         const plannedSurface = plannedSurfaces[i];
-        points.push({
-          position: segEnd,
-          surfaceId: plannedSurface?.id ?? null,
-          isPlanned: true,
-        });
+        if (plannedSurface) {
+          points.push({
+            position: segEnd,
+            surfaceId: plannedSurface.id,
+            isPlanned: true,
+          });
+        }
       } else {
         // Final point (cursor)
         points.push({ position: segEnd, surfaceId: null, isPlanned: false });
       }
     }
 
+    // Calculate ghost path (extends past cursor)
+    const lastPoint = points[points.length - 1];
+    const ghostPoints = this.calculateGhostPath(
+      lastPoint?.position ?? aimPoint,
+      lastDirection,
+      allSurfaces,
+      totalDistance,
+      maxDistance
+    );
+
     return {
       points,
+      ghostPoints,
       status,
       failedAtPlanIndex,
       totalDistance,
+      exhaustionDistance: EXHAUSTION_DISTANCE,
     };
   }
 
   /**
-   * Calculate trajectory without any planned surfaces (simple ray tracing)
+   * Calculate trajectory without any planned surfaces
    */
   private calculateWithoutPlan(
     origin: Vector2,
@@ -154,36 +166,128 @@ export class TrajectoryCalculator {
     maxDistance: number
   ): TrajectoryResult {
     const points: TrajectoryPoint[] = [{ position: origin, surfaceId: null, isPlanned: false }];
+    let totalDistance = 0;
+    const direction = Vec2.direction(origin, aimPoint);
 
+    // Trace to first hit or max distance
     const ray = RayUtils.fromPoints(origin, aimPoint);
     const hit = this.findClosestHit(ray, allSurfaces, maxDistance);
 
-    if (!hit || !hit.intersection.point) {
-      // No intersection - draw line to max distance
-      const endpoint = RayUtils.pointAt(ray, maxDistance);
-      points.push({ position: endpoint, surfaceId: null, isPlanned: false });
+    if (hit?.intersection.point) {
+      points.push({
+        position: hit.intersection.point,
+        surfaceId: hit.surface.id,
+        isPlanned: false,
+      });
+      totalDistance = hit.intersection.t;
+
+      // Only calculate ghost path if we hit a ricochet surface
+      // Wall surfaces stop the arrow immediately
+      let ghostPoints: GhostPoint[] = [];
+      if (hit.surface.isPlannable()) {
+        ghostPoints = this.calculateGhostPath(
+          hit.intersection.point,
+          this.getReflectedDirection(direction, hit.surface),
+          allSurfaces,
+          totalDistance,
+          maxDistance
+        );
+      }
 
       return {
         points,
+        ghostPoints,
         status: "valid",
         failedAtPlanIndex: -1,
-        totalDistance: maxDistance,
+        totalDistance,
+        exhaustionDistance: EXHAUSTION_DISTANCE,
       };
     }
 
-    // Add hit point
-    points.push({
-      position: hit.intersection.point,
-      surfaceId: hit.surface.id,
-      isPlanned: false,
-    });
+    // No hit - extend to max distance
+    const endpoint = RayUtils.pointAt(ray, maxDistance);
+    points.push({ position: endpoint, surfaceId: null, isPlanned: false });
 
     return {
       points,
+      ghostPoints: [],
       status: "valid",
       failedAtPlanIndex: -1,
-      totalDistance: hit.intersection.t,
+      totalDistance: maxDistance,
+      exhaustionDistance: EXHAUSTION_DISTANCE,
     };
+  }
+
+  /**
+   * Calculate extended ghost path by bouncing off ricochet surfaces
+   */
+  private calculateGhostPath(
+    startPosition: Vector2,
+    startDirection: Vector2,
+    allSurfaces: readonly Surface[],
+    distanceSoFar: number,
+    maxTraceDistance: number
+  ): GhostPoint[] {
+    const ghostPoints: GhostPoint[] = [];
+    let currentPos = startPosition;
+    let currentDir = startDirection;
+    let distance = distanceSoFar;
+
+    const maxGhostDistance = Math.max(maxTraceDistance * 2, EXHAUSTION_DISTANCE * 1.5);
+    const maxBounces = 50; // Safety limit
+
+    for (let bounce = 0; bounce < maxBounces && distance < maxGhostDistance; bounce++) {
+      const isExhausted = distance >= EXHAUSTION_DISTANCE;
+      const remainingDistance = maxGhostDistance - distance;
+
+      // Cast ray to find next surface
+      const ray = RayUtils.create(currentPos, currentDir);
+      const hit = this.findClosestHit(ray, allSurfaces, remainingDistance);
+
+      if (!hit?.intersection.point) {
+        // No more hits - extend to max distance and stop
+        const endpoint = Vec2.add(currentPos, Vec2.scale(currentDir, remainingDistance));
+        ghostPoints.push({
+          position: endpoint,
+          surfaceId: null,
+          willStick: false,
+        });
+        break;
+      }
+
+      const hitPoint = hit.intersection.point;
+      const hitDistance = hit.intersection.t;
+      distance += hitDistance;
+
+      // Check if this surface stops the arrow
+      const willStick = isExhausted || !hit.surface.isPlannable();
+
+      ghostPoints.push({
+        position: hitPoint,
+        surfaceId: hit.surface.id,
+        willStick,
+      });
+
+      if (willStick) {
+        // Arrow sticks - stop tracing
+        break;
+      }
+
+      // Reflect and continue
+      currentPos = hitPoint;
+      currentDir = this.getReflectedDirection(currentDir, hit.surface);
+    }
+
+    return ghostPoints;
+  }
+
+  /**
+   * Get reflected direction off a surface
+   */
+  private getReflectedDirection(direction: Vector2, surface: Surface): Vector2 {
+    const segVec = Vec2.subtract(surface.segment.end, surface.segment.start);
+    const normal = Vec2.normalize(Vec2.perpendicular(segVec));
+    return Vec2.reflect(direction, normal);
   }
 
   /**
@@ -202,15 +306,10 @@ export class TrajectoryCalculator {
     let closestObstacle: { surface: Surface; point: Vector2; t: number } | null = null;
 
     for (const surface of allSurfaces) {
-      // Skip the expected planned surface for this segment
-      if (expectedSurface && surface.id === expectedSurface.id) {
-        continue;
-      }
-
-      // Skip other planned surfaces (we'll handle them in order)
-      if (plannedSurfaces.some((p) => p.id === surface.id)) {
-        continue;
-      }
+      // Skip the expected planned surface
+      if (expectedSurface && surface.id === expectedSurface.id) continue;
+      // Skip other planned surfaces
+      if (plannedSurfaces.some((p) => p.id === surface.id)) continue;
 
       const hit = raySegmentIntersect(ray, surface.segment);
 

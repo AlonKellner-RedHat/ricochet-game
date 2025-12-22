@@ -3,46 +3,52 @@ import type { Vector2 } from "@/types";
 
 /**
  * Arrow flight states
+ * - flying: Normal flight, full speed
+ * - exhausted: Past distance limit, slowing down rapidly
+ * - stuck: Embedded in surface, no longer moving
  */
-export type ArrowState = "flying" | "stuck";
+export type ArrowState = "flying" | "exhausted" | "stuck";
 
 /**
  * Arrow configuration
  */
 export interface ArrowConfig {
-  speed: number; // Pixels per second
+  initialSpeed: number; // Initial speed in pixels per second
+  normalDecay: number; // Speed multiplier per second during normal flight (e.g., 0.98)
+  exhaustedDecay: number; // Speed multiplier per second when exhausted (e.g., 0.5)
+  exhaustionDistance: number; // Distance in pixels before arrow becomes exhausted
+  minSpeed: number; // Minimum speed before arrow sticks
 }
 
 export const DEFAULT_ARROW_CONFIG: ArrowConfig = {
-  speed: 800,
+  initialSpeed: 5000, // 5000 px/s initial speed
+  normalDecay: 0.95, // Gradual slowdown: 0.95x per second
+  exhaustedDecay: 0.3, // Rapid slowdown when exhausted: 0.3x per second
+  exhaustionDistance: 10000, // 10 screen lengths (~1000px per screen)
+  minSpeed: 100, // Arrow sticks when below this speed
 };
 
 /**
  * Arrow - Projectile that follows pre-computed waypoint path
  *
- * First Principles:
- * - Arrow follows exact trajectory computed by image reflection
- * - No physics simulation - deterministic path
- * - Moves at constant speed between waypoints
- * - Becomes stuck when reaching final waypoint
+ * Physics:
+ * - Starts at high speed (5000 px/s)
+ * - Gradually slows down during normal flight
+ * - After 10 screen lengths, becomes exhausted and slows rapidly
+ * - Sticks to whatever it hits when exhausted or when speed drops too low
  */
 export class Arrow {
   private _id: string;
   private _position: Vector2;
   private _state: ArrowState = "flying";
   private _stuckAngle = 0;
+  private _currentSpeed: number;
 
   private waypoints: Vector2[];
   private currentWaypointIndex = 0;
+  private distanceTraveled = 0;
   private config: ArrowConfig;
 
-  /**
-   * Create an arrow that follows a waypoint path
-   *
-   * @param id - Unique identifier
-   * @param waypoints - Array of points to follow [start, hit1, hit2, ..., end]
-   * @param config - Arrow configuration
-   */
   constructor(id: string, waypoints: Vector2[], config: ArrowConfig = DEFAULT_ARROW_CONFIG) {
     this._id = id;
 
@@ -53,6 +59,7 @@ export class Arrow {
     this.waypoints = waypoints.map((p) => ({ ...p }));
     this._position = { ...waypoints[0]! };
     this.config = config;
+    this._currentSpeed = config.initialSpeed;
   }
 
   get id(): string {
@@ -67,12 +74,15 @@ export class Arrow {
     return this._state;
   }
 
+  get currentSpeed(): number {
+    return this._currentSpeed;
+  }
+
   get angle(): number {
     if (this._state === "stuck") {
       return this._stuckAngle;
     }
 
-    // Calculate angle from current position toward next waypoint
     const nextWaypoint = this.waypoints[this.currentWaypointIndex + 1];
     if (!nextWaypoint) {
       return this._stuckAngle;
@@ -86,9 +96,6 @@ export class Arrow {
     return this._state !== "stuck";
   }
 
-  /**
-   * Get the velocity vector (direction * speed)
-   */
   get velocity(): Vector2 {
     if (this._state === "stuck") {
       return { x: 0, y: 0 };
@@ -100,59 +107,94 @@ export class Arrow {
     }
 
     const direction = Vec2.direction(this._position, nextWaypoint);
-    return Vec2.scale(direction, this.config.speed);
+    return Vec2.scale(direction, this._currentSpeed);
   }
 
   /**
-   * Update arrow position along waypoint path
-   *
-   * @param delta - Time since last frame in seconds
+   * Update arrow position along waypoint path with speed decay
    */
   update(delta: number): void {
     if (this._state === "stuck") {
       return;
     }
 
-    let remainingDistance = this.config.speed * delta;
+    // Apply speed decay based on state
+    this.applySpeedDecay(delta);
 
-    while (remainingDistance > 0 && this._state === "flying") {
+    // Check if speed dropped too low
+    if (this._currentSpeed < this.config.minSpeed) {
+      this.stick();
+      return;
+    }
+
+    let remainingDistance = this._currentSpeed * delta;
+    let isStuck = false;
+
+    while (remainingDistance > 0 && !isStuck) {
       const nextWaypoint = this.waypoints[this.currentWaypointIndex + 1];
 
       if (!nextWaypoint) {
-        // No more waypoints - we're done
         this.stick();
+        isStuck = true;
         break;
       }
 
       const distanceToNext = Vec2.distance(this._position, nextWaypoint);
 
       if (remainingDistance >= distanceToNext) {
-        // Move to waypoint and continue to next segment
+        // Move to waypoint
         this._position = { ...nextWaypoint };
         remainingDistance -= distanceToNext;
+        this.distanceTraveled += distanceToNext;
         this.currentWaypointIndex++;
 
-        // Check if we've reached the final waypoint
+        // Check exhaustion
+        this.checkExhaustion();
+
+        // Check if reached final waypoint
         if (this.currentWaypointIndex >= this.waypoints.length - 1) {
           this.stick();
+          isStuck = true;
           break;
         }
       } else {
-        // Move partway toward next waypoint
+        // Move partway
         const direction = Vec2.direction(this._position, nextWaypoint);
         this._position = Vec2.add(this._position, Vec2.scale(direction, remainingDistance));
+        this.distanceTraveled += remainingDistance;
         remainingDistance = 0;
+
+        // Check exhaustion
+        this.checkExhaustion();
       }
     }
   }
 
   /**
-   * Make the arrow stick at current position
+   * Apply speed decay based on current state
    */
+  private applySpeedDecay(delta: number): void {
+    if (this._state === "flying") {
+      // Gradual decay: speed *= decay^delta
+      this._currentSpeed *= Math.pow(this.config.normalDecay, delta);
+    } else if (this._state === "exhausted") {
+      // Rapid decay when exhausted
+      this._currentSpeed *= Math.pow(this.config.exhaustedDecay, delta);
+    }
+  }
+
+  /**
+   * Check if arrow should become exhausted based on distance traveled
+   */
+  private checkExhaustion(): void {
+    if (this._state === "flying" && this.distanceTraveled >= this.config.exhaustionDistance) {
+      this._state = "exhausted";
+    }
+  }
+
   private stick(): void {
     this._state = "stuck";
 
-    // Preserve angle from last movement direction
     const prevWaypoint = this.waypoints[this.currentWaypointIndex];
     if (prevWaypoint && this.currentWaypointIndex > 0) {
       const prevPrev = this.waypoints[this.currentWaypointIndex - 1];
@@ -163,16 +205,14 @@ export class Arrow {
     }
   }
 
-  /**
-   * Get the waypoints this arrow follows
-   */
   getWaypoints(): readonly Vector2[] {
     return this.waypoints;
   }
 
-  /**
-   * Get progress through the waypoint path (0 to 1)
-   */
+  getDistanceTraveled(): number {
+    return this.distanceTraveled;
+  }
+
   getProgress(): number {
     if (this.waypoints.length <= 1) return 1;
 

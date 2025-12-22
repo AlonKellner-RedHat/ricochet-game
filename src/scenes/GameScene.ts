@@ -1,23 +1,24 @@
-import { ArrowManager } from "@/arrow";
 import { DebugView, InputManager } from "@/core";
 import { Player } from "@/player";
 import { RicochetSurface, WallSurface } from "@/surfaces";
 import type { Surface } from "@/surfaces";
-import { TrajectoryRenderer } from "@/trajectory";
+import { GameAdapter } from "@/trajectory-v2/GameAdapter";
 import Phaser from "phaser";
 
 /**
  * Main game scene for the Ricochet game
+ *
+ * Uses the new trajectory-v2 system for aiming and arrow management.
  */
 export class GameScene extends Phaser.Scene {
   private inputManager!: InputManager;
   private debugView!: DebugView;
 
-  // Trajectory system
-  private trajectoryRenderer!: TrajectoryRenderer;
+  // Trajectory system (v2)
+  private trajectoryAdapter!: GameAdapter;
 
-  // Arrow system
-  private arrowManager!: ArrowManager;
+  // Arrow graphics (separate from trajectory graphics)
+  private arrowGraphics!: Phaser.GameObjects.Graphics;
 
   // Demo surfaces
   private surfaces: Surface[] = [];
@@ -26,7 +27,7 @@ export class GameScene extends Phaser.Scene {
   // Hover state
   private hoveredSurface: Surface | null = null;
 
-  // Player
+  // Player (movement only)
   private player!: Player;
   private playerGraphics!: Phaser.GameObjects.Graphics;
 
@@ -54,27 +55,30 @@ export class GameScene extends Phaser.Scene {
       this.debugView.toggle();
     });
 
-    // Initialize trajectory renderer
-    this.trajectoryRenderer = new TrajectoryRenderer(this);
+    // Initialize trajectory v2 system
+    this.trajectoryAdapter = new GameAdapter(this, {
+      arrowSpeed: 800,
+      shootCooldown: 0.3,
+    });
 
-    // Initialize arrow manager
-    this.arrowManager = new ArrowManager(this);
+    // Create arrow graphics
+    this.arrowGraphics = this.add.graphics();
 
     // Create demo surfaces
     this.createDemoSurfaces();
 
-    // Create player BEFORE drawing surfaces (drawSurfaces needs player.getSurfacePlanIndex)
+    // Create player
     const spawnPoint = { x: 150, y: 450 };
     this.player = new Player(spawnPoint);
     this.playerGraphics = this.add.graphics();
 
-    // Create graphics for surfaces (after player exists)
+    // Create graphics for surfaces
     this.surfaceGraphics = this.add.graphics();
     this.drawSurfaces();
 
     // Add title and control hints
     this.add
-      .text(this.cameras.main.centerX, 30, "RICOCHET DEMO", {
+      .text(this.cameras.main.centerX, 30, "RICOCHET DEMO (V2)", {
         fontFamily: "JetBrains Mono, monospace",
         fontSize: "24px",
         color: "#e94560",
@@ -106,23 +110,36 @@ export class GameScene extends Phaser.Scene {
     // Update hover state
     this.hoveredSurface = this.inputManager.findClickedSurface(pointer, this.surfaces, true);
 
-    // Update cursor based on hover state
+    // Update player movement
+    this.player.update(deltaSeconds, movementInput, this.surfaces);
+
+    // Update trajectory system
+    this.trajectoryAdapter.update(
+      deltaSeconds,
+      this.player.bowPosition,
+      pointer,
+      this.trajectoryAdapter.getPlannedSurfaces(),
+      this.surfaces
+    );
+
+    // Update cursor based on hover state and cursor reachability
     if (this.hoveredSurface?.isPlannable()) {
       this.input.setDefaultCursor("pointer");
+    } else if (!this.trajectoryAdapter.isCursorReachable()) {
+      this.input.setDefaultCursor("not-allowed");
     } else {
-      this.input.setDefaultCursor("default");
+      this.input.setDefaultCursor("crosshair");
     }
-
-    // Update player (movement + aiming)
-    this.player.update(deltaSeconds, movementInput, pointer, this.surfaces);
 
     // Handle click events
     if (this.inputManager.wasPointerClicked()) {
       this.handleClick(pointer);
     }
 
-    // Update arrows (they follow pre-computed waypoints)
-    this.arrowManager.update(deltaSeconds);
+    // Handle right-click to clear plan
+    if (this.inputManager.wasRightClicked()) {
+      this.trajectoryAdapter.clearPlan();
+    }
 
     // Redraw player at new position
     this.drawPlayer();
@@ -130,25 +147,22 @@ export class GameScene extends Phaser.Scene {
     // Redraw surfaces (to show planned state)
     this.drawSurfaces();
 
-    // Render trajectory from player's trajectory result
-    this.trajectoryRenderer.render(this.player.trajectoryResult);
-
     // Render arrows
-    this.arrowManager.render();
+    this.renderArrows();
 
     // Update debug info
     const pos = this.player.position;
     const vel = this.player.velocity;
-    const result = this.player.trajectoryResult;
+    const alignment = this.trajectoryAdapter.getDualTrajectoryResult().alignment;
     this.debugView.setInfo("playerX", Math.round(pos.x));
     this.debugView.setInfo("playerY", Math.round(pos.y));
     this.debugView.setInfo("velX", Math.round(vel.x));
     this.debugView.setInfo("velY", Math.round(vel.y));
     this.debugView.setInfo("state", this.player.state);
     this.debugView.setInfo("grounded", this.player.isGrounded);
-    this.debugView.setInfo("trajPoints", result.points.length);
-    this.debugView.setInfo("planned", this.player.plannedSurfaces.length);
-    this.debugView.setInfo("arrows", this.arrowManager.getAllArrows().length);
+    this.debugView.setInfo("aligned", alignment.isFullyAligned);
+    this.debugView.setInfo("planned", this.trajectoryAdapter.getPlannedSurfaces().length);
+    this.debugView.setInfo("arrows", this.trajectoryAdapter.getArrowsForRendering().length);
 
     this.debugView.update();
 
@@ -165,13 +179,73 @@ export class GameScene extends Phaser.Scene {
 
     if (clickedSurface) {
       // Toggle surface in plan
-      this.player.toggleSurfaceInPlan(clickedSurface);
+      this.trajectoryAdapter.toggleSurfaceInPlan(clickedSurface);
     } else {
-      // Shoot arrow with pre-computed waypoints
-      const arrowData = this.player.shoot();
-      if (arrowData && arrowData.waypoints.length >= 2) {
-        this.arrowManager.createArrow(arrowData.waypoints);
-      }
+      // Shoot arrow
+      this.trajectoryAdapter.shoot();
+    }
+  }
+
+  /**
+   * Render arrows from the trajectory system
+   */
+  private renderArrows(): void {
+    this.arrowGraphics.clear();
+
+    const arrows = this.trajectoryAdapter.getArrowsForRendering();
+
+    for (const arrow of arrows) {
+      if (!arrow.active) continue;
+
+      const { position, direction } = arrow;
+      const x = position.x;
+      const y = position.y;
+
+      // Calculate rotation angle
+      const angle = Math.atan2(direction.y, direction.x);
+
+      // Arrow body (line)
+      const bodyLength = 30;
+      const tailX = x - Math.cos(angle) * bodyLength;
+      const tailY = y - Math.sin(angle) * bodyLength;
+
+      this.arrowGraphics.lineStyle(3, 0xffffff, 1);
+      this.arrowGraphics.lineBetween(tailX, tailY, x, y);
+
+      // Arrow head (triangle)
+      const headSize = 8;
+      const headAngle = Math.PI / 6;
+
+      const head1X = x - Math.cos(angle - headAngle) * headSize;
+      const head1Y = y - Math.sin(angle - headAngle) * headSize;
+      const head2X = x - Math.cos(angle + headAngle) * headSize;
+      const head2Y = y - Math.sin(angle + headAngle) * headSize;
+
+      this.arrowGraphics.fillStyle(0xffffff, 1);
+      this.arrowGraphics.beginPath();
+      this.arrowGraphics.moveTo(x, y);
+      this.arrowGraphics.lineTo(head1X, head1Y);
+      this.arrowGraphics.lineTo(head2X, head2Y);
+      this.arrowGraphics.closePath();
+      this.arrowGraphics.fillPath();
+
+      // Fletching (tail feathers)
+      const fletchLength = 10;
+      const fletchAngle = Math.PI / 4;
+
+      this.arrowGraphics.lineStyle(2, 0xff6b6b, 0.8);
+      this.arrowGraphics.lineBetween(
+        tailX,
+        tailY,
+        tailX - Math.cos(angle - fletchAngle) * fletchLength,
+        tailY - Math.sin(angle - fletchAngle) * fletchLength
+      );
+      this.arrowGraphics.lineBetween(
+        tailX,
+        tailY,
+        tailX - Math.cos(angle + fletchAngle) * fletchLength,
+        tailY - Math.sin(angle + fletchAngle) * fletchLength
+      );
     }
   }
 
@@ -242,16 +316,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Draw all surfaces with plan highlighting
+   * Draw all surfaces with plan highlighting and bypass indication
    */
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Drawing logic requires many visual decisions
   private drawSurfaces(): void {
     this.surfaceGraphics.clear();
 
+    // Get bypassed surfaces from trajectory adapter
+    const bypassedIds = this.trajectoryAdapter.getBypassedSurfaceIds();
+
     for (const surface of this.surfaces) {
       const props = surface.getVisualProperties();
-      const planIndex = this.player.getSurfacePlanIndex(surface);
+      const planIndex = this.trajectoryAdapter.getSurfacePlanIndex(surface);
       const isPlanned = planIndex > 0;
+      const isBypassed = isPlanned && bypassedIds.has(surface.id);
       const isHovered = this.hoveredSurface?.id === surface.id && surface.isPlannable();
 
       // Determine visual properties based on state
@@ -260,9 +338,17 @@ export class GameScene extends Phaser.Scene {
       let alpha = props.alpha;
 
       if (isPlanned) {
-        color = 0xffff00; // Yellow for planned
-        lineWidth = props.lineWidth + 2;
-        alpha = 1;
+        if (isBypassed) {
+          // Bypassed planned surface: red/orange with dashed appearance
+          color = 0xff6600; // Orange for bypassed
+          lineWidth = props.lineWidth + 1;
+          alpha = 0.6;
+        } else {
+          // Active planned surface: yellow
+          color = 0xffff00;
+          lineWidth = props.lineWidth + 2;
+          alpha = 1;
+        }
       } else if (isHovered) {
         // Brighter color for hover - shift toward white
         color = this.brightenColor(props.color, 0.5);
@@ -270,6 +356,7 @@ export class GameScene extends Phaser.Scene {
         alpha = 1;
       }
 
+      // Draw the surface line
       this.surfaceGraphics.lineStyle(lineWidth, color, alpha);
       this.surfaceGraphics.lineBetween(
         surface.segment.start.x,
@@ -278,8 +365,13 @@ export class GameScene extends Phaser.Scene {
         surface.segment.end.y
       );
 
-      // Add glow effect for ricochet surfaces or hovered surfaces
-      if (props.glow || isPlanned || isHovered) {
+      // Draw dashed overlay for bypassed surfaces
+      if (isBypassed) {
+        this.drawDashedLine(surface, 0xff0000, lineWidth, 0.8);
+      }
+
+      // Add glow effect for ricochet surfaces or hovered surfaces (not for bypassed)
+      if ((props.glow || isPlanned || isHovered) && !isBypassed) {
         const glowColor = isPlanned ? 0xffff00 : isHovered ? 0xffffff : props.color;
         const glowAlpha = isPlanned ? 0.4 : isHovered ? 0.5 : 0.2;
         const glowWidth = isHovered ? lineWidth + 8 : lineWidth + 4;
@@ -304,30 +396,102 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
-      // Draw plan number for planned surfaces
-      if (isPlanned) {
-        const midX = (surface.segment.start.x + surface.segment.end.x) / 2;
-        const midY = (surface.segment.start.y + surface.segment.end.y) / 2;
-
-        // Draw circle background
-        this.surfaceGraphics.fillStyle(0x000000, 0.8);
-        this.surfaceGraphics.fillCircle(midX, midY - 15, 12);
-
-        // Draw number (we'll use a simple approach with graphics)
-        this.surfaceGraphics.fillStyle(0xffff00, 1);
-        this.surfaceGraphics.fillCircle(midX, midY - 15, 8);
-
-        // We can't easily draw text with graphics, so just use a filled circle
-        // The number effect is achieved by the order being visually apparent
+      // Draw direction indicator for ricochet surfaces (shows reflective side)
+      if (surface.isPlannable()) {
+        this.drawDirectionIndicator(surface, isPlanned && !isBypassed, isHovered);
       }
     }
   }
 
   /**
+   * Draw a dashed line over a surface segment
+   */
+  private drawDashedLine(
+    surface: Surface,
+    color: number,
+    lineWidth: number,
+    alpha: number
+  ): void {
+    const dashLength = 8;
+    const gapLength = 4;
+
+    const dx = surface.segment.end.x - surface.segment.start.x;
+    const dy = surface.segment.end.y - surface.segment.start.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+
+    if (length < 0.001) return;
+
+    const nx = dx / length;
+    const ny = dy / length;
+
+    let pos = 0;
+    let drawing = true;
+
+    this.surfaceGraphics.lineStyle(lineWidth + 1, color, alpha);
+
+    while (pos < length) {
+      const segLength = drawing ? dashLength : gapLength;
+      const endPos = Math.min(pos + segLength, length);
+
+      if (drawing) {
+        const x1 = surface.segment.start.x + nx * pos;
+        const y1 = surface.segment.start.y + ny * pos;
+        const x2 = surface.segment.start.x + nx * endPos;
+        const y2 = surface.segment.start.y + ny * endPos;
+        this.surfaceGraphics.lineBetween(x1, y1, x2, y2);
+      }
+
+      pos = endPos;
+      drawing = !drawing;
+    }
+  }
+
+  /**
+   * Draw a small indicator showing the reflective side of a directional surface
+   */
+  private drawDirectionIndicator(surface: Surface, isPlanned: boolean, isHovered: boolean): void {
+    const normal = surface.getNormal();
+    const midX = (surface.segment.start.x + surface.segment.end.x) / 2;
+    const midY = (surface.segment.start.y + surface.segment.end.y) / 2;
+
+    // Calculate indicator position (offset from surface midpoint)
+    const indicatorOffset = 12;
+    const indicatorX = midX + normal.x * indicatorOffset;
+    const indicatorY = midY + normal.y * indicatorOffset;
+
+    // Triangle size
+    const size = 6;
+
+    // Calculate triangle points (pointing in normal direction)
+    const tipX = indicatorX + normal.x * size;
+    const tipY = indicatorY + normal.y * size;
+
+    // Perpendicular for base points
+    const perpX = -normal.y;
+    const perpY = normal.x;
+    const baseOffset = size * 0.6;
+
+    const base1X = indicatorX + perpX * baseOffset;
+    const base1Y = indicatorY + perpY * baseOffset;
+    const base2X = indicatorX - perpX * baseOffset;
+    const base2Y = indicatorY - perpY * baseOffset;
+
+    // Color based on state
+    const indicatorColor = isPlanned ? 0xffff00 : isHovered ? 0xffffff : 0x00ffff;
+    const indicatorAlpha = isPlanned ? 0.9 : isHovered ? 0.9 : 0.6;
+
+    // Draw filled triangle
+    this.surfaceGraphics.fillStyle(indicatorColor, indicatorAlpha);
+    this.surfaceGraphics.beginPath();
+    this.surfaceGraphics.moveTo(tipX, tipY);
+    this.surfaceGraphics.lineTo(base1X, base1Y);
+    this.surfaceGraphics.lineTo(base2X, base2Y);
+    this.surfaceGraphics.closePath();
+    this.surfaceGraphics.fillPath();
+  }
+
+  /**
    * Brighten a color by blending it toward white
-   * @param color - The original color (0xRRGGBB)
-   * @param amount - How much to brighten (0-1)
-   * @returns The brightened color
    */
   private brightenColor(color: number, amount: number): number {
     const r = (color >> 16) & 0xff;
@@ -360,7 +524,8 @@ export class GameScene extends Phaser.Scene {
     this.playerGraphics.fillCircle(x, y - 30, 12);
 
     // Bow (arc on the right side, rotates with aim)
-    const aimAngle = Math.atan2(this.player.aimDirection.y, this.player.aimDirection.x);
+    const aimDir = this.trajectoryAdapter.getAimDirection();
+    const aimAngle = Math.atan2(aimDir.y, aimDir.x);
     const bowCenterX = x + Math.cos(aimAngle) * 15;
     const bowCenterY = y - 10 + Math.sin(aimAngle) * 10;
 

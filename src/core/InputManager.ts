@@ -26,6 +26,7 @@ export class InputManager {
   private keysJustPressed: Set<string> = new Set();
   private keysJustReleased: Set<string> = new Set();
   private pointerJustClicked = false;
+  private rightClickJustPressed = false;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -45,10 +46,17 @@ export class InputManager {
       this.internalState.pointer.y = pointer.worldY;
     });
 
-    this.scene.input.on("pointerdown", () => {
+    this.scene.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       this.internalState.isPointerDown = true;
-      this.pointerJustClicked = true;
+      if (pointer.rightButtonDown()) {
+        this.rightClickJustPressed = true;
+      } else {
+        this.pointerJustClicked = true;
+      }
     });
+
+    // Prevent context menu on right-click
+    this.scene.input.mouse?.disableContextMenu();
 
     this.scene.input.on("pointerup", () => {
       this.internalState.isPointerDown = false;
@@ -81,9 +89,14 @@ export class InputManager {
     return this.internalState.isPointerDown;
   }
 
-  /** Check if pointer was just clicked this frame */
+  /** Check if pointer was just clicked this frame (left click) */
   wasPointerClicked(): boolean {
     return this.pointerJustClicked;
+  }
+
+  /** Check if right mouse button was just clicked this frame */
+  wasRightClicked(): boolean {
+    return this.rightClickJustPressed;
   }
 
   /** Check if a specific key is currently held */
@@ -172,6 +185,7 @@ export class InputManager {
     this.keysJustPressed.clear();
     this.keysJustReleased.clear();
     this.pointerJustClicked = false;
+    this.rightClickJustPressed = false;
   }
 
   /** Clean up input listeners */

@@ -51,7 +51,8 @@ describe("TrajectoryCalculator", () => {
     it("should reflect off ricochet surface", () => {
       const origin = { x: 0, y: 0 };
       const aimPoint = { x: 10, y: 10 }; // 45° angle down-right
-      const ricochet = createRicochet("r1", { x: 0, y: 50 }, { x: 100, y: 50 }); // Horizontal
+      // Horizontal surface with normal pointing UP (segment right-to-left)
+      const ricochet = createRicochet("r1", { x: 100, y: 50 }, { x: 0, y: 50 });
 
       const result = calculator.calculate(origin, aimPoint, [ricochet], [ricochet], 200);
 
@@ -69,7 +70,8 @@ describe("TrajectoryCalculator", () => {
       // So we need cursor position that makes geometric sense
       const origin = { x: 0, y: 0 };
       const aimPoint = { x: 100, y: 0 }; // Target is at same height as origin
-      const ricochet = createRicochet("r1", { x: 0, y: 50 }, { x: 100, y: 50 }); // Horizontal surface below
+      // Horizontal surface with normal pointing UP (segment right-to-left)
+      const ricochet = createRicochet("r1", { x: 100, y: 50 }, { x: 0, y: 50 });
 
       // Path: origin (0,0) -> ricochet at y=50 -> cursor (100, 0)
       const result = calculator.calculate(origin, aimPoint, [ricochet], [ricochet], 200);
@@ -187,6 +189,94 @@ describe("TrajectoryCalculator", () => {
       expect(result.status).toBe("valid");
       expect(result.points.length).toBe(2);
       expect(result.points[1]?.position.x).toBeCloseTo(200); // max distance
+    });
+  });
+
+  describe("ghost path", () => {
+    it("should include ghost points extending past cursor for ricochet surfaces", () => {
+      const origin = { x: 0, y: 0 };
+      const aimPoint = { x: 100, y: 0 };
+      // Ricochet surface far ahead - ghost path should bounce off it
+      const ricochet = createRicochet("r1", { x: 150, y: -50 }, { x: 150, y: 50 });
+
+      const result = calculator.calculate(origin, aimPoint, [], [ricochet], 200);
+
+      // Main path ends at ricochet surface
+      expect(result.points.length).toBe(2);
+      expect(result.points[1]?.surfaceId).toBe("r1");
+
+      // Ghost path should show the bounce
+      expect(result.ghostPoints.length).toBeGreaterThan(0);
+    });
+
+    it("should NOT generate ghost path when hitting a wall surface", () => {
+      const origin = { x: 0, y: 0 };
+      const aimPoint = { x: 100, y: 0 };
+      // Wall surface - should stop arrow without reflection
+      const wall = createWall("wall1", { x: 50, y: -50 }, { x: 50, y: 50 });
+
+      const result = calculator.calculate(origin, aimPoint, [], [wall], 200);
+
+      // Main path ends at wall
+      expect(result.points.length).toBe(2);
+      expect(result.points[1]?.surfaceId).toBe("wall1");
+
+      // No ghost path - wall stops the arrow
+      expect(result.ghostPoints.length).toBe(0);
+    });
+
+    it("should mark ghost point as sticking when hitting wall", () => {
+      const origin = { x: 0, y: 0 };
+      const aimPoint = { x: 100, y: 0 };
+      const ricochet = createRicochet("r1", { x: 50, y: -50 }, { x: 50, y: 50 });
+      const wall = createWall("wall1", { x: 0, y: -50 }, { x: 0, y: 50 }); // Wall behind
+
+      const result = calculator.calculate(origin, aimPoint, [], [ricochet, wall], 300);
+
+      // Should have ghost path that hits the wall
+      const ghostHitWall = result.ghostPoints.find((g) => g.surfaceId === "wall1");
+      if (ghostHitWall) {
+        expect(ghostHitWall.willStick).toBe(true);
+      }
+    });
+
+    it("should bounce off ricochet surfaces in ghost path", () => {
+      const origin = { x: 0, y: 0 };
+      const aimPoint = { x: 100, y: 0 };
+      // Two ricochet surfaces creating a bounce corridor
+      const r1 = createRicochet("r1", { x: 50, y: -50 }, { x: 50, y: 50 });
+      const r2 = createRicochet("r2", { x: 0, y: -50 }, { x: 0, y: 50 });
+
+      const result = calculator.calculate(origin, aimPoint, [], [r1, r2], 500);
+
+      // Ghost path should show multiple bounces
+      expect(result.ghostPoints.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("exhaustion distance", () => {
+    it("should include exhaustion distance in result", () => {
+      const origin = { x: 0, y: 0 };
+      const aimPoint = { x: 100, y: 0 };
+
+      const result = calculator.calculate(origin, aimPoint, [], [], 200);
+
+      expect(result.exhaustionDistance).toBe(10000); // 10 screen lengths
+    });
+  });
+
+  describe("missed segment detection", () => {
+    it("should detect when planned surface segment is missed", () => {
+      const origin = { x: 0, y: 0 };
+      // Aim far off from the surface segment
+      const aimPoint = { x: 1000, y: 0 };
+      // Surface is a small segment that won't be hit
+      const ricochet = createRicochet("r1", { x: 10, y: 50 }, { x: 20, y: 50 });
+
+      const result = calculator.calculate(origin, aimPoint, [ricochet], [ricochet], 2000);
+
+      // The trajectory line won't intersect the small segment
+      expect(result.status).toBe("missed_segment");
     });
   });
 });

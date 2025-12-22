@@ -1,6 +1,6 @@
 import { Vec2 } from "@/math/Vec2";
 import type { Surface } from "@/surfaces";
-import type { Vector2 } from "@/types";
+import type { ImageReflectionResult, Vector2 } from "@/types";
 
 /**
  * ImageReflectionCalculator - Calculates trajectory using image reflection geometry
@@ -16,7 +16,13 @@ import type { Vector2 } from "@/types";
  * 3. Draw lines between corresponding images to find intersection points
  *
  * This guarantees the trajectory ends exactly at the cursor.
+ *
+ * NOTE: This calculator computes geometric trajectories. For bypass/validity logic,
+ * see BypassChecker and PathBuilder which handle the runtime path building.
  */
+
+// Re-export for backward compatibility
+export type { ImageReflectionResult };
 
 /**
  * Calculate trajectory through planned surfaces using image reflection
@@ -24,15 +30,36 @@ import type { Vector2 } from "@/types";
  * @param player - Starting position
  * @param cursor - Target position (where trajectory should end)
  * @param plannedSurfaces - Ordered list of surfaces to bounce off
- * @returns Array of points: [player, hit1, hit2, ..., cursor]
+ * @returns Path points (does not include validity info - use PathBuilder for that)
  */
 export function calculatePlannedTrajectory(
   player: Vector2,
   cursor: Vector2,
   plannedSurfaces: readonly Surface[]
 ): Vector2[] {
+  const result = calculatePlannedTrajectoryWithValidation(player, cursor, plannedSurfaces);
+  return result.path;
+}
+
+/**
+ * Calculate trajectory with validation information
+ *
+ * NOTE: The hitOnSegment, isFullyAligned, and firstMissIndex fields are computed
+ * geometrically but are DEPRECATED for runtime decisions. Use BypassChecker and
+ * PathBuilder for proper runtime bypass/validity logic.
+ */
+export function calculatePlannedTrajectoryWithValidation(
+  player: Vector2,
+  cursor: Vector2,
+  plannedSurfaces: readonly Surface[]
+): ImageReflectionResult {
   if (plannedSurfaces.length === 0) {
-    return [player, cursor];
+    return {
+      path: [player, cursor],
+      hitOnSegment: [],
+      isFullyAligned: true,
+      firstMissIndex: -1,
+    };
   }
 
   // Build player images (reflect forward through surfaces)
@@ -43,25 +70,54 @@ export function calculatePlannedTrajectory(
 
   // Find intersection points between corresponding image pairs
   const hitPoints: Vector2[] = [];
+  const hitOnSegment: boolean[] = [];
+  let firstMissIndex = -1;
 
   for (let i = 0; i < plannedSurfaces.length; i++) {
     const surface = plannedSurfaces[i];
     if (!surface) continue;
 
-    // Line from playerImages[i] to cursorImages[i] should intersect surface[i]
-    const hit = lineSegmentIntersection(
-      playerImages[i] ?? player,
-      cursorImages[i] ?? cursor,
+    const pImage = playerImages[i] ?? player;
+    const cImage = cursorImages[i] ?? cursor;
+
+    // Find intersection with the surface line
+    const result = lineLineIntersectionWithParams(
+      pImage,
+      cImage,
       surface.segment.start,
       surface.segment.end
     );
 
-    if (hit) {
-      hitPoints.push(hit);
+    if (!result) {
+      // Lines are parallel - use surface midpoint as fallback
+      const midpoint = Vec2.scale(Vec2.add(surface.segment.start, surface.segment.end), 0.5);
+      hitPoints.push(midpoint);
+      hitOnSegment.push(false);
+      if (firstMissIndex === -1) firstMissIndex = i;
+      continue;
     }
+
+    const { point, t, s } = result;
+
+    // Check if hit is on the segment (s in [0,1]) and in forward direction (t in [0,1])
+    const isOnSegment = s >= 0 && s <= 1;
+    const isForward = t >= 0 && t <= 1;
+    const isValid = isOnSegment && isForward;
+
+    if (!isValid && firstMissIndex === -1) {
+      firstMissIndex = i;
+    }
+
+    hitPoints.push(point);
+    hitOnSegment.push(isValid);
   }
 
-  return [player, ...hitPoints, cursor];
+  return {
+    path: [player, ...hitPoints, cursor],
+    hitOnSegment,
+    isFullyAligned: firstMissIndex === -1,
+    firstMissIndex,
+  };
 }
 
 /**
@@ -124,23 +180,30 @@ export function buildCursorImages(cursor: Vector2, surfaces: readonly Surface[])
 }
 
 /**
- * Find intersection point between a line (defined by two points) and a segment
+ * Result of line-line intersection with parameters
+ */
+interface LineIntersectionResult {
+  point: Vector2;
+  t: number; // Parameter on first line (0-1 means between start and end)
+  s: number; // Parameter on second line (0-1 means on segment)
+}
+
+/**
+ * Find intersection point between two lines with full parameter information
  *
- * First principles: Use parametric form of lines
  * Line 1: P = A + t * (B - A)
  * Line 2: P = C + s * (D - C)
  *
- * Solving for intersection gives us parameters t and s.
- * If 0 <= s <= 1, the intersection is on the segment.
+ * @returns Intersection point and parameters, or null if parallel
  */
-function lineSegmentIntersection(
-  lineStart: Vector2,
-  lineEnd: Vector2,
-  segStart: Vector2,
-  segEnd: Vector2
-): Vector2 | null {
-  const d1 = Vec2.subtract(lineEnd, lineStart);
-  const d2 = Vec2.subtract(segEnd, segStart);
+function lineLineIntersectionWithParams(
+  line1Start: Vector2,
+  line1End: Vector2,
+  line2Start: Vector2,
+  line2End: Vector2
+): LineIntersectionResult | null {
+  const d1 = Vec2.subtract(line1End, line1Start);
+  const d2 = Vec2.subtract(line2End, line2Start);
 
   const cross = d1.x * d2.y - d1.y * d2.x;
 
@@ -149,19 +212,31 @@ function lineSegmentIntersection(
     return null;
   }
 
-  const d3 = Vec2.subtract(segStart, lineStart);
+  const d3 = Vec2.subtract(line2Start, line1Start);
 
-  // Parameter for line
-  // const t = (d3.x * d2.y - d3.y * d2.x) / cross;
+  // Parameter for first line (trajectory)
+  const t = (d3.x * d2.y - d3.y * d2.x) / cross;
 
-  // Parameter for segment
+  // Parameter for second line (surface)
   const s = (d3.x * d1.y - d3.y * d1.x) / cross;
 
-  // Check if intersection is on the segment
-  if (s < 0 || s > 1) {
-    return null;
-  }
+  // Calculate intersection point
+  const point = Vec2.add(line1Start, Vec2.scale(d1, t));
 
-  // Calculate intersection point using segment parameter
-  return Vec2.add(segStart, Vec2.scale(d2, s));
+  return { point, t, s };
+}
+
+/**
+ * Find intersection point between two lines (ignoring segment bounds)
+ *
+ * @returns Intersection point or null if lines are parallel
+ */
+export function lineIntersection(
+  line1Start: Vector2,
+  line1End: Vector2,
+  line2Start: Vector2,
+  line2End: Vector2
+): Vector2 | null {
+  const result = lineLineIntersectionWithParams(line1Start, line1End, line2Start, line2End);
+  return result?.point ?? null;
 }

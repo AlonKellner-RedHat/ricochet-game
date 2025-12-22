@@ -85,12 +85,19 @@ export class ArrowManager {
     let color: number;
     let alpha: number;
 
-    if (arrow.state === "flying") {
-      color = 0x00ff88; // Green for flying
-      alpha = 1;
-    } else {
-      color = 0x888888; // Gray for stuck
-      alpha = 0.6;
+    switch (arrow.state) {
+      case "flying":
+        color = 0x00ff88; // Green for flying
+        alpha = 1;
+        break;
+      case "exhausted":
+        color = 0xffaa00; // Orange for exhausted (slowing down)
+        alpha = 0.9;
+        break;
+      case "stuck":
+        color = 0x888888; // Gray for stuck
+        alpha = 0.6;
+        break;
     }
 
     // Draw arrow shaft
