@@ -43,8 +43,8 @@ export interface ValidRegionConfig {
  * Shadowed areas are slightly darker than lit areas.
  */
 export const DEFAULT_VALID_REGION_CONFIG: ValidRegionConfig = {
-  shadowAlpha: 0.35, // Darker in shadow
-  litAlpha: 0.15, // Slightly darker in lit areas (subtle tint)
+  shadowAlpha: 0.5, // Darker in shadow
+  litAlpha: 0.3, // More subtle lit areas (less bright)
   overlayColor: 0x000000,
   showOutline: false,
   outlineColor: 0x00ffff,

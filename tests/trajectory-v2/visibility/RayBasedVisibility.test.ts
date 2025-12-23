@@ -5,22 +5,17 @@
  * Ensures V.5 correlation: Light reaches cursor ↔ (plan valid AND aligned)
  */
 
-import { describe, it, expect } from "vitest";
-import {
-  isCursorLit,
-  calculateRayVisibility,
-  type ScreenBounds,
-} from "@/trajectory-v2/visibility/RayBasedVisibility";
 import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import {
+  type ScreenBounds,
+  calculateRayVisibility,
+  isCursorLit,
+} from "@/trajectory-v2/visibility/RayBasedVisibility";
+import { describe, expect, it } from "vitest";
 
 // Helper to create a test surface
-function createTestSurface(
-  id: string,
-  start: Vector2,
-  end: Vector2,
-  canReflect = true
-): Surface {
+function createTestSurface(id: string, start: Vector2, end: Vector2, canReflect = true): Surface {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const len = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -143,12 +138,7 @@ describe("RayBasedVisibility", () => {
       const surfaces = [surface];
       const plannedSurfaces = [surface];
 
-      const result = calculateRayVisibility(
-        player,
-        surfaces,
-        screenBounds,
-        plannedSurfaces
-      );
+      const result = calculateRayVisibility(player, surfaces, screenBounds, plannedSurfaces);
 
       expect(result.isValid).toBe(true);
       // Origin should be the player image (reflected through surface)
@@ -161,12 +151,7 @@ describe("RayBasedVisibility", () => {
       const surfaces = [surface];
       const plannedSurfaces = [surface];
 
-      const result = calculateRayVisibility(
-        player,
-        surfaces,
-        screenBounds,
-        plannedSurfaces
-      );
+      const result = calculateRayVisibility(player, surfaces, screenBounds, plannedSurfaces);
 
       // Player at 200, surface at 400 → image at 600
       expect(result.origin.x).toBeCloseTo(600, 5);
@@ -181,12 +166,7 @@ describe("RayBasedVisibility", () => {
       const surfaces: Surface[] = [];
       const plannedSurfaces: Surface[] = [];
 
-      const visibility = calculateRayVisibility(
-        player,
-        surfaces,
-        screenBounds,
-        plannedSurfaces
-      );
+      const visibility = calculateRayVisibility(player, surfaces, screenBounds, plannedSurfaces);
       const lit = isCursorLit(player, cursor, plannedSurfaces, surfaces);
 
       // Both should agree
@@ -226,7 +206,7 @@ describe("RayBasedVisibility", () => {
       // The polygon edge (850, 500) → (1260, 699) incorrectly shadows the cursor
       const player: Vector2 = { x: 566.4, y: 666 };
       const cursor: Vector2 = { x: 1126.7, y: 570.2 };
-      
+
       const surfaces = [
         createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }, false),
         createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 }, false),
@@ -248,7 +228,7 @@ describe("RayBasedVisibility", () => {
       // Polygon should contain cursor
       const result = calculateRayVisibility(player, surfaces, screenBounds, plannedSurfaces);
       expect(result.isValid).toBe(true);
-      
+
       // Check if cursor is inside polygon
       const cursorInPolygon = isPointInPolygon(cursor, result.polygon);
       expect(cursorInPolygon).toBe(true);
@@ -263,18 +243,16 @@ describe("RayBasedVisibility", () => {
       const surfaces = [obstacle, floor];
 
       const result = calculateRayVisibility(player, surfaces, screenBounds, []);
-      
+
       // The grazing ray past the obstacle endpoint should produce distinct
       // vertices on either side - one hitting the obstacle and one hitting the floor
       // This creates the proper shadow edge
       expect(result.isValid).toBe(true);
-      
+
       // The polygon should have vertices on the floor (y=200 region)
-      const floorVertices = result.polygon.filter(
-        (v) => Math.abs(v.y - 200) < 5
-      );
+      const floorVertices = result.polygon.filter((v) => Math.abs(v.y - 200) < 5);
       expect(floorVertices.length).toBeGreaterThan(0);
-      
+
       // And vertices on the obstacle (x=200)
       const obstacleVertices = result.polygon.filter(
         (v) => Math.abs(v.x - 200) < 5 && v.y >= 50 && v.y <= 150
@@ -298,8 +276,7 @@ function isPointInPolygon(point: Vector2, polygon: readonly Vector2[]): boolean 
     const yj = polygon[j]!.y;
 
     const intersect =
-      yi > point.y !== yj > point.y &&
-      point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi;
+      yi > point.y !== yj > point.y && point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi;
 
     if (intersect) {
       inside = !inside;
@@ -308,4 +285,3 @@ function isPointInPolygon(point: Vector2, polygon: readonly Vector2[]): boolean 
 
   return inside;
 }
-

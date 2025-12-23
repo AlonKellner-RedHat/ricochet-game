@@ -101,8 +101,8 @@ export class GameAdapter {
         visibilityGraphicsWrapper,
         this.screenBounds,
         {
-          shadowAlpha: config.validRegionShadowAlpha ?? 0.35,
-          litAlpha: config.validRegionLitAlpha ?? 0.15,
+          shadowAlpha: config.validRegionShadowAlpha ?? 0.5,
+          litAlpha: config.validRegionLitAlpha ?? 0.3,
           showOutline: config.debug ?? false,
         },
         visibilityCalculator
