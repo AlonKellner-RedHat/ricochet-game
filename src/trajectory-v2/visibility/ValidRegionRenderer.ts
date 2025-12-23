@@ -10,13 +10,16 @@
  */
 
 import type { Surface } from "@/surfaces/Surface";
+import { AngleBasedVisibilityCalculator } from "@/trajectory-v2/calculators/AngleBasedVisibilityCalculator";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import type {
+  IVisibilityCalculator,
+  VisibilityResult,
+} from "@/trajectory-v2/interfaces/IVisibilityCalculator";
 import { TrajectoryDebugLogger, type VisibilityDebugInfo } from "../TrajectoryDebugLogger";
 import type { ScreenBounds } from "./ConePropagator";
 import type { ValidRegionOutline } from "./OutlineBuilder";
 import { calculateSimpleVisibility } from "./SimpleVisibilityCalculator";
-import type { IVisibilityCalculator, VisibilityResult } from "@/trajectory-v2/interfaces/IVisibilityCalculator";
-import { AngleBasedVisibilityCalculator } from "@/trajectory-v2/calculators/AngleBasedVisibilityCalculator";
 
 /**
  * Configuration for the valid region overlay.
@@ -43,8 +46,8 @@ export interface ValidRegionConfig {
  * Shadowed areas are slightly darker than lit areas.
  */
 export const DEFAULT_VALID_REGION_CONFIG: ValidRegionConfig = {
-  shadowAlpha: 0.5, // Darker in shadow
-  litAlpha: 0.3, // More subtle lit areas (less bright)
+  shadowAlpha: 0.7, // Very dark in shadow
+  litAlpha: 0.5, // Lit areas also quite dark
   overlayColor: 0x000000,
   showOutline: false,
   outlineColor: 0x00ffff,
