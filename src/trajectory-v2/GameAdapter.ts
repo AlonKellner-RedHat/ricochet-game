@@ -41,13 +41,13 @@ export interface GameAdapterConfig {
   /** Opacity of dark overlay for lit areas (0-1) */
   validRegionLitAlpha?: number;
   /**
-   * Use ray-based visibility calculation.
+   * Use ray-based visibility calculation (default: true).
    *
-   * When true, uses the new RayBasedVisibilityCalculator which derives
-   * visibility from ImageChain rays, ensuring V.5 correlation:
+   * When true (default), uses the new RayBasedVisibilityCalculator which
+   * derives visibility from ImageChain rays, ensuring V.5 correlation:
    * Light reaches cursor ↔ (plan valid AND aligned)
    *
-   * When false (default), uses the AngleBasedVisibilityCalculator.
+   * When false, uses the legacy AngleBasedVisibilityCalculator.
    */
   useRayBasedVisibility?: boolean;
 }
@@ -92,8 +92,8 @@ export class GameAdapter {
         this.validRegionGraphics
       );
 
-      // Choose visibility calculator based on config
-      const visibilityCalculator = config.useRayBasedVisibility
+      // Choose visibility calculator based on config (ray-based by default)
+      const visibilityCalculator = (config.useRayBasedVisibility ?? true)
         ? new RayBasedVisibilityCalculator()
         : new AngleBasedVisibilityCalculator();
 
