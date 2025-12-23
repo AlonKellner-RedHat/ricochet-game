@@ -1706,6 +1706,8 @@ describe("Polygon boundary tests for V.5", () => {
   const screenBounds = { minX: 0, minY: 0, maxX: 800, maxY: 600 };
 
   it("cursor-after-surface: (150,300) alignment check", () => {
+    // Test case: cursor between player and surface should still be aligned
+    // because the ball reaches it via reflection AFTER hitting the surface
     const player: Vector2 = { x: 100, y: 300 };
     const cursor: Vector2 = { x: 150, y: 300 };
 
@@ -1719,65 +1721,21 @@ describe("Polygon boundary tests for V.5", () => {
     const plannedSurfaces: Surface[] = [surface];
     const allSurfaces: Surface[] = [surface];
 
-    // Check bypass
+    // Check bypass - should not bypass
     const bypassResult = evaluateBypass(player, cursor, plannedSurfaces, allSurfaces);
-    console.log("Bypass evaluation:");
-    console.log("  Active surfaces:", bypassResult.activeSurfaces.length);
-    console.log("  Bypassed surfaces:", bypassResult.bypassedSurfaces.length);
-    if (bypassResult.bypassedSurfaces.length > 0) {
-      for (const b of bypassResult.bypassedSurfaces) {
-        console.log("    Bypassed:", b.surface.id, "Reason:", b.reason);
-      }
-    }
-
-    // Check images
-    const playerImages = buildForwardImages(player, bypassResult.activeSurfaces);
-    const cursorImages = buildBackwardImages(cursor, bypassResult.activeSurfaces);
-    
-    console.log("Image calculation:");
-    console.log("  Player images:", playerImages.images.length);
-    for (let i = 0; i < playerImages.images.length; i++) {
-      const img = playerImages.images[i];
-      console.log(`    [${i}] (${img.position.x.toFixed(1)}, ${img.position.y.toFixed(1)})`);
-    }
-    console.log("  Cursor images:", cursorImages.images.length);
-    for (let i = 0; i < cursorImages.images.length; i++) {
-      const img = cursorImages.images[i];
-      console.log(`    [${i}] (${img.position.x.toFixed(1)}, ${img.position.y.toFixed(1)})`);
-    }
-    
-    const playerImg0 = getPlayerImageForSurface(playerImages, 0);
-    const cursorImg0 = getCursorImageForSurface(playerImages, cursorImages, 0);
-    console.log("  For surface 0:");
-    console.log(`    Player image: (${playerImg0.x.toFixed(1)}, ${playerImg0.y.toFixed(1)})`);
-    console.log(`    Cursor image: (${cursorImg0.x.toFixed(1)}, ${cursorImg0.y.toFixed(1)})`);
-    console.log(`    Direction: (${(cursorImg0.x - playerImg0.x).toFixed(1)}, ${(cursorImg0.y - playerImg0.y).toFixed(1)})`);
-    
+    expect(bypassResult.activeSurfaces.length).toBe(1);
+    expect(bypassResult.bypassedSurfaces.length).toBe(0);
 
     // Build paths
     const plannedPath = buildPlannedPath(player, cursor, plannedSurfaces, allSurfaces, bypassResult);
     const actualPath = buildActualPath(player, cursor, plannedSurfaces, allSurfaces, 10, bypassResult);
     
-    console.log("Planned path points:", plannedPath.points.length);
-    for (let i = 0; i < plannedPath.points.length; i++) {
-      const p = plannedPath.points[i];
-      console.log(`  [${i}] (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`);
-    }
-    console.log("Actual path points:", actualPath.points.length);
-    for (let i = 0; i < actualPath.points.length; i++) {
-      const p = actualPath.points[i];
-      console.log(`  [${i}] (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`);
-    }
+    // Both paths should go: player → surface → cursor
+    expect(plannedPath.points.length).toBe(3);
+    expect(actualPath.points.length).toBe(3);
 
     // Calculate alignment
     const alignment = calculateAlignment(plannedPath, actualPath);
-    console.log("Alignment:");
-    console.log("  isFullyAligned:", alignment.isFullyAligned);
-    console.log("  alignedSegmentCount:", alignment.alignedSegmentCount);
-    console.log("  firstMismatchIndex:", alignment.firstMismatchIndex);
-    if (alignment.divergencePoint) {
-      console.log("  divergencePoint:", alignment.divergencePoint);
-    }
 
     // The cursor at (150, 300) IS reachable via reflection
     // So the path should be aligned
