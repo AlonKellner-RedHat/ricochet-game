@@ -27,6 +27,11 @@
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
+import {
+  propagateVisibility,
+  buildPolygonFromSections,
+  type ScreenBounds as SectionScreenBounds,
+} from "./SectionPropagator";
 
 /**
  * Screen bounds for visibility calculation.
@@ -170,25 +175,69 @@ function calculatePlannedVisibility(
   screenBounds: ScreenBounds,
   plannedSurfaces: readonly Surface[]
 ): SimpleVisibilityResult {
-  // For single planned surface
-  if (plannedSurfaces.length === 1) {
-    return calculateSingleSurfaceVisibility(
-      playerOrigin,
-      surfaces,
-      screenBounds,
-      plannedSurfaces[0]!
-    );
-  }
-
-  // For multiple planned surfaces, fall back to simpler approach for now
-  // (This could be enhanced for multi-bounce visibility)
-  const lastPlannedSurface = plannedSurfaces[plannedSurfaces.length - 1]!;
-  return calculateSingleSurfaceVisibility(
+  // Use section-based propagation for planned surfaces
+  return calculateSectionBasedVisibility(
     playerOrigin,
     surfaces,
     screenBounds,
+    plannedSurfaces
+  );
+}
+
+/**
+ * Calculate visibility using section-based propagation.
+ *
+ * This algorithm:
+ * 1. Calculates which sections of each planned surface are visible
+ * 2. Propagates sections through each surface via reflection
+ * 3. Builds the final polygon from the propagated sections
+ */
+function calculateSectionBasedVisibility(
+  playerOrigin: Vector2,
+  surfaces: readonly Surface[],
+  screenBounds: ScreenBounds,
+  plannedSurfaces: readonly Surface[]
+): SimpleVisibilityResult {
+  if (plannedSurfaces.length === 0) {
+    return {
+      polygon: [],
+      origin: playerOrigin,
+      isValid: false,
+    };
+  }
+
+  const sectionBounds: SectionScreenBounds = {
+    minX: screenBounds.minX,
+    minY: screenBounds.minY,
+    maxX: screenBounds.maxX,
+    maxY: screenBounds.maxY,
+  };
+
+  // Propagate visibility through all planned surfaces
+  const propagation = propagateVisibility(playerOrigin, plannedSurfaces, surfaces);
+
+  if (propagation.sections.length === 0) {
+    return {
+      polygon: [],
+      origin: playerOrigin,
+      isValid: false,
+    };
+  }
+
+  // Build the polygon from the final sections
+  const lastPlannedSurface = plannedSurfaces[plannedSurfaces.length - 1]!;
+  const polygon = buildPolygonFromSections(
+    propagation,
+    surfaces,
+    sectionBounds,
     lastPlannedSurface
   );
+
+  return {
+    polygon,
+    origin: playerOrigin,
+    isValid: polygon.length >= 3,
+  };
 }
 
 /**
