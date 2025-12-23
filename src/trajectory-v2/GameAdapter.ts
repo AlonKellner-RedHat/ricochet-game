@@ -16,6 +16,11 @@ import { RenderSystem, type IGraphics } from "./systems/RenderSystem";
 import { AimingSystem } from "./systems/AimingSystem";
 import { ArrowSystem } from "./systems/ArrowSystem";
 import type { ITrajectoryEngine } from "./engine/ITrajectoryEngine";
+import {
+  ValidRegionRenderer,
+  type IValidRegionGraphics,
+  type ScreenBounds,
+} from "./visibility/ValidRegionRenderer";
 
 /**
  * Configuration for the game adapter.
@@ -27,6 +32,12 @@ export interface GameAdapterConfig {
   arrowSpeed?: number;
   /** Shoot cooldown */
   shootCooldown?: number;
+  /** Enable valid region highlighting (dark overlay) */
+  showValidRegion?: boolean;
+  /** Opacity of dark overlay for shadowed areas (0-1) */
+  validRegionShadowAlpha?: number;
+  /** Opacity of dark overlay for lit areas (0-1) */
+  validRegionLitAlpha?: number;
 }
 
 /**
@@ -40,9 +51,46 @@ export class GameAdapter {
   private arrowSystem: ArrowSystem;
   private graphics: Phaser.GameObjects.Graphics;
 
-  constructor(scene: Phaser.Scene, config: GameAdapterConfig = {}) {
+  // Valid region overlay
+  private validRegionGraphics: Phaser.GameObjects.Graphics | null = null;
+  private validRegionRenderer: ValidRegionRenderer | null = null;
+  private showValidRegion: boolean = false;
+  private screenBounds: ScreenBounds;
 
-    // Create graphics object
+  // Cached state for visibility rendering
+  private lastPlayer: Vector2 = { x: 0, y: 0 };
+  private lastAllSurfaces: readonly Surface[] = [];
+
+  constructor(scene: Phaser.Scene, config: GameAdapterConfig = {}) {
+    // Store screen bounds
+    this.screenBounds = {
+      minX: 0,
+      minY: 0,
+      maxX: scene.cameras.main.width,
+      maxY: scene.cameras.main.height,
+    };
+
+    // Create visibility overlay graphics (rendered below trajectory)
+    this.showValidRegion = config.showValidRegion ?? false;
+    if (this.showValidRegion) {
+      this.validRegionGraphics = scene.add.graphics();
+      this.validRegionGraphics.setDepth(-1); // Below other graphics
+
+      const visibilityGraphicsWrapper = this.createValidRegionGraphicsWrapper(
+        this.validRegionGraphics
+      );
+      this.validRegionRenderer = new ValidRegionRenderer(
+        visibilityGraphicsWrapper,
+        this.screenBounds,
+        {
+          shadowAlpha: config.validRegionShadowAlpha ?? 0.35,
+          litAlpha: config.validRegionLitAlpha ?? 0.15,
+          showOutline: config.debug ?? false,
+        }
+      );
+    }
+
+    // Create graphics object for trajectory
     this.graphics = scene.add.graphics();
 
     // Create Phaser-compatible graphics wrapper
@@ -75,7 +123,7 @@ export class GameAdapter {
   }
 
   /**
-   * Create a Phaser-compatible graphics wrapper.
+   * Create a Phaser-compatible graphics wrapper for trajectory rendering.
    */
   private createPhaserGraphicsWrapper(
     graphics: Phaser.GameObjects.Graphics
@@ -92,6 +140,27 @@ export class GameAdapter {
   }
 
   /**
+   * Create a Phaser-compatible graphics wrapper for valid region overlay.
+   */
+  private createValidRegionGraphicsWrapper(
+    graphics: Phaser.GameObjects.Graphics
+  ): IValidRegionGraphics {
+    return {
+      clear: () => graphics.clear(),
+      fillStyle: (color, alpha) => graphics.fillStyle(color, alpha),
+      lineStyle: (width, color, alpha) => graphics.lineStyle(width, color, alpha),
+      beginPath: () => graphics.beginPath(),
+      moveTo: (x, y) => graphics.moveTo(x, y),
+      lineTo: (x, y) => graphics.lineTo(x, y),
+      closePath: () => graphics.closePath(),
+      fillPath: () => graphics.fillPath(),
+      strokePath: () => graphics.strokePath(),
+      fillRect: (x, y, w, h) => graphics.fillRect(x, y, w, h),
+      setBlendMode: (mode) => graphics.setBlendMode(mode),
+    };
+  }
+
+  /**
    * Update the adapter each frame.
    */
   update(
@@ -101,6 +170,10 @@ export class GameAdapter {
     plannedSurfaces: readonly Surface[],
     allSurfaces: readonly Surface[]
   ): void {
+    // Cache for visibility rendering
+    this.lastPlayer = player;
+    this.lastAllSurfaces = allSurfaces;
+
     // Update engine inputs
     this.engine.setPlayer(player);
     this.engine.setCursor(cursor);
@@ -112,6 +185,11 @@ export class GameAdapter {
 
     // Update all systems
     this.coordinator.update(deltaSeconds);
+
+    // Render valid region overlay
+    if (this.validRegionRenderer && this.showValidRegion) {
+      this.validRegionRenderer.render(player, plannedSurfaces, allSurfaces);
+    }
   }
 
   /**
@@ -311,11 +389,41 @@ export class GameAdapter {
   }
 
   /**
+   * Toggle valid region overlay visibility.
+   */
+  toggleValidRegion(): void {
+    this.showValidRegion = !this.showValidRegion;
+    if (!this.showValidRegion && this.validRegionRenderer) {
+      this.validRegionRenderer.clear();
+    }
+  }
+
+  /**
+   * Set valid region overlay visibility.
+   */
+  setShowValidRegion(show: boolean): void {
+    this.showValidRegion = show;
+    if (!show && this.validRegionRenderer) {
+      this.validRegionRenderer.clear();
+    }
+  }
+
+  /**
+   * Check if valid region overlay is visible.
+   */
+  isValidRegionVisible(): boolean {
+    return this.showValidRegion;
+  }
+
+  /**
    * Clean up resources.
    */
   dispose(): void {
     this.coordinator.dispose();
     this.graphics.destroy();
+    if (this.validRegionGraphics) {
+      this.validRegionGraphics.destroy();
+    }
   }
 }
 

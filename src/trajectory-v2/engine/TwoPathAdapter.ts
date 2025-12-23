@@ -5,31 +5,33 @@
  * 1. New: calculatePlannedPath + calculateActualPath + findDivergence + renderDualPath
  * 2. Old: tracePhysicalPath + deriveRender
  *
- * DESIGN PRINCIPLE: No modification to existing code.
- * The adapter wraps both systems and compares their outputs.
+ * DESIGN PRINCIPLE: The new architecture is now the primary path.
+ * The old architecture is kept for comparison during migration.
  */
 
 import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { UnifiedPath } from "./types";
 import { calculatePlannedPath, type PlannedPath } from "./PlannedPathCalculator";
+import { 
+  calculateActualPath as calculateActualPathPure, 
+  getInitialDirection,
+  type ActualPath 
+} from "./ActualPathCalculator";
 import { findDivergence, type DivergenceInfo, type PathForComparison } from "./DivergenceDetector";
 import { renderDualPath, type RenderSegment, type RenderablePath } from "./DualPathRenderer";
 import { tracePhysicalPath } from "./PathBuilder";
 import { evaluateBypass } from "./BypassEvaluator";
 import { deriveRender } from "./RenderDeriver";
+import { 
+  buildBackwardImages, 
+  buildForwardImages,
+  getCursorImageForSurface,
+  getPlayerImageForSurface 
+} from "./ImageCache";
 
-/**
- * Actual path with physics-based waypoints.
- * This is computed using forward ray casting.
- */
-export interface ActualPath {
-  readonly waypoints: readonly Vector2[];
-  readonly cursorIndex: number;
-  readonly cursorT: number;
-  readonly reachedCursor: boolean;
-  readonly blockedBy?: Surface;
-}
+// Re-export ActualPath from the new calculator
+export type { ActualPath } from "./ActualPathCalculator";
 
 /**
  * Complete result from both architectures.
@@ -87,8 +89,36 @@ function actualToRenderable(actual: ActualPath): RenderablePath {
 }
 
 /**
- * Calculate actual path using forward physics.
- * This wraps tracePhysicalPath to extract just the waypoints.
+ * Calculate initial direction using bidirectional images.
+ * 
+ * Both planned and actual paths share the same initial direction,
+ * derived from cursor images reflected through active surfaces.
+ */
+function getInitialDirectionFromSurfaces(
+  player: Vector2,
+  cursor: Vector2,
+  activeSurfaces: readonly Surface[]
+): Vector2 {
+  if (activeSurfaces.length === 0) {
+    // No surfaces - direct toward cursor
+    return getInitialDirection(player, cursor);
+  }
+
+  // Build image sequences
+  const playerImages = buildForwardImages(player, activeSurfaces);
+  const cursorImages = buildBackwardImages(cursor, activeSurfaces);
+
+  // Get cursor image for first surface (index 0)
+  const cursorImage = getCursorImageForSurface(playerImages, cursorImages, 0);
+
+  return getInitialDirection(player, cursorImage);
+}
+
+/**
+ * Calculate actual path using PURE forward physics.
+ * 
+ * NEW ARCHITECTURE: Uses ActualPathCalculator directly.
+ * No dependency on tracePhysicalPath or UnifiedPath.
  */
 function calculateActualPath(
   player: Vector2,
@@ -96,29 +126,20 @@ function calculateActualPath(
   plannedSurfaces: readonly Surface[],
   allSurfaces: readonly Surface[]
 ): ActualPath {
+  // 1. Evaluate bypass to get active surfaces
   const bypassResult = evaluateBypass(player, cursor, plannedSurfaces, allSurfaces);
-  const unifiedPath = tracePhysicalPath(player, cursor, bypassResult, allSurfaces);
+  const activeSurfaces = bypassResult.activeSurfaces;
 
-  // Extract waypoints from unified path
-  const waypoints = unifiedPathToWaypoints(unifiedPath);
+  // 2. Calculate initial direction (shared with planned path)
+  const initialDirection = getInitialDirectionFromSurfaces(player, cursor, activeSurfaces);
 
-  // Find cursor position on path
-  let cursorIndex = unifiedPath.cursorSegmentIndex;
-  let cursorT = unifiedPath.cursorT;
-
-  // If cursor not on path, estimate from waypoints
-  if (cursorIndex < 0 && waypoints.length >= 2) {
-    cursorIndex = waypoints.length - 2;
-    cursorT = 1;
-  }
-
-  return {
-    waypoints,
-    cursorIndex,
-    cursorT,
-    reachedCursor: unifiedPath.cursorReachable,
-    blockedBy: undefined, // Could extract from unified path if needed
-  };
+  // 3. Calculate actual path using pure forward physics
+  return calculateActualPathPure(
+    player,
+    cursor,
+    initialDirection,
+    allSurfaces
+  );
 }
 
 /**

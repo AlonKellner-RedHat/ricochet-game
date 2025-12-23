@@ -1,6 +1,17 @@
 /**
  * PathBuilder - Constructs planned and actual trajectory paths
  *
+ * @deprecated This module contains the OLD unified path architecture.
+ * Use the new two-path architecture instead:
+ * - ActualPathCalculator.ts - Pure forward physics (~90 lines)
+ * - PlannedPathCalculator.ts - Pure bidirectional images (~95 lines)
+ * - DivergenceDetector.ts - Simple waypoint comparison (~70 lines)
+ * - DualPathRenderer.ts - Simple color rules (~100 lines)
+ * - SimpleTrajectoryCalculator.ts - Combines all (~80 lines)
+ *
+ * The old architecture (tracePhysicalPath, UnifiedPath) is kept for
+ * backward compatibility but should not be used for new code.
+ *
  * First Principles:
  * - Planned path uses bidirectional images (player + cursor)
  * - Ray from P_i to C_{n-i} intersects surface[i]
@@ -159,6 +170,132 @@ function calculateForwardProjectionSimple(
 }
 
 /**
+ * Result of tracing a physics path.
+ */
+export interface PhysicsPathResult {
+  /** Physics segments from start to termination */
+  readonly segments: readonly import("./types").PhysicsSegment[];
+  /** Total path length */
+  readonly totalLength: number;
+  /** Whether path was blocked by a wall */
+  readonly blockedBy: Surface | null;
+}
+
+/**
+ * Trace a physics-accurate path from a point in a direction.
+ *
+ * THIS IS THE SINGLE SOURCE OF TRUTH FOR ACTUAL ARROW PHYSICS.
+ *
+ * RULES:
+ * - Reflects only at ON-SEGMENT hits (physical surface exists)
+ * - Stops at walls (non-reflective surfaces)
+ * - Ignores off-segment intersections (arrow goes straight through)
+ *
+ * Used by:
+ * - Actual arrow movement
+ * - Dashed-yellow visualization
+ * - Dashed-red visualization (from cursor)
+ *
+ * @param start Starting point
+ * @param direction Initial direction (normalized)
+ * @param surfaces All surfaces to consider
+ * @param maxDistance Maximum total distance to trace
+ * @param maxReflections Maximum number of reflections
+ * @returns Physics path result with segments
+ */
+export function tracePhysicsPath(
+  start: Vector2,
+  direction: Vector2,
+  surfaces: readonly Surface[],
+  maxDistance: number = 1000,
+  maxReflections: number = 10
+): PhysicsPathResult {
+  const segments: import("./types").PhysicsSegment[] = [];
+  let currentPoint = start;
+  let currentDirection = direction;
+  let remainingDistance = maxDistance;
+  let lastHitSurface: Surface | null = null;
+  let blockedBy: Surface | null = null;
+  let totalLength = 0;
+
+  for (let i = 0; i < maxReflections && remainingDistance > 0; i++) {
+    // Exclude the surface we just reflected off
+    const excludeSurfaces = lastHitSurface ? [lastHitSurface] : [];
+
+    // Find first ON-SEGMENT hit in this direction
+    // raycastForward already only returns on-segment hits
+    const hit = raycastForward(
+      currentPoint,
+      currentDirection,
+      surfaces,
+      excludeSurfaces,
+      remainingDistance
+    );
+
+    if (!hit) {
+      // No hit - extend to remaining distance
+      const endpoint = {
+        x: currentPoint.x + currentDirection.x * remainingDistance,
+        y: currentPoint.y + currentDirection.y * remainingDistance,
+      };
+
+      const segmentLength = distance(currentPoint, endpoint);
+      segments.push({
+        start: currentPoint,
+        end: endpoint,
+        endSurface: null,
+        hitOnSegment: false,
+        termination: { type: "max_distance" },
+      });
+
+      totalLength += segmentLength;
+      break;
+    }
+
+    // Calculate segment length
+    const hitDist = distance(currentPoint, hit.point);
+    totalLength += hitDist;
+    remainingDistance -= hitDist;
+
+    // Create segment
+    segments.push({
+      start: currentPoint,
+      end: hit.point,
+      endSurface: hit.surface,
+      hitOnSegment: true, // raycastForward only returns on-segment hits
+      termination: !hit.canReflect ? { type: "wall_hit", surface: hit.surface } : undefined,
+    });
+
+    if (!hit.canReflect) {
+      // Wall hit - stop here
+      blockedBy = hit.surface;
+      break;
+    }
+
+    // Reflect and continue (only for on-segment reflective hits)
+    currentDirection = reflectDirection(currentDirection, hit.surface);
+    currentPoint = hit.point;
+    lastHitSurface = hit.surface;
+  }
+
+  // Handle case where we ran out of reflections
+  if (segments.length > 0 && !segments[segments.length - 1]!.termination && remainingDistance <= 0) {
+    // Mark last segment as max reflections reached
+    const lastSeg = segments[segments.length - 1]!;
+    segments[segments.length - 1] = {
+      ...lastSeg,
+      termination: { type: "max_reflections" },
+    };
+  }
+
+  return {
+    segments,
+    totalLength,
+    blockedBy,
+  };
+}
+
+/**
  * Get direction from path points.
  */
 function getDirectionFromPoints(points: readonly Vector2[]): Vector2 | null {
@@ -284,10 +421,24 @@ export function buildPlannedPath(
     }
 
     const hitPoint = intersection.point;
+
+    // CRITICAL: Check if intersection is in FORWARD direction
+    // lineLineIntersection can return a point behind the ray origin
+    // We need to ensure hitPoint is in the direction toward cursorImage
+    const prevPoint = points[points.length - 1]!;
+    const toHit = { x: hitPoint.x - prevPoint.x, y: hitPoint.y - prevPoint.y };
+    const toCursor = { x: cursorImage.x - prevPoint.x, y: cursorImage.y - prevPoint.y };
+    const dot = toHit.x * toCursor.x + toHit.y * toCursor.y;
+
+    if (dot <= 0) {
+      // Hit is behind or at origin - skip this surface (bypass case not caught)
+      // Don't add this surface to the path
+      continue;
+    }
+
     const segmentT = getParametricPosition(hitPoint, segment.start, segment.end);
     const onSegment = isHitOnSegment(segmentT);
 
-    const prevPoint = points[points.length - 1]!;
     points.push(hitPoint);
     totalLength += distance(prevPoint, hitPoint);
 
@@ -701,6 +852,12 @@ export function tracePhysicalPath(
 ): UnifiedPath {
   const opts = { ...DEFAULT_TRACE_OPTIONS, ...options };
   const activeSurfaces = bypassResult.activeSurfaces;
+  
+  // Reconstruct all planned surfaces (active + bypassed) for out-of-order detection
+  const allPlannedSurfaces = [
+    ...activeSurfaces,
+    ...bypassResult.bypassedSurfaces.map(b => b.surface),
+  ].filter((s): s is Surface => s !== undefined);
 
   // Step 1: Calculate initial direction using bidirectional images
   let initialDirection: Vector2;
@@ -831,6 +988,7 @@ export function tracePhysicalPath(
       const alignment = determinePlanAlignment(
         null, // No surface hit
         activeSurfaces,
+        allPlannedSurfaces,
         nextExpectedPlanIndex,
         hasDiverged,
         isFirstSegment
@@ -901,6 +1059,7 @@ export function tracePhysicalPath(
     const alignment = determinePlanAlignment(
       endSurface,
       activeSurfaces,
+      allPlannedSurfaces,
       nextExpectedPlanIndex,
       hasDiverged,
       isFirstSegmentInLoop
@@ -975,8 +1134,12 @@ export function tracePhysicalPath(
       // We use alignment === "aligned" to know if we just hit an expected surface.
       // If alignment was "aligned", we reflected off a PLANNED surface - no divergence.
       // If alignment was NOT "aligned", we reflected off an UNPLANNED surface - divergence.
-      if (alignment !== "aligned") {
-        // Reflected off unplanned/unexpected surface - diverge
+      //
+      // FIRST PRINCIPLE: With EMPTY plan (no planned surfaces), there's nothing to
+      // diverge from. All segments should remain "unplanned" (green before cursor,
+      // yellow after cursor). Only set hasDiverged if there actually IS a plan.
+      if (alignment !== "aligned" && activeSurfaces.length > 0) {
+        // Reflected off unplanned/unexpected surface when there IS a plan - diverge
         hasDiverged = true;
       }
       
@@ -1019,6 +1182,19 @@ export function tracePhysicalPath(
     }
   }
 
+  // Step 5: Trace actual physics path (single source of truth for arrow physics)
+  // This path only reflects at ON-SEGMENT hits - no off-segment reflections
+  const actualPhysics = tracePhysicsPath(
+    player,
+    initialDirection,
+    allSurfaces,
+    opts.maxDistance,
+    opts.maxReflections
+  );
+
+  // Step 6: Find where actual physics diverges from planned path
+  const physicsDivergenceIndex = findPhysicsDivergenceIndex(segments, actualPhysics.segments);
+
   return {
     segments,
     cursorSegmentIndex,
@@ -1028,7 +1204,46 @@ export function tracePhysicalPath(
     isFullyAligned,
     plannedSurfaceCount: activeSurfaces.length,
     totalLength,
+    actualPhysicsSegments: actualPhysics.segments,
+    physicsDivergenceIndex,
   };
+}
+
+/**
+ * Find the index where actual physics diverges from planned path.
+ * Returns -1 if paths are identical (no divergence).
+ *
+ * FIRST PRINCIPLE: Physics divergence happens when the planned path reflects
+ * at an OFF-SEGMENT point but the actual arrow goes straight through
+ * (because there's no physical surface to hit).
+ *
+ * This is NOT about segment count differences (paths can be segmented differently
+ * but still be geometrically identical). It's about when hitOnSegment === false
+ * on a segment that ends at a planned surface.
+ */
+function findPhysicsDivergenceIndex(
+  plannedSegments: readonly PathSegment[],
+  _physicsSegments: readonly import("./types").PhysicsSegment[]
+): number {
+  // Look for segments where the planned path hit an off-segment point
+  // This is where actual physics diverges (arrow goes straight, planned reflects)
+  for (let i = 0; i < plannedSegments.length; i++) {
+    const planned = plannedSegments[i]!;
+
+    // Divergence happens when:
+    // 1. Segment hit a surface (endSurface !== null)
+    // 2. Hit was OFF-segment (hitOnSegment === false)
+    // 3. Segment was "aligned" (part of the plan)
+    if (
+      planned.endSurface !== null &&
+      planned.hitOnSegment === false &&
+      planned.planAlignment === "aligned"
+    ) {
+      return i;
+    }
+  }
+
+  return -1; // No divergence
 }
 
 /**
@@ -1044,6 +1259,8 @@ function createDegeneratePath(player: Vector2, plannedCount: number): UnifiedPat
     isFullyAligned: plannedCount === 0,
     plannedSurfaceCount: plannedCount,
     totalLength: 0,
+    actualPhysicsSegments: [],
+    physicsDivergenceIndex: -1,
   };
 }
 
@@ -1110,6 +1327,7 @@ function checkCursorOnSegment(
 function determinePlanAlignment(
   hitSurface: Surface | null,
   activeSurfaces: readonly Surface[],
+  allPlannedSurfaces: readonly Surface[],
   nextExpectedIndex: number,
   hasDiverged: boolean,
   isFirstSegment: boolean = false
@@ -1143,11 +1361,25 @@ function determinePlanAlignment(
     return "aligned";
   }
 
-  // FIRST PRINCIPLE: The first segment is always aligned because we calculated
-  // the initial direction using cursor images. Both planned and actual paths
-  // START in the same direction. If the first segment hits an obstruction,
-  // the paths are still aligned UP TO that point.
-  // Divergence will be marked by tracePhysicalPath for subsequent segments.
+  // FIRST PRINCIPLE 6.11: Out-of-Order Surface Hit
+  // If we hit a surface that exists in the ORIGINAL plan (including bypassed ones),
+  // but it's not the expected next surface, this is a divergence.
+  // This catches cases where a later-planned surface is hit before an earlier one.
+  const hitAnyPlannedSurface = allPlannedSurfaces.some(
+    (s) => s.id === hitSurface.id
+  );
+  const hitExpectedSurface = hitSurface.id === expectedSurface?.id;
+
+  if (hitAnyPlannedSurface && !hitExpectedSurface) {
+    // Hit a planned surface OUT OF ORDER - this is divergence
+    // Even on first segment, this means the actual path deviated from expected order
+    return "diverged";
+  }
+
+  // FIRST PRINCIPLE: The first segment hitting an UNPLANNED obstruction is still
+  // "aligned" up to that point. Both paths started in the same direction,
+  // but an obstruction blocked the actual path. Divergence will be marked
+  // for subsequent segments by tracePhysicalPath.
   if (isFirstSegment) {
     return "aligned";
   }

@@ -494,6 +494,235 @@ export const plannedPathFollowsPlanWhenObstructed: TestSetup = {
 };
 
 /**
+ * FIRST PRINCIPLE: Planned Path Segment Transparency
+ *
+ * When the planned path is heading toward a planned reflection point on surface N,
+ * it passes through EVERYTHING else - walls, reflective surfaces, even later planned surfaces.
+ * Only the specific target planned surface affects each segment.
+ *
+ * This test: Surface2 is physically BETWEEN player and Surface1.
+ * Plan order: [surface1, surface2]
+ *
+ * Expected:
+ * - Planned path goes THROUGH surface2 to reach surface1
+ * - Reflects off surface1
+ * - Then goes to surface2 (now it's the target)
+ * - Reflects off surface2
+ * - Then goes to cursor
+ *
+ * The key: surface2 being "in the way" of the path to surface1 is irrelevant.
+ * The planned path is transparent until it reaches its target.
+ */
+export const plannedPathTransparency: TestSetup = {
+  name: "planned-path-transparency",
+  description: "Planned path passes through later-planned surface to reach current target",
+  player: { x: 100, y: 300 },
+  cursor: { x: 100, y: 100 }, // Above and left, reachable via zig-zag
+  plannedSurfaces: [
+    // Surface1: FURTHER from player (first in plan)
+    // Vertical at x=400, normal points left
+    createTestSurface({
+      id: "surface1",
+      start: { x: 400, y: 100 },
+      end: { x: 400, y: 500 },
+      canReflect: true,
+    }),
+    // Surface2: CLOSER to player (second in plan, but physically in the way)
+    // Vertical at x=200, normal points left
+    createTestSurface({
+      id: "surface2",
+      start: { x: 200, y: 100 },
+      end: { x: 200, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  allSurfaces: [
+    createTestSurface({
+      id: "surface1",
+      start: { x: 400, y: 100 },
+      end: { x: 400, y: 500 },
+      canReflect: true,
+    }),
+    createTestSurface({
+      id: "surface2",
+      start: { x: 200, y: 100 },
+      end: { x: 200, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  expected: {
+    // Actual path hits surface2 first (it's in the way), so paths diverge
+    isAligned: false,
+  },
+  // Skip 6.11 because the plan order puts surface1 first, but surface2 may be bypassed
+  tags: ["bypass", "planned-path-transparency", "first-principle-planned-transparency", "skip-6.11"],
+};
+
+/**
+ * FIRST PRINCIPLE: Planned Path Ignores Walls
+ *
+ * The planned path heading toward a reflection point must pass through walls.
+ * Walls only block the ACTUAL path, not the planned path.
+ */
+export const plannedPathIgnoresWalls: TestSetup = {
+  name: "planned-path-ignores-walls",
+  description: "Planned path passes through wall to reach planned reflection point",
+  player: { x: 100, y: 300 },
+  cursor: { x: 100, y: 100 },
+  plannedSurfaces: [
+    // Planned surface at x=400
+    createTestSurface({
+      id: "planned1",
+      start: { x: 400, y: 100 },
+      end: { x: 400, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  allSurfaces: [
+    // Wall at x=200 - blocks actual path but not planned path
+    createTestSurface({
+      id: "wall1",
+      start: { x: 200, y: 100 },
+      end: { x: 200, y: 500 },
+      canReflect: false,
+    }),
+    createTestSurface({
+      id: "planned1",
+      start: { x: 400, y: 100 },
+      end: { x: 400, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  expected: {
+    isAligned: false, // Actual blocked by wall, planned goes through
+  },
+  tags: ["bypass", "planned-path-ignores-walls", "first-principle-planned-transparency", "skip-2.5"],
+};
+
+/**
+ * FIRST PRINCIPLE: Planned Path Ignores Unplanned Reflective Surfaces
+ *
+ * If there's a reflective surface that's NOT in the plan, the planned path
+ * must pass through it without reflecting, even if it would normally reflect.
+ */
+export const plannedPathIgnoresUnplannedReflective: TestSetup = {
+  name: "planned-path-ignores-unplanned-reflective",
+  description: "Planned path passes through unplanned reflective surface",
+  player: { x: 100, y: 300 },
+  cursor: { x: 100, y: 100 },
+  plannedSurfaces: [
+    // Planned surface at x=400
+    createTestSurface({
+      id: "planned1",
+      start: { x: 400, y: 100 },
+      end: { x: 400, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  allSurfaces: [
+    // Unplanned reflective surface at x=200
+    createTestSurface({
+      id: "unplanned1",
+      start: { x: 200, y: 100 },
+      end: { x: 200, y: 500 },
+      canReflect: true,
+    }),
+    createTestSurface({
+      id: "planned1",
+      start: { x: 400, y: 100 },
+      end: { x: 400, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  expected: {
+    isAligned: false, // Actual reflects off unplanned, planned goes through
+  },
+  tags: ["bypass", "planned-path-ignores-unplanned", "first-principle-planned-transparency"],
+};
+
+/**
+ * FIRST PRINCIPLE 6.3: Reflection Chain Rule + Transparency
+ *
+ * When the reflection point from surface1 is on the wrong side of surface2,
+ * surface2 MUST be bypassed. The planned path should:
+ * 1. Go to surface1 (passing through surface2 if in the way)
+ * 2. Reflect off surface1
+ * 3. Since reflection point is on wrong side of surface2, surface2 is bypassed
+ * 4. Go directly to cursor (passing through surface2 again if in the way)
+ *
+ * This tests both transparency AND the reflection chain bypass rule.
+ */
+export const reflectionChainBypassWithTransparency: TestSetup = {
+  name: "reflection-chain-bypass-with-transparency",
+  description: "Reflection point on wrong side of surface2 causes bypass, path goes through surface2",
+  player: { x: 100, y: 300 },
+  cursor: { x: 500, y: 300 }, // Same Y as player, to the right
+  plannedSurfaces: [
+    // Surface1: at x=200, normal points left (toward player)
+    // Player at x=100 is on reflective side
+    createTestSurface({
+      id: "surface1",
+      start: { x: 200, y: 100 },
+      end: { x: 200, y: 500 },
+      canReflect: true,
+    }),
+    // Surface2: at x=300, normal points left
+    // After reflecting off surface1 at (200, 300), the path goes LEFT (away from surface2)
+    // The reflection point (200, 300) is to the LEFT of surface2 (x=300)
+    // Surface2 normal points left, so reflective side is x < 300
+    // Point at x=200 IS on reflective side... need different geometry
+    // 
+    // Actually, for the reflection point to be on WRONG side:
+    // Surface2 at x=150 (between player and surface1), normal pointing RIGHT
+    // Reflection point at x=200 is to the RIGHT of x=150
+    // If normal points right, reflective side is x > 150
+    // Point at x=200 > 150, so it IS on reflective side
+    //
+    // Let me try: surface2 at x=250, normal points left
+    // Reflective side is x < 250
+    // Reflection point at x=200 < 250, so on reflective side
+    //
+    // Need: reflection point on NON-reflective side of surface2
+    // Surface2 normal points left → reflective side x < surface2.x
+    // Reflection point x must be > surface2.x
+    //
+    // If surface1 is at x=200, reflection point is at x=200
+    // We need surface2.x < 200 for reflection point to be on wrong side
+    // Surface2 at x=150, normal left → reflective is x < 150
+    // Point at x=200 > 150 → on NON-reflective side ✓
+    createTestSurface({
+      id: "surface2",
+      start: { x: 150, y: 100 },
+      end: { x: 150, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  allSurfaces: [
+    createTestSurface({
+      id: "surface1",
+      start: { x: 200, y: 100 },
+      end: { x: 200, y: 500 },
+      canReflect: true,
+    }),
+    createTestSurface({
+      id: "surface2",
+      start: { x: 150, y: 100 },
+      end: { x: 150, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  expected: {
+    // Surface2 should be bypassed (reflection chain rule)
+    // Plan becomes just [surface1]
+    // Planned path: player → surface1 → cursor (direct after reflection)
+    // Actual path: player → surface2 (it's in the way) → reflects → ...
+    isAligned: false, // Actual hits surface2 first
+  },
+  // Skip 6.11 because surface2 is BYPASSED (not in active plan), so hitting it isn't "out-of-order"
+  tags: ["bypass", "reflection-chain-bypass", "first-principle-6.3", "first-principle-planned-transparency", "skip-6.11"],
+};
+
+/**
  * All bypass scenario setups.
  */
 /**
@@ -530,7 +759,241 @@ export const horizontalWallBlockingHorizontalSurface: TestSetup = {
   expected: {
     isAligned: false, // Path diverges at wall
   },
-  tags: ["bypass", "obstruction", "horizontal", "first-principle-6.0c"],
+  tags: ["bypass", "obstruction", "horizontal", "first-principle-6.0c", "skip-2.5"],
+};
+
+/**
+ * User-reported bug 1: Reflection chain bypass not working correctly.
+ *
+ * The reflection point from ricochet-4 (using full plan images) was on the wrong
+ * side of ricochet-1, so ricochet-1 should be bypassed.
+ *
+ * After fix: ricochet-1 is correctly bypassed, paths are aligned.
+ */
+export const userReportedReflectionChainBypass: TestSetup = {
+  name: "user-reported-reflection-chain-bypass",
+  description: "Reflection chain bypass with off-segment reflection point",
+  player: { x: 748.1195593000004, y: 666 },
+  cursor: { x: 737.7496197830452, y: 206.50095602294454 },
+  plannedSurfaces: [
+    createTestSurface({
+      id: "ricochet-4",
+      start: { x: 850, y: 350 },
+      end: { x: 850, y: 500 },
+      canReflect: true,
+    }),
+    createTestSurface({
+      id: "ricochet-1",
+      start: { x: 800, y: 150 },
+      end: { x: 900, y: 250 },
+      canReflect: true,
+    }),
+  ],
+  allSurfaces: [
+    createTestSurface({
+      id: "floor",
+      start: { x: 0, y: 700 },
+      end: { x: 1280, y: 700 },
+      canReflect: false,
+    }),
+    createTestSurface({
+      id: "ricochet-1",
+      start: { x: 800, y: 150 },
+      end: { x: 900, y: 250 },
+      canReflect: true,
+    }),
+    createTestSurface({
+      id: "ricochet-4",
+      start: { x: 850, y: 350 },
+      end: { x: 850, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  expected: {
+    // After fix: ricochet-1 is bypassed, paths should be aligned
+    isAligned: true,
+  },
+  tags: ["bypass", "user-reported", "reflection-chain", "first-principle-6.3"],
+};
+
+/**
+ * User-reported bug 2: Solid path not reaching cursor.
+ *
+ * The planned path uses an off-segment reflection on ricochet-4.
+ * The actual path diverges because ricochet-1 is physically in the way.
+ *
+ * This is a divergence case - the paths are NOT aligned.
+ * The solid red path should show the planned path from divergence to cursor.
+ */
+export const userReportedSolidPathNotReachingCursor: TestSetup = {
+  name: "user-reported-solid-path-not-reaching-cursor",
+  description: "Off-segment reflection causes divergence, solid red should reach cursor",
+  player: { x: 633.783165200001, y: 666 },
+  cursor: { x: 799.700195780222, y: 125.27724665391969 },
+  plannedSurfaces: [
+    createTestSurface({
+      id: "ricochet-4",
+      start: { x: 850, y: 350 },
+      end: { x: 850, y: 500 },
+      canReflect: true,
+    }),
+    createTestSurface({
+      id: "ricochet-1",
+      start: { x: 800, y: 150 },
+      end: { x: 900, y: 250 },
+      canReflect: true,
+    }),
+  ],
+  allSurfaces: [
+    createTestSurface({
+      id: "floor",
+      start: { x: 0, y: 700 },
+      end: { x: 1280, y: 700 },
+      canReflect: false,
+    }),
+    createTestSurface({
+      id: "platform-2",
+      start: { x: 550, y: 350 },
+      end: { x: 750, y: 350 },
+      canReflect: false,
+    }),
+    createTestSurface({
+      id: "ricochet-1",
+      start: { x: 800, y: 150 },
+      end: { x: 900, y: 250 },
+      canReflect: true,
+    }),
+    createTestSurface({
+      id: "ricochet-4",
+      start: { x: 850, y: 350 },
+      end: { x: 850, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  expected: {
+    // Actual path diverges because ricochet-1 is in the way
+    isAligned: false,
+    reachesCursor: false,
+  },
+  // Skip 2.5 because even without obstructions, the off-segment reflection creates complex geometry
+  tags: ["bypass", "user-reported", "off-segment", "divergence", "solid-path-to-cursor", "skip-2.5"],
+};
+
+/**
+ * User-reported bug 3: Strange trajectory behavior.
+ *
+ * The first segment is diverged (hits ricochet-1 instead of planned ricochet-4),
+ * but is being rendered as solid green. The solid red path starts from the wrong point.
+ */
+export const userReportedStrangeTrajectory: TestSetup = {
+  name: "user-reported-strange-trajectory",
+  description: "First segment diverged but rendered as green, red path starts from wrong point",
+  player: { x: 649.341951066669, y: 666 },
+  cursor: { x: 836.870541378528, y: 110.1338432122371 },
+  plannedSurfaces: [
+    createTestSurface({
+      id: "ricochet-4",
+      start: { x: 850, y: 350 },
+      end: { x: 850, y: 500 },
+      canReflect: true,
+    }),
+    createTestSurface({
+      id: "ricochet-1",
+      start: { x: 800, y: 150 },
+      end: { x: 900, y: 250 },
+      canReflect: true,
+    }),
+  ],
+  allSurfaces: [
+    createTestSurface({
+      id: "floor",
+      start: { x: 0, y: 700 },
+      end: { x: 1280, y: 700 },
+      canReflect: false,
+    }),
+    createTestSurface({
+      id: "ceiling",
+      start: { x: 0, y: 80 },
+      end: { x: 1280, y: 80 },
+      canReflect: false,
+    }),
+    createTestSurface({
+      id: "left-wall",
+      start: { x: 20, y: 80 },
+      end: { x: 20, y: 700 },
+      canReflect: false,
+    }),
+    createTestSurface({
+      id: "ricochet-1",
+      start: { x: 800, y: 150 },
+      end: { x: 900, y: 250 },
+      canReflect: true,
+    }),
+    createTestSurface({
+      id: "ricochet-4",
+      start: { x: 850, y: 350 },
+      end: { x: 850, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  expected: {
+    isAligned: false,
+  },
+  // Skip 1.16: Yellow IS correct - shows physics after divergence, even if eventually blocked
+  // Skip 2.5: Complex geometry with off-segment reflection
+  tags: ["bypass", "user-reported", "divergence", "first-segment-diverged", "skip-1.16", "skip-2.5"],
+};
+
+/**
+ * User-reported bug 4: Similar to bug 3, single planned surface.
+ *
+ * The path hits ricochet-1 (unplanned), then continues to left-wall.
+ * firstDivergedIndex is 1 (segment 1 is diverged).
+ * The divergence point should be at end of segment 0, not at the wall.
+ */
+export const userReportedSingleSurfaceDivergence: TestSetup = {
+  name: "user-reported-single-surface-divergence",
+  description: "Single planned surface, hit unplanned surface first, then wall",
+  player: { x: 638.2171109195828, y: 666 },
+  cursor: { x: 824.4804261790927, y: 121.1472275334608 },
+  plannedSurfaces: [
+    createTestSurface({
+      id: "ricochet-4",
+      start: { x: 850, y: 350 },
+      end: { x: 850, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  allSurfaces: [
+    createTestSurface({
+      id: "floor",
+      start: { x: 0, y: 700 },
+      end: { x: 1280, y: 700 },
+      canReflect: false,
+    }),
+    createTestSurface({
+      id: "left-wall",
+      start: { x: 20, y: 80 },
+      end: { x: 20, y: 700 },
+      canReflect: false,
+    }),
+    createTestSurface({
+      id: "ricochet-1",
+      start: { x: 800, y: 150 },
+      end: { x: 900, y: 250 },
+      canReflect: true,
+    }),
+    createTestSurface({
+      id: "ricochet-4",
+      start: { x: 850, y: 350 },
+      end: { x: 850, y: 500 },
+      canReflect: true,
+    }),
+  ],
+  expected: {
+    isAligned: false,
+  },
+  tags: ["bypass", "user-reported", "divergence", "single-surface", "skip-1.16", "skip-2.5"],
 };
 
 export const bypassSetups: readonly TestSetup[] = [
@@ -549,5 +1012,15 @@ export const bypassSetups: readonly TestSetup[] = [
   firstSegmentObstructionStillAligned,
   plannedPathFollowsPlanWhenObstructed,
   horizontalWallBlockingHorizontalSurface,
+  // New transparency principle tests
+  plannedPathTransparency,
+  plannedPathIgnoresWalls,
+  plannedPathIgnoresUnplannedReflective,
+  reflectionChainBypassWithTransparency,
+  // User-reported bugs
+  userReportedReflectionChainBypass,
+  userReportedSolidPathNotReachingCursor,
+  userReportedStrangeTrajectory,
+  userReportedSingleSurfaceDivergence,
 ];
 

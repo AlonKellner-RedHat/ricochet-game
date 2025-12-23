@@ -23,7 +23,16 @@ import type { RenderCall, SurfaceConfig, TestResults, TestSetup } from "./types"
  * Create a mock surface for testing.
  */
 export function createTestSurface(config: SurfaceConfig): Surface {
-  const { id, start, end, canReflect } = config;
+  const { id, start, end, canReflect, normalOverride } = config;
+
+  const computeNormal = () => {
+    if (normalOverride) return normalOverride;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len === 0) return { x: 0, y: 1 };
+    return { x: -dy / len, y: dx / len };
+  };
 
   return {
     id,
@@ -32,14 +41,14 @@ export function createTestSurface(config: SurfaceConfig): Surface {
     onArrowHit: () => ({ type: canReflect ? "reflect" : "stop" }),
     isPlannable: () => canReflect,
     getVisualProperties: () => ({ color: 0xffffff, lineWidth: 2, alpha: 1 }),
-    getNormal: () => {
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      if (len === 0) return { x: 0, y: 1 };
-      return { x: -dy / len, y: dx / len };
+    getNormal: computeNormal,
+    canReflectFrom: (arrowDir) => {
+      if (!canReflect) return false;
+      // Arrow can reflect if it's approaching from the normal side
+      const normal = computeNormal();
+      const dot = arrowDir.x * normal.x + arrowDir.y * normal.y;
+      return dot < 0; // Arrow is coming toward the normal direction
     },
-    canReflectFrom: () => canReflect,
   };
 }
 
@@ -76,8 +85,9 @@ export function executeSetup(setup: TestSetup): TestResults {
 
   // Build paths (legacy format for backward compatibility)
   // PRINCIPLE 2.4: Pass allSurfaces to planned path for physics-based projection
-  const plannedPath = buildPlannedPath(player, cursor, plannedSurfaces, allSurfaces);
-  const actualPath = buildActualPath(player, cursor, plannedSurfaces, allSurfaces);
+  // CRITICAL: Pass precomputed bypassResult to ensure both paths use same active surfaces
+  const plannedPath = buildPlannedPath(player, cursor, plannedSurfaces, allSurfaces, bypassResult);
+  const actualPath = buildActualPath(player, cursor, plannedSurfaces, allSurfaces, 10, bypassResult);
   const alignment = calculateAlignment(plannedPath, actualPath);
 
   // Capture render calls
@@ -113,6 +123,8 @@ export function executeSetup(setup: TestSetup): TestResults {
     alignment,
     renderCalls: graphics.calls,
     arrowWaypoints,
+    unifiedPath,
+    bypassResult,
   };
 }
 
@@ -172,6 +184,22 @@ export function createAngledSurface(
     start: { x: center.x - dx, y: center.y - dy },
     end: { x: center.x + dx, y: center.y + dy },
     canReflect,
+  });
+}
+
+/**
+ * Helper to create a wall (non-reflective surface) from two points.
+ */
+export function createWall(
+  id: string,
+  start: Vector2,
+  end: Vector2
+): Surface {
+  return createTestSurface({
+    id,
+    start,
+    end,
+    canReflect: false,
   });
 }
 

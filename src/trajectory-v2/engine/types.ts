@@ -326,5 +326,46 @@ export interface UnifiedPath {
    * Total path length (sum of all segment lengths).
    */
   readonly totalLength: number;
+
+  // ==========================================================================
+  // ACTUAL PHYSICS PATH (New - unified physics calculation)
+  // ==========================================================================
+
+  /**
+   * The actual physics path segments.
+   * Calculated using tracePhysicsPath - only reflects at ON-SEGMENT hits.
+   * This is what the actual arrow does, and what dashed-yellow should show.
+   *
+   * FIRST PRINCIPLE: This is the SINGLE SOURCE OF TRUTH for actual arrow physics.
+   * Both the game arrow and dashed-yellow visualization use these segments.
+   */
+  readonly actualPhysicsSegments: readonly PhysicsSegment[];
+
+  /**
+   * Index where actual physics diverges from planned path.
+   * -1 if no divergence (paths are identical).
+   *
+   * Divergence occurs when:
+   * - Planned path reflects at an off-segment point
+   * - Actual arrow goes straight through (no physical surface to hit)
+   */
+  readonly physicsDivergenceIndex: number;
+}
+
+/**
+ * A segment of the actual physics path.
+ * Simpler than PathSegment - no plan alignment, just pure physics.
+ */
+export interface PhysicsSegment {
+  /** Start point of segment */
+  readonly start: Vector2;
+  /** End point of segment */
+  readonly end: Vector2;
+  /** Surface hit at end (null if no hit) */
+  readonly endSurface: Surface | null;
+  /** Whether hit was on the physical segment (not extended line) */
+  readonly hitOnSegment: boolean;
+  /** Termination reason if this is the last segment */
+  readonly termination?: TerminationReason;
 }
 

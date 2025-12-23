@@ -12,22 +12,29 @@ import { bypassAssertions } from "./bypass";
 import { pathCalculationAssertions } from "./pathCalculation";
 import { physicsAssertions } from "./physics";
 import { visualizationAssertions } from "./visualization";
+import { visibilityLightingAssertions } from "./visibility-lighting";
 
 // Re-export individual assertions for direct access
 export * from "./bypass";
 export * from "./pathCalculation";
 export * from "./physics";
 export * from "./visualization";
+export * from "./visibility-lighting";
 
 /**
  * ALL first principle assertions.
  * Every test setup will be tested against each of these.
+ *
+ * Note: Visibility assertions (V.1-V.3) are run separately in
+ * VisibilityFirstPrinciples.test.ts as they require specific
+ * geometric setups and are still being refined.
  */
 export const ALL_ASSERTIONS = [
   ...visualizationAssertions,
   ...physicsAssertions,
   ...pathCalculationAssertions,
   ...bypassAssertions,
+  // visibilityLightingAssertions are run separately in dedicated tests
 ] as const;
 
 /**

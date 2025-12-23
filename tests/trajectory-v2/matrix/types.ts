@@ -79,6 +79,12 @@ export interface TestResults {
 
   /** Arrow waypoints (path + projection) */
   readonly arrowWaypoints: readonly Vector2[];
+
+  /** The unified path with actual physics segments (new architecture) */
+  readonly unifiedPath?: import("@/trajectory-v2/engine/types").UnifiedPath;
+
+  /** Bypass evaluation result (which surfaces were bypassed) */
+  readonly bypassResult?: import("@/trajectory-v2/engine/BypassEvaluator").BypassResult;
 }
 
 /**
@@ -109,6 +115,7 @@ export interface SurfaceConfig {
   readonly start: Vector2;
   readonly end: Vector2;
   readonly canReflect: boolean;
+  readonly normalOverride?: Vector2; // Optional: override the computed normal
 }
 
 /**

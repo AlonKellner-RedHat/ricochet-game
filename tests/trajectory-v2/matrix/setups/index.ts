@@ -15,6 +15,8 @@ import { generatedSetups } from "./generated";
 import { multipleSurfaceSetups } from "./multipleSurfaces";
 import { obstacleSetups } from "./obstacles";
 import { singleSurfaceSetups } from "./singleSurface";
+import { visibilitySetups } from "./visibilityBasic";
+import { MULTI_POSITION_SETUPS } from "./multiPositionSetups";
 
 // Re-export individual setups for direct access
 export * from "./bypassScenarios";
@@ -24,6 +26,8 @@ export * from "./generated";
 export * from "./multipleSurfaces";
 export * from "./obstacles";
 export * from "./singleSurface";
+export * from "./visibilityBasic";
+export * from "./multiPositionSetups";
 
 /**
  * All manually created setups.
@@ -35,6 +39,7 @@ export const MANUAL_SETUPS = [
   ...multipleSurfaceSetups,
   ...edgeCaseSetups,
   ...bypassSetups,
+  ...visibilitySetups,
 ] as const;
 
 /**

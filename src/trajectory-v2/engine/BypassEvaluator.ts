@@ -106,18 +106,23 @@ function checkObstruction(
 /**
  * Calculate the reflection point on a surface using bidirectional images.
  *
- * This is used to check if the reflection point can reach the next surface.
+ * CRITICAL FIX: Uses the FULL plan for image calculation, not just the partial list.
+ * This ensures reflection points are calculated the same way as in PlannedPathCalculator.
+ *
+ * The cursor images depend on ALL surfaces in the chain, so we must use the complete
+ * plan to get accurate reflection points for bypass decisions.
  */
 function calculateReflectionPoint(
   player: Vector2,
   cursor: Vector2,
   surface: Surface,
   surfaceIndex: number,
-  activeSurfaces: readonly Surface[]
+  fullPlan: readonly Surface[]
 ): Vector2 | null {
-  // Build image sequences for current active plan
-  const playerImages = buildForwardImages(player, activeSurfaces);
-  const cursorImages = buildBackwardImages(cursor, activeSurfaces);
+  // Build image sequences using the FULL plan
+  // This matches how PlannedPathCalculator calculates reflection points
+  const playerImages = buildForwardImages(player, fullPlan);
+  const cursorImages = buildBackwardImages(cursor, fullPlan);
 
   // Get appropriate images for this surface
   const playerImage = getPlayerImageForSurface(playerImages, surfaceIndex);
@@ -228,13 +233,15 @@ export function evaluateBypass(
     } else {
       activeSurfaces.push(surface);
 
-      // Calculate reflection point to update current position
+      // Calculate reflection point using FULL plan for accurate bypass decisions
+      // We use the original planned surfaces (not the partial activeSurfaces)
+      // because cursor images depend on ALL subsequent surfaces in the chain
       const reflectionPoint = calculateReflectionPoint(
         player,
         cursor,
         surface,
-        activeSurfaces.length - 1,
-        activeSurfaces
+        i,  // Use original index in the full plan
+        plannedSurfaces  // Use FULL plan, not partial activeSurfaces
       );
 
       if (reflectionPoint) {

@@ -7,21 +7,20 @@
 
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
+import { TrajectoryDebugLogger } from "../TrajectoryDebugLogger";
 
 /**
- * FEATURE FLAG: Use new two-path architecture for rendering.
+ * Two-path architecture is now the default.
+ * This flag is kept for backward compatibility but should always be true.
  *
- * When true:
- *   - Uses calculatePlannedPath + findDivergence + renderDualPath
- *   - Simpler, more principled color logic
+ * The new architecture:
+ * - SimpleTrajectoryCalculator.calculateSimpleTrajectory() - main entry
+ * - ActualPathCalculator - forward physics (~90 lines)
+ * - PlannedPathCalculator - bidirectional images (~95 lines)
+ * - DivergenceDetector - waypoint comparison (~70 lines)
+ * - DualPathRenderer - color derivation (~100 lines)
  *
- * When false:
- *   - Uses tracePhysicalPath + deriveRender (current behavior)
- *
- * Set to false by default for safety. Enable after validation.
- */
-/**
- * FEATURE FLAG: Use new two-path architecture for rendering.
+ * @deprecated This flag will be removed in a future version.
  */
 export const USE_TWO_PATH_ARCHITECTURE = true;
 import { buildBackwardImages, buildForwardImages } from "./ImageCache";
@@ -285,16 +284,72 @@ export class TrajectoryEngine implements ITrajectoryEngine {
   }
 
   getResults(): EngineResults {
+    // Debug: verify this method is being called
+    if (TrajectoryDebugLogger.isEnabled()) {
+      console.log("[TrajectoryEngine] getResults() called");
+    }
+
+    // Log the input state (if debug enabled)
+    TrajectoryDebugLogger.logTrajectory(
+      this.player,
+      this.cursor,
+      this.plannedSurfaces,
+      this.allSurfaces
+    );
+
     const bypassResult = this.getBypassResult();
+    TrajectoryDebugLogger.logBypass(bypassResult);
+
+    const plannedPath = this.getPlannedPath();
+    const actualPath = this.getActualPath();
+    const unifiedPath = this.getUnifiedPath();
+
+    // Log paths using adapted format
+    if (TrajectoryDebugLogger.isEnabled()) {
+      // Log planned path
+      TrajectoryDebugLogger.logPlannedPath({
+        waypoints: plannedPath.points,
+        hits: plannedPath.hitInfo.map(h => ({
+          point: h.point,
+          surface: h.surface,
+          onSegment: h.onSegment,
+        })),
+        cursorIndex: plannedPath.points.length - 2,
+        cursorT: 1,
+      });
+
+      // Log actual path
+      TrajectoryDebugLogger.logActualPath({
+        waypoints: actualPath.points,
+        hits: actualPath.hitInfo.map(h => ({
+          point: h.point,
+          surface: h.surface,
+          onSegment: h.onSegment,
+          reflected: h.reflected,
+        })),
+        reachedCursor: unifiedPath.cursorReachable,
+        blockedBy: unifiedPath.segments.find(s => s.endSurface && !s.endSurface.isPlannable())?.endSurface,
+      });
+
+      // Log divergence
+      TrajectoryDebugLogger.logDivergence({
+        isAligned: unifiedPath.firstDivergedIndex === -1,
+        segmentIndex: unifiedPath.firstDivergedIndex,
+        point: unifiedPath.firstDivergedIndex >= 0 && unifiedPath.segments[unifiedPath.firstDivergedIndex]
+          ? unifiedPath.segments[unifiedPath.firstDivergedIndex]!.start
+          : undefined,
+      });
+    }
+
     return {
       playerImages: this.getPlayerImages(),
       cursorImages: this.getCursorImages(),
-      plannedPath: this.getPlannedPath(),
-      actualPath: this.getActualPath(),
+      plannedPath,
+      actualPath,
       alignment: this.getAlignment(),
       plannedGhost: this.getPlannedGhost(),
       actualGhost: this.getActualGhost(),
-      unifiedPath: this.getUnifiedPath(),
+      unifiedPath,
       cursor: this.cursor,
       allSurfaces: this.allSurfaces,
       activePlannedSurfaces: bypassResult.activeSurfaces,

@@ -21,3 +21,6 @@ export * from "./systems";
 // Coordinator
 export * from "./coordinator";
 
+// Debug utilities
+export { TrajectoryDebugLogger } from "./TrajectoryDebugLogger";
+

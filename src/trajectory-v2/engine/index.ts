@@ -11,3 +11,11 @@ export * from "./SurfaceState";
 export * from "./BypassEvaluator";
 export * from "./RenderDeriver";
 
+// Two-Path Architecture (simplified)
+export * from "./ActualPathCalculator";
+export * from "./PlannedPathCalculator";
+export * from "./DivergenceDetector";
+export * from "./DualPathRenderer";
+export * from "./TwoPathAdapter";
+export * from "./SimpleTrajectoryCalculator";
+

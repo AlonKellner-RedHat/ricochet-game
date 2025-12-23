@@ -3,6 +3,7 @@ import { Player } from "@/player";
 import { RicochetSurface, WallSurface } from "@/surfaces";
 import type { Surface } from "@/surfaces";
 import { GameAdapter } from "@/trajectory-v2/GameAdapter";
+import { TrajectoryDebugLogger } from "@/trajectory-v2/TrajectoryDebugLogger";
 import Phaser from "phaser";
 
 /**
@@ -55,10 +56,32 @@ export class GameScene extends Phaser.Scene {
       this.debugView.toggle();
     });
 
+    // Toggle trajectory debug logging with 'L' key
+    this.inputManager.onKeyPress("KeyL", () => {
+      TrajectoryDebugLogger.toggle();
+    });
+
+    // Dump trajectory logs with 'D' key
+    this.inputManager.onKeyPress("KeyD", () => {
+      TrajectoryDebugLogger.dump();
+    });
+
+    // Export last log as test setup with 'E' key
+    this.inputManager.onKeyPress("KeyE", () => {
+      TrajectoryDebugLogger.exportToConsole();
+    });
+
+    // Toggle valid region overlay with 'V' key
+    this.inputManager.onKeyPress("KeyV", () => {
+      this.trajectoryAdapter.toggleValidRegion();
+    });
+
     // Initialize trajectory v2 system
     this.trajectoryAdapter = new GameAdapter(this, {
       arrowSpeed: 800,
       shootCooldown: 0.3,
+      showValidRegion: true, // Enable visibility overlay
+      validRegionOverlayAlpha: 0.4,
     });
 
     // Create arrow graphics
@@ -94,6 +117,19 @@ export class GameScene extends Phaser.Scene {
           fontFamily: "JetBrains Mono, monospace",
           fontSize: "12px",
           color: "#888888",
+        }
+      )
+      .setOrigin(0.5);
+
+    this.add
+      .text(
+        this.cameras.main.centerX,
+        70,
+        "Debug: L=toggle logging • D=dump logs • E=export test setup • V=toggle visibility",
+        {
+          fontFamily: "JetBrains Mono, monospace",
+          fontSize: "10px",
+          color: "#666666",
         }
       )
       .setOrigin(0.5);
