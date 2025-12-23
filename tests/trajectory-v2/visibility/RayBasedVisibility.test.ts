@@ -218,5 +218,94 @@ describe("RayBasedVisibility", () => {
       expect(lit).toBe(true);
     });
   });
+
+  describe("Shadow edge handling (grazing rays)", () => {
+    it("cursor in open area past obstacle should be lit - user reported issue", () => {
+      // User-reported issue: cursor is in shadow but path is valid
+      // Player at (566.4, 666), cursor at (1126.7, 570.2)
+      // The polygon edge (850, 500) → (1260, 699) incorrectly shadows the cursor
+      const player: Vector2 = { x: 566.4, y: 666 };
+      const cursor: Vector2 = { x: 1126.7, y: 570.2 };
+      
+      const surfaces = [
+        createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }, false),
+        createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 }, false),
+        createTestSurface("left-wall", { x: 20, y: 80 }, { x: 20, y: 700 }, false),
+        createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 }, false),
+        createTestSurface("platform-1", { x: 300, y: 450 }, { x: 500, y: 450 }, false),
+        createTestSurface("platform-2", { x: 550, y: 350 }, { x: 750, y: 350 }, false),
+        createTestSurface("ricochet-1", { x: 800, y: 150 }, { x: 900, y: 250 }, true),
+        createTestSurface("ricochet-2", { x: 400, y: 250 }, { x: 550, y: 250 }, true),
+        createTestSurface("ricochet-3", { x: 100, y: 200 }, { x: 200, y: 300 }, true),
+        createTestSurface("ricochet-4", { x: 850, y: 350 }, { x: 850, y: 500 }, true),
+      ];
+      const plannedSurfaces: Surface[] = [];
+
+      // V.5: valid path → cursor should be lit
+      const lit = isCursorLit(player, cursor, plannedSurfaces, surfaces);
+      expect(lit).toBe(true);
+
+      // Polygon should contain cursor
+      const result = calculateRayVisibility(player, surfaces, screenBounds, plannedSurfaces);
+      expect(result.isValid).toBe(true);
+      
+      // Check if cursor is inside polygon
+      const cursorInPolygon = isPointInPolygon(cursor, result.polygon);
+      expect(cursorInPolygon).toBe(true);
+    });
+
+    it("handles obstacle endpoint correctly with grazing ray", () => {
+      // Simple case: player, vertical obstacle, floor
+      // Ray past obstacle should hit floor, not skip to far corner
+      const player: Vector2 = { x: 100, y: 100 };
+      const obstacle = createTestSurface("obstacle", { x: 200, y: 50 }, { x: 200, y: 150 }, false);
+      const floor = createTestSurface("floor", { x: 0, y: 200 }, { x: 400, y: 200 }, false);
+      const surfaces = [obstacle, floor];
+
+      const result = calculateRayVisibility(player, surfaces, screenBounds, []);
+      
+      // The grazing ray past the obstacle endpoint should produce distinct
+      // vertices on either side - one hitting the obstacle and one hitting the floor
+      // This creates the proper shadow edge
+      expect(result.isValid).toBe(true);
+      
+      // The polygon should have vertices on the floor (y=200 region)
+      const floorVertices = result.polygon.filter(
+        (v) => Math.abs(v.y - 200) < 5
+      );
+      expect(floorVertices.length).toBeGreaterThan(0);
+      
+      // And vertices on the obstacle (x=200)
+      const obstacleVertices = result.polygon.filter(
+        (v) => Math.abs(v.x - 200) < 5 && v.y >= 50 && v.y <= 150
+      );
+      expect(obstacleVertices.length).toBeGreaterThan(0);
+    });
+  });
 });
+
+/**
+ * Check if a point is inside a polygon using ray casting algorithm.
+ */
+function isPointInPolygon(point: Vector2, polygon: readonly Vector2[]): boolean {
+  let inside = false;
+  const n = polygon.length;
+
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = polygon[i]!.x;
+    const yi = polygon[i]!.y;
+    const xj = polygon[j]!.x;
+    const yj = polygon[j]!.y;
+
+    const intersect =
+      yi > point.y !== yj > point.y &&
+      point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi;
+
+    if (intersect) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
 

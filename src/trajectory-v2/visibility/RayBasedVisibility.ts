@@ -166,48 +166,86 @@ export function calculateRayVisibility(
 }
 
 /**
- * Calculate direct line-of-sight visibility using rays.
+ * Calculate direct line-of-sight visibility using rays with grazing ray technique.
+ *
+ * For each surface endpoint, we cast THREE rays:
+ * 1. Before ray: angle - ε (may hit the surface)
+ * 2. Exact ray: exactly at endpoint
+ * 3. After ray: angle + ε (extends past obstacle to find shadow edge)
+ *
+ * This properly captures shadow boundaries that the simple algorithm misses.
  */
 function calculateDirectRayVisibility(
   origin: Vector2,
   surfaces: readonly Surface[],
   screenBounds: ScreenBounds
 ): RayVisibilityResult {
-  // Collect all critical points (surface endpoints + screen corners)
-  const criticalPoints: Vector2[] = [];
+  const epsilon = 0.0001;
+  
+  // Collect angle data for all critical directions
+  const rayData: { angle: number; point: Vector2 | null }[] = [];
 
-  // Add surface endpoints
+  // Add surface endpoints with grazing rays
   for (const surface of surfaces) {
-    criticalPoints.push(surface.segment.start);
-    criticalPoints.push(surface.segment.end);
+    for (const endpoint of [surface.segment.start, surface.segment.end]) {
+      const angle = Math.atan2(endpoint.y - origin.y, endpoint.x - origin.x);
+
+      // Ray before endpoint (angle - ε)
+      const beforeAngle = angle - epsilon;
+      const beforeHit = castRayAtAngle(origin, beforeAngle, surfaces, screenBounds);
+      if (beforeHit) {
+        rayData.push({ angle: beforeAngle, point: beforeHit });
+      }
+
+      // Ray exactly at endpoint
+      const exactRay = createRay(origin, endpoint);
+      const exactHit = castRayToFirstSurface(exactRay, origin, surfaces, screenBounds);
+      if (exactHit) {
+        rayData.push({ angle, point: exactHit });
+      }
+
+      // Ray after endpoint (angle + ε) - grazing ray
+      const afterAngle = angle + epsilon;
+      const afterHit = castRayAtAngle(origin, afterAngle, surfaces, screenBounds);
+      if (afterHit) {
+        rayData.push({ angle: afterAngle, point: afterHit });
+      }
+    }
   }
 
   // Add screen corners
-  criticalPoints.push({ x: screenBounds.minX, y: screenBounds.minY });
-  criticalPoints.push({ x: screenBounds.maxX, y: screenBounds.minY });
-  criticalPoints.push({ x: screenBounds.maxX, y: screenBounds.maxY });
-  criticalPoints.push({ x: screenBounds.minX, y: screenBounds.maxY });
+  const corners = [
+    { x: screenBounds.minX, y: screenBounds.minY },
+    { x: screenBounds.maxX, y: screenBounds.minY },
+    { x: screenBounds.maxX, y: screenBounds.maxY },
+    { x: screenBounds.minX, y: screenBounds.maxY },
+  ];
 
-  // Sort points by angle from origin (CCW)
-  const sortedPoints = [...criticalPoints].sort((a, b) => {
-    const angleA = Math.atan2(a.y - origin.y, a.x - origin.x);
-    const angleB = Math.atan2(b.y - origin.y, b.x - origin.x);
-    return angleA - angleB;
-  });
-
-  // Cast rays to each point and find first intersection
-  const rays: Ray[] = [];
-  const polygon: Vector2[] = [];
-
-  for (const point of sortedPoints) {
-    const ray = createRay(origin, point);
-    const hitPoint = castRayToFirstSurface(ray, origin, surfaces, screenBounds);
-
-    rays.push(ray);
-    if (hitPoint) {
-      polygon.push(hitPoint);
+  for (const corner of corners) {
+    const angle = Math.atan2(corner.y - origin.y, corner.x - origin.x);
+    const ray = createRay(origin, corner);
+    const hit = castRayToFirstSurface(ray, origin, surfaces, screenBounds);
+    if (hit) {
+      rayData.push({ angle, point: hit });
     }
   }
+
+  // Sort by angle (CCW)
+  rayData.sort((a, b) => a.angle - b.angle);
+
+  // Extract polygon points
+  const polygon: Vector2[] = rayData
+    .map((r) => r.point)
+    .filter((p): p is Vector2 => p !== null);
+
+  // Create rays for debugging
+  const rays: Ray[] = rayData.map((r) => {
+    const farPoint = {
+      x: origin.x + Math.cos(r.angle) * 10000,
+      y: origin.y + Math.sin(r.angle) * 10000,
+    };
+    return createRay(origin, farPoint);
+  });
 
   // Remove duplicate points
   const uniquePolygon = removeDuplicatePoints(polygon);
@@ -218,6 +256,25 @@ function calculateDirectRayVisibility(
     rays,
     isValid: uniquePolygon.length >= 3,
   };
+}
+
+/**
+ * Cast a ray at a specific angle and find the first surface hit.
+ */
+function castRayAtAngle(
+  origin: Vector2,
+  angle: number,
+  surfaces: readonly Surface[],
+  screenBounds: ScreenBounds
+): Vector2 | null {
+  // Create a ray extending far in the given direction
+  const farPoint = {
+    x: origin.x + Math.cos(angle) * 10000,
+    y: origin.y + Math.sin(angle) * 10000,
+  };
+  
+  const ray = createRay(origin, farPoint);
+  return castRayToFirstSurface(ray, origin, surfaces, screenBounds);
 }
 
 /**
