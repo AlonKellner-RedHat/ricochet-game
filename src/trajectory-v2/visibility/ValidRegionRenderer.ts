@@ -15,6 +15,8 @@ import { TrajectoryDebugLogger, type VisibilityDebugInfo } from "../TrajectoryDe
 import type { ScreenBounds } from "./ConePropagator";
 import type { ValidRegionOutline } from "./OutlineBuilder";
 import { calculateSimpleVisibility } from "./SimpleVisibilityCalculator";
+import type { IVisibilityCalculator, VisibilityResult } from "@/trajectory-v2/interfaces/IVisibilityCalculator";
+import { AngleBasedVisibilityCalculator } from "@/trajectory-v2/calculators/AngleBasedVisibilityCalculator";
 
 /**
  * Configuration for the valid region overlay.
@@ -85,15 +87,28 @@ export class ValidRegionRenderer {
   private config: ValidRegionConfig;
   private screenBounds: ScreenBounds;
   private lastOutline: ValidRegionOutline | null = null;
+  private visibilityCalculator: IVisibilityCalculator;
 
   constructor(
     graphics: IValidRegionGraphics,
     screenBounds: ScreenBounds,
-    config: Partial<ValidRegionConfig> = {}
+    config: Partial<ValidRegionConfig> = {},
+    visibilityCalculator?: IVisibilityCalculator
   ) {
     this.graphics = graphics;
     this.screenBounds = screenBounds;
     this.config = { ...DEFAULT_VALID_REGION_CONFIG, ...config };
+    // Default to angle-based for backward compatibility
+    this.visibilityCalculator = visibilityCalculator ?? new AngleBasedVisibilityCalculator();
+  }
+
+  /**
+   * Set a different visibility calculator.
+   *
+   * Use this to switch between angle-based and ray-based implementations.
+   */
+  setVisibilityCalculator(calculator: IVisibilityCalculator): void {
+    this.visibilityCalculator = calculator;
   }
 
   /**
@@ -128,9 +143,9 @@ export class ValidRegionRenderer {
     plannedSurfaces: readonly Surface[],
     allSurfaces: readonly Surface[]
   ): void {
-    // Calculate valid region using simple ray casting algorithm
-    // Pass planned surfaces to constrain visibility to reflective side
-    const visibilityResult = calculateSimpleVisibility(
+    // Calculate valid region using the configured visibility calculator
+    // The calculator handles the complexity of planned surfaces and V.5 constraints
+    const visibilityResult = this.visibilityCalculator.calculate(
       player,
       allSurfaces,
       this.screenBounds,

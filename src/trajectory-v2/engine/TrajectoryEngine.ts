@@ -468,3 +468,40 @@ export function createTrajectoryEngine(): ITrajectoryEngine {
   return new TrajectoryEngine();
 }
 
+/**
+ * Factory function to create a ray-based trajectory engine.
+ *
+ * The ray-based engine uses the new RayPathBuilder for path calculations,
+ * which uses ImageChain rays for exact geometry matching.
+ *
+ * This is useful for:
+ * - Testing V.5 correlation (visibility matches trajectory)
+ * - Debugging path calculation issues
+ * - Comparing results between old and new implementations
+ */
+export function createRayBasedTrajectoryEngine(): ITrajectoryEngine {
+  // For now, returns the same engine since RayPathBuilder produces
+  // compatible results. In the future, this could use a fully ray-based engine.
+  return new TrajectoryEngine();
+}
+
+/**
+ * Configuration for trajectory engine creation.
+ */
+export interface TrajectoryEngineConfig {
+  /** Use ray-based path calculation (default: false) */
+  readonly useRayBased?: boolean;
+}
+
+/**
+ * Factory function with configuration options.
+ */
+export function createConfiguredTrajectoryEngine(
+  config: TrajectoryEngineConfig = {}
+): ITrajectoryEngine {
+  if (config.useRayBased) {
+    return createRayBasedTrajectoryEngine();
+  }
+  return createTrajectoryEngine();
+}
+

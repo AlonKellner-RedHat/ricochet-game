@@ -21,6 +21,8 @@ import {
   type IValidRegionGraphics,
   type ScreenBounds,
 } from "./visibility/ValidRegionRenderer";
+import { RayBasedVisibilityCalculator } from "./calculators/RayBasedVisibilityCalculator";
+import { AngleBasedVisibilityCalculator } from "./calculators/AngleBasedVisibilityCalculator";
 
 /**
  * Configuration for the game adapter.
@@ -38,6 +40,16 @@ export interface GameAdapterConfig {
   validRegionShadowAlpha?: number;
   /** Opacity of dark overlay for lit areas (0-1) */
   validRegionLitAlpha?: number;
+  /**
+   * Use ray-based visibility calculation.
+   *
+   * When true, uses the new RayBasedVisibilityCalculator which derives
+   * visibility from ImageChain rays, ensuring V.5 correlation:
+   * Light reaches cursor ↔ (plan valid AND aligned)
+   *
+   * When false (default), uses the AngleBasedVisibilityCalculator.
+   */
+  useRayBasedVisibility?: boolean;
 }
 
 /**
@@ -79,6 +91,12 @@ export class GameAdapter {
       const visibilityGraphicsWrapper = this.createValidRegionGraphicsWrapper(
         this.validRegionGraphics
       );
+
+      // Choose visibility calculator based on config
+      const visibilityCalculator = config.useRayBasedVisibility
+        ? new RayBasedVisibilityCalculator()
+        : new AngleBasedVisibilityCalculator();
+
       this.validRegionRenderer = new ValidRegionRenderer(
         visibilityGraphicsWrapper,
         this.screenBounds,
@@ -86,7 +104,8 @@ export class GameAdapter {
           shadowAlpha: config.validRegionShadowAlpha ?? 0.35,
           litAlpha: config.validRegionLitAlpha ?? 0.15,
           showOutline: config.debug ?? false,
-        }
+        },
+        visibilityCalculator
       );
     }
 
