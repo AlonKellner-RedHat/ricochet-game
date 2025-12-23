@@ -116,8 +116,11 @@ export class ValidRegionRenderer {
    * Uses the new SimpleVisibilityCalculator for robust ray-casting based
    * visibility polygon generation.
    *
+   * For planned surfaces, visibility is constrained to the reflective side
+   * of the last planned surface (V.5 first principle).
+   *
    * @param player Player position
-   * @param plannedSurfaces Planned surfaces (windows) - currently ignored for simple visibility
+   * @param plannedSurfaces Planned surfaces (windows)
    * @param allSurfaces All surfaces in the scene
    */
   render(
@@ -126,7 +129,13 @@ export class ValidRegionRenderer {
     allSurfaces: readonly Surface[]
   ): void {
     // Calculate valid region using simple ray casting algorithm
-    const visibilityResult = calculateSimpleVisibility(player, allSurfaces, this.screenBounds);
+    // Pass planned surfaces to constrain visibility to reflective side
+    const visibilityResult = calculateSimpleVisibility(
+      player, 
+      allSurfaces, 
+      this.screenBounds, 
+      plannedSurfaces
+    );
 
     // Convert to ValidRegionOutline format for compatibility
     const outline: ValidRegionOutline = {

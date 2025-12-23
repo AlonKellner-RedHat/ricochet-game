@@ -331,3 +331,141 @@ function isPointInSimplePolygon(point: Vector2, polygon: readonly Vector2[]): bo
   return inside;
 }
 
+/**
+ * V.5 First Principle: Light reaches cursor ↔ (plan valid AND aligned)
+ *
+ * For planned surfaces, visibility must be constrained to the reflective side
+ * of the planned surfaces.
+ */
+describe("Planned Surface Visibility (V.5)", () => {
+  const screenBounds: ScreenBounds = {
+    minX: 0,
+    minY: 0,
+    maxX: 1280,
+    maxY: 720,
+  };
+
+  // Simple setup with one vertical ricochet surface
+  const plannedSurfaceSetup = {
+    player: { x: 632, y: 666 },
+    // Vertical ricochet surface at x=850, from y=350 to y=500
+    // Player is to the LEFT of this surface (x=632 < 850)
+    // Points to the LEFT of x=850 are on the same side as player (non-reflective side)
+    // Points to the RIGHT of x=850 are on the opposite side (reflective side)
+    plannedSurface: createTestSurface({
+      id: "ricochet-4",
+      start: { x: 850, y: 350 },
+      end: { x: 850, y: 500 },
+      canReflect: true,
+    }),
+    allSurfaces: [
+      createTestSurface({ id: "floor", start: { x: 0, y: 700 }, end: { x: 1280, y: 700 }, canReflect: false }),
+      createTestSurface({ id: "ceiling", start: { x: 0, y: 80 }, end: { x: 1280, y: 80 }, canReflect: false }),
+      createTestSurface({ id: "left-wall", start: { x: 20, y: 80 }, end: { x: 20, y: 700 }, canReflect: false }),
+      createTestSurface({ id: "right-wall", start: { x: 1260, y: 80 }, end: { x: 1260, y: 700 }, canReflect: false }),
+      createTestSurface({ id: "ricochet-4", start: { x: 850, y: 350 }, end: { x: 850, y: 500 }, canReflect: true }),
+    ],
+  };
+
+  it("with planned surface, points on SAME side as player should NOT be lit", () => {
+    const { player, plannedSurface, allSurfaces } = plannedSurfaceSetup;
+
+    // Point on the same side as player (left of x=850)
+    const pointSameSide = { x: 700, y: 400 };
+
+    // Calculate visibility WITH planned surface
+    const result = calculateSimpleVisibility(
+      player,
+      allSurfaces,
+      screenBounds,
+      [plannedSurface] // Pass planned surfaces
+    );
+
+    // Point on same side as player should NOT be lit when there's a planned surface
+    const inPolygon = isPointInSimplePolygon(pointSameSide, result.polygon);
+    expect(inPolygon).toBe(false);
+  });
+
+  it("with planned surface, points on REFLECTIVE side should be lit (if plan valid)", () => {
+    const { player, plannedSurface, allSurfaces } = plannedSurfaceSetup;
+
+    // Point on the reflective side (right of x=850)
+    const pointReflectiveSide = { x: 1000, y: 400 };
+
+    // Calculate visibility WITH planned surface
+    const result = calculateSimpleVisibility(
+      player,
+      allSurfaces,
+      screenBounds,
+      [plannedSurface] // Pass planned surfaces
+    );
+
+    // Point on reflective side should be lit
+    const inPolygon = isPointInSimplePolygon(pointReflectiveSide, result.polygon);
+    expect(inPolygon).toBe(true);
+  });
+
+  it("without planned surface, visibility is normal line-of-sight", () => {
+    const { player, allSurfaces } = plannedSurfaceSetup;
+
+    // Point on the left side (would be blocked with plan, but not without)
+    const pointLeft = { x: 700, y: 400 };
+
+    // Calculate visibility WITHOUT planned surface
+    const resultNoplan = calculateSimpleVisibility(
+      player,
+      allSurfaces,
+      screenBounds,
+      [] // No planned surfaces
+    );
+
+    // Should have line-of-sight without plan
+    const inPolygon = isPointInSimplePolygon(pointLeft, resultNoplan.polygon);
+    expect(inPolygon).toBe(true);
+  });
+
+  it("user-reported setup: planned surface must affect visibility", () => {
+    // User-reported setup from timestamp 2025-12-23T14:26:22.399Z
+    const player = { x: 632.459387350011, y: 666 };
+    const cursor = { x: 684.7268106734434, y: 237.20457433290977 };
+    const plannedSurface = createTestSurface({
+      id: "ricochet-4",
+      start: { x: 850, y: 350 },
+      end: { x: 850, y: 500 },
+      canReflect: true,
+    });
+    const allSurfaces = [
+      createTestSurface({ id: "floor", start: { x: 0, y: 700 }, end: { x: 1280, y: 700 }, canReflect: false }),
+      createTestSurface({ id: "ceiling", start: { x: 0, y: 80 }, end: { x: 1280, y: 80 }, canReflect: false }),
+      createTestSurface({ id: "left-wall", start: { x: 20, y: 80 }, end: { x: 20, y: 700 }, canReflect: false }),
+      createTestSurface({ id: "right-wall", start: { x: 1260, y: 80 }, end: { x: 1260, y: 700 }, canReflect: false }),
+      createTestSurface({ id: "platform-1", start: { x: 300, y: 450 }, end: { x: 500, y: 450 }, canReflect: false }),
+      createTestSurface({ id: "platform-2", start: { x: 550, y: 350 }, end: { x: 750, y: 350 }, canReflect: false }),
+      createTestSurface({ id: "ricochet-1", start: { x: 800, y: 150 }, end: { x: 900, y: 250 }, canReflect: true }),
+      createTestSurface({ id: "ricochet-2", start: { x: 400, y: 250 }, end: { x: 550, y: 250 }, canReflect: true }),
+      createTestSurface({ id: "ricochet-3", start: { x: 100, y: 200 }, end: { x: 200, y: 300 }, canReflect: true }),
+      createTestSurface({ id: "ricochet-4", start: { x: 850, y: 350 }, end: { x: 850, y: 500 }, canReflect: true }),
+    ];
+
+    // With planned surface, cursor (left of x=850) should NOT be lit
+    // because cursor is on the same side as player, not on reflective side
+    const resultWithPlan = calculateSimpleVisibility(
+      player,
+      allSurfaces,
+      screenBounds,
+      [plannedSurface]
+    );
+
+    // Cursor is at x=684 which is LEFT of planned surface (x=850)
+    // Player is at x=632 which is also LEFT
+    // So cursor is on SAME side as player = NOT lit
+    const cursorInPolygon = isPointInSimplePolygon(cursor, resultWithPlan.polygon);
+    expect(cursorInPolygon).toBe(false);
+
+    // A point on the reflective side (x > 850) SHOULD be lit
+    const pointOnReflectiveSide = { x: 1000, y: 400 };
+    const pointLit = isPointInSimplePolygon(pointOnReflectiveSide, resultWithPlan.polygon);
+    expect(pointLit).toBe(true);
+  });
+});
+
