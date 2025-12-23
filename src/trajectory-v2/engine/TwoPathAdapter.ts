@@ -1,6 +1,9 @@
 /**
  * TwoPathAdapter - Bridges new two-path architecture with existing system
  *
+ * @deprecated This module is deprecated. Use SimpleTrajectoryCalculator instead.
+ * This module is kept for backward compatibility with existing tests.
+ *
  * This adapter allows running BOTH architectures in parallel for comparison:
  * 1. New: calculatePlannedPath + calculateActualPath + findDivergence + renderDualPath
  * 2. Old: tracePhysicalPath + deriveRender

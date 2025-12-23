@@ -1,6 +1,9 @@
 /**
  * ConePropagator - Main cone propagation algorithm for visibility calculation
  *
+ * @deprecated This module is deprecated. Use SimpleVisibilityCalculator instead.
+ * This module is kept for backward compatibility with existing tests.
+ *
  * Propagates a cone of "light" from the player through planned surfaces (windows).
  * Obstacles block sections of the cone. Each window trims and reflects the cone.
  * After the last window, blocking surfaces contribute to the final outline.

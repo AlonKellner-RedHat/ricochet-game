@@ -20,9 +20,9 @@
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
 import type { ImageChain, ChainBypassResult } from "@/trajectory-v2/engine/ImageChain";
-import type { ScreenBounds } from "./ConePropagator";
-import { propagateCone } from "./ConePropagator";
-import { buildOutline, type ValidRegionOutline } from "./OutlineBuilder";
+import type { ScreenBounds } from "./SimpleVisibilityCalculator";
+import { calculateSimpleVisibility } from "./SimpleVisibilityCalculator";
+import type { ValidRegionOutline } from "./OutlineBuilder";
 
 /**
  * Check if the plan is valid (no surfaces bypassed).
@@ -74,26 +74,32 @@ export function isCursorLitByConstruction(bypassResult: ChainBypassResult): bool
  * Compute the valid region from the ImageChain result.
  *
  * This polygon represents all cursor positions that would result in
- * a valid, aligned plan. The existing cone propagation is used,
- * but the result is validated against the ImageChain invariants.
+ * a valid, aligned plan. Uses simple ray-casting visibility algorithm.
  */
 export function computeValidRegionFromChain(
   bypassResult: ChainBypassResult,
   screenBounds: ScreenBounds,
   allSurfaces: readonly Surface[]
 ): ValidRegionOutline {
-  const { chain, activeSurfaces } = bypassResult;
+  const { chain } = bypassResult;
 
-  // Use the existing cone propagation for the visual polygon
-  // The key insight is that we use ACTIVE surfaces (after bypass evaluation)
-  const propagationResult = propagateCone(
+  // Use simple ray-casting visibility algorithm
+  const visibilityResult = calculateSimpleVisibility(
     chain.player,
-    activeSurfaces,
-    allSurfaces
+    allSurfaces,
+    screenBounds
   );
 
-  // Build the outline polygon
-  const outline = buildOutline(propagationResult, screenBounds, allSurfaces);
+  // Convert to ValidRegionOutline format
+  const outline: ValidRegionOutline = {
+    vertices: visibilityResult.polygon.map((pos, i) => ({
+      position: pos,
+      type: "surface" as const,
+      sourceId: `vertex-${i}`,
+    })),
+    origin: visibilityResult.origin,
+    isValid: visibilityResult.isValid,
+  };
 
   return outline;
 }

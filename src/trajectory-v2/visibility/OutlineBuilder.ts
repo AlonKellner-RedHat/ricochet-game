@@ -1,6 +1,9 @@
 /**
  * OutlineBuilder - Construct the final valid region polygon
  *
+ * @deprecated This module is deprecated. Use SimpleVisibilityCalculator instead.
+ * This module is kept for backward compatibility with existing tests.
+ *
  * Takes the cone propagation result and builds a polygon outline that defines
  * the valid cursor region. The outline is formed by:
  * 1. Blocking surface intersections (shadow edges)

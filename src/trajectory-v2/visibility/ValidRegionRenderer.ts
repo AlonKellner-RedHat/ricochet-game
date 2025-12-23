@@ -11,10 +11,9 @@
 
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
-import type { ScreenBounds, PropagationResult } from "./ConePropagator";
-import { propagateCone } from "./ConePropagator";
-import { coneCoverage } from "./ConeSection";
-import { buildOutline, simplifyOutline, type ValidRegionOutline } from "./OutlineBuilder";
+import type { ScreenBounds } from "./ConePropagator";
+import type { ValidRegionOutline } from "./OutlineBuilder";
+import { calculateSimpleVisibility } from "./SimpleVisibilityCalculator";
 import { TrajectoryDebugLogger, type VisibilityDebugInfo } from "../TrajectoryDebugLogger";
 
 /**
@@ -114,8 +113,11 @@ export class ValidRegionRenderer {
   /**
    * Calculate and render the valid region for given player and surfaces.
    *
+   * Uses the new SimpleVisibilityCalculator for robust ray-casting based
+   * visibility polygon generation.
+   *
    * @param player Player position
-   * @param plannedSurfaces Planned surfaces (windows)
+   * @param plannedSurfaces Planned surfaces (windows) - currently ignored for simple visibility
    * @param allSurfaces All surfaces in the scene
    */
   render(
@@ -123,15 +125,24 @@ export class ValidRegionRenderer {
     plannedSurfaces: readonly Surface[],
     allSurfaces: readonly Surface[]
   ): void {
-    // Calculate valid region
-    const propagationResult = propagateCone(player, plannedSurfaces, allSurfaces);
-    const rawOutline = buildOutline(propagationResult, this.screenBounds, allSurfaces);
-    const outline = simplifyOutline(rawOutline);
+    // Calculate valid region using simple ray casting algorithm
+    const visibilityResult = calculateSimpleVisibility(player, allSurfaces, this.screenBounds);
+
+    // Convert to ValidRegionOutline format for compatibility
+    const outline: ValidRegionOutline = {
+      vertices: visibilityResult.polygon.map((pos, i) => ({
+        position: pos,
+        type: "surface" as const,
+        sourceId: `vertex-${i}`,
+      })),
+      origin: visibilityResult.origin,
+      isValid: visibilityResult.isValid,
+    };
 
     this.lastOutline = outline;
 
     // Log visibility data if debug logging is enabled
-    this.logVisibility(propagationResult, outline);
+    this.logVisibilitySimple(visibilityResult);
 
     // Clear previous render
     this.graphics.clear();
@@ -283,26 +294,20 @@ export class ValidRegionRenderer {
   }
 
   /**
-   * Log visibility data for debugging.
+   * Log visibility data for debugging (new simple algorithm).
    */
-  private logVisibility(propagation: PropagationResult, outline: ValidRegionOutline): void {
+  private logVisibilitySimple(result: { polygon: readonly Vector2[]; origin: Vector2; isValid: boolean }): void {
     if (!TrajectoryDebugLogger.isEnabled()) return;
 
-    const cone = propagation.finalCone ?? [];
-    const vertices = outline.vertices ?? [];
-
     const visibilityInfo: VisibilityDebugInfo = {
-      origin: propagation.finalOrigin ? { ...propagation.finalOrigin } : { x: 0, y: 0 },
-      coneSections: cone.map(s => ({
-        startAngle: s.startAngle,
-        endAngle: s.endAngle,
+      origin: { ...result.origin },
+      coneSections: [{ startAngle: 0, endAngle: 2 * Math.PI }], // Full circle for simple visibility
+      coneSpan: 360,
+      outlineVertices: result.polygon.map((pos, i) => ({
+        position: { ...pos },
+        type: "surface" as const,
       })),
-      coneSpan: coneCoverage(cone),
-      outlineVertices: vertices.map(v => ({
-        position: { ...v.position },
-        type: v.type,
-      })),
-      isValid: outline.isValid,
+      isValid: result.isValid,
     };
 
     TrajectoryDebugLogger.logVisibility(visibilityInfo);
