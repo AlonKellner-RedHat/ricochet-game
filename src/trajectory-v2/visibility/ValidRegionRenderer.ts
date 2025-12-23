@@ -9,12 +9,12 @@
  * 2. Drawing the valid region polygon with blend mode to cut out the dark area
  */
 
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
+import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import { TrajectoryDebugLogger, type VisibilityDebugInfo } from "../TrajectoryDebugLogger";
 import type { ScreenBounds } from "./ConePropagator";
 import type { ValidRegionOutline } from "./OutlineBuilder";
 import { calculateSimpleVisibility } from "./SimpleVisibilityCalculator";
-import { TrajectoryDebugLogger, type VisibilityDebugInfo } from "../TrajectoryDebugLogger";
 
 /**
  * Configuration for the valid region overlay.
@@ -41,8 +41,8 @@ export interface ValidRegionConfig {
  * Shadowed areas are slightly darker than lit areas.
  */
 export const DEFAULT_VALID_REGION_CONFIG: ValidRegionConfig = {
-  shadowAlpha: 0.35,  // Darker in shadow
-  litAlpha: 0.15,     // Slightly darker in lit areas (subtle tint)
+  shadowAlpha: 0.35, // Darker in shadow
+  litAlpha: 0.15, // Slightly darker in lit areas (subtle tint)
   overlayColor: 0x000000,
   showOutline: false,
   outlineColor: 0x00ffff,
@@ -131,9 +131,9 @@ export class ValidRegionRenderer {
     // Calculate valid region using simple ray casting algorithm
     // Pass planned surfaces to constrain visibility to reflective side
     const visibilityResult = calculateSimpleVisibility(
-      player, 
-      allSurfaces, 
-      this.screenBounds, 
+      player,
+      allSurfaces,
+      this.screenBounds,
       plannedSurfaces
     );
 
@@ -163,7 +163,9 @@ export class ValidRegionRenderer {
     }
 
     // Render the overlay with valid region cutout
-    this.renderOverlayWithCutout(outline);
+    // Pass whether we have planned surfaces to determine rendering strategy
+    const hasPlannedSurfaces = plannedSurfaces.length > 0;
+    this.renderOverlayWithCutout(outline, hasPlannedSurfaces);
 
     // Debug: show outline
     if (this.config.showOutline) {
@@ -187,18 +189,24 @@ export class ValidRegionRenderer {
    *
    * Strategy:
    * 1. Draw full screen with shadow alpha
-   * 2. Draw valid region as triangle fan from origin with ERASE to cut out
+   * 2. Draw valid region with ERASE to cut out
    * 3. Draw valid region again with lit alpha (lighter tint)
    *
-   * Triangle fan rendering from origin ensures correct fill for visibility polygons.
+   * For planned surfaces, the origin is the player IMAGE which is on the
+   * non-reflective side of the surface. Using a triangle fan from this origin
+   * would incorrectly include the area between the origin and the surface.
+   * Instead, we render the polygon directly for planned surfaces.
+   *
+   * For no planned surfaces, we use triangle fan from origin (the player)
+   * which gives correct visibility filling.
    */
-  private renderOverlayWithCutout(outline: ValidRegionOutline): void {
+  private renderOverlayWithCutout(outline: ValidRegionOutline, hasPlannedSurfaces: boolean): void {
     const { minX, minY, maxX, maxY } = this.screenBounds;
     const vertices = outline.vertices;
     const origin = outline.origin;
 
     // Filter out origin vertices from the outline (we use the actual origin)
-    const edgeVertices = vertices.filter(v => v.type !== "origin");
+    const edgeVertices = vertices.filter((v) => v.type !== "origin");
     if (edgeVertices.length < 2) {
       this.renderFullOverlay();
       return;
@@ -210,31 +218,38 @@ export class ValidRegionRenderer {
     this.graphics.fillStyle(this.config.overlayColor, this.config.shadowAlpha);
     this.graphics.fillRect(minX, minY, maxX - minX, maxY - minY);
 
-    // Step 2: Erase the valid region using triangle fan from origin
+    // Step 2: Erase the valid region
     this.graphics.setBlendMode(BlendModes.ERASE);
     this.graphics.fillStyle(0xffffff, 1.0);
 
-    // Draw triangle fan: origin -> vertex[i] -> vertex[i+1]
-    for (let i = 0; i < edgeVertices.length; i++) {
-      const v1 = edgeVertices[i]!;
-      const v2 = edgeVertices[(i + 1) % edgeVertices.length]!;
-
-      this.graphics.beginPath();
-      this.graphics.moveTo(origin.x, origin.y);
-      this.graphics.lineTo(v1.position.x, v1.position.y);
-      this.graphics.lineTo(v2.position.x, v2.position.y);
-      this.graphics.closePath();
-      this.graphics.fillPath();
+    if (hasPlannedSurfaces) {
+      // For planned surfaces, draw the polygon directly
+      // The origin (player image) is on the non-reflective side,
+      // so triangle fan would include the wrong area
+      this.drawPolygon(edgeVertices);
+    } else {
+      // For no planned surfaces, use triangle fan from player
+      this.drawTriangleFan(origin, edgeVertices);
     }
 
     // Step 3: Draw valid region with lit alpha (subtle tint)
     this.graphics.setBlendMode(BlendModes.NORMAL);
     this.graphics.fillStyle(this.config.overlayColor, this.config.litAlpha);
 
-    // Draw triangle fan again for the lit tint
-    for (let i = 0; i < edgeVertices.length; i++) {
-      const v1 = edgeVertices[i]!;
-      const v2 = edgeVertices[(i + 1) % edgeVertices.length]!;
+    if (hasPlannedSurfaces) {
+      this.drawPolygon(edgeVertices);
+    } else {
+      this.drawTriangleFan(origin, edgeVertices);
+    }
+  }
+
+  /**
+   * Draw a triangle fan from origin to vertices.
+   */
+  private drawTriangleFan(origin: Vector2, vertices: Array<{ position: Vector2 }>): void {
+    for (let i = 0; i < vertices.length; i++) {
+      const v1 = vertices[i]!;
+      const v2 = vertices[(i + 1) % vertices.length]!;
 
       this.graphics.beginPath();
       this.graphics.moveTo(origin.x, origin.y);
@@ -246,6 +261,23 @@ export class ValidRegionRenderer {
   }
 
   /**
+   * Draw a simple filled polygon from vertices (for planned surfaces).
+   */
+  private drawPolygon(vertices: Array<{ position: Vector2 }>): void {
+    if (vertices.length < 3) return;
+
+    this.graphics.beginPath();
+    this.graphics.moveTo(vertices[0]!.position.x, vertices[0]!.position.y);
+
+    for (let i = 1; i < vertices.length; i++) {
+      this.graphics.lineTo(vertices[i]!.position.x, vertices[i]!.position.y);
+    }
+
+    this.graphics.closePath();
+    this.graphics.fillPath();
+  }
+
+  /**
    * Render the outline for debugging.
    * Shows triangle fan edges from origin to each vertex.
    */
@@ -254,15 +286,11 @@ export class ValidRegionRenderer {
     const origin = outline.origin;
 
     // Filter out origin vertices
-    const edgeVertices = vertices.filter(v => v.type !== "origin");
+    const edgeVertices = vertices.filter((v) => v.type !== "origin");
     if (edgeVertices.length < 2) return;
 
     // Draw edges between consecutive vertices (the outline perimeter)
-    this.graphics.lineStyle(
-      this.config.outlineWidth,
-      this.config.outlineColor,
-      1.0
-    );
+    this.graphics.lineStyle(this.config.outlineWidth, this.config.outlineColor, 1.0);
 
     for (let i = 0; i < edgeVertices.length; i++) {
       const v1 = edgeVertices[i]!;
@@ -305,7 +333,11 @@ export class ValidRegionRenderer {
   /**
    * Log visibility data for debugging (new simple algorithm).
    */
-  private logVisibilitySimple(result: { polygon: readonly Vector2[]; origin: Vector2; isValid: boolean }): void {
+  private logVisibilitySimple(result: {
+    polygon: readonly Vector2[];
+    origin: Vector2;
+    isValid: boolean;
+  }): void {
     if (!TrajectoryDebugLogger.isEnabled()) return;
 
     const visibilityInfo: VisibilityDebugInfo = {
@@ -330,4 +362,3 @@ export class ValidRegionRenderer {
     this.lastOutline = null;
   }
 }
-

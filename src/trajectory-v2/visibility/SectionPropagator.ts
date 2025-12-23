@@ -536,19 +536,22 @@ export function propagateVisibility(
  * Algorithm:
  * 1. Start with the actual planned surface endpoints (the "window" bounds)
  * 2. Cast rays from the player image through the window
- * 3. Collect hit points on obstacles/screen edges
- * 4. Order vertices by angle from player image
+ * 3. For each ray, verify the player can reach the window entry point (input-side check)
+ * 4. Collect hit points on obstacles/screen edges
+ * 5. Order vertices by angle from player image
  *
  * @param propagation Result of propagateVisibility  
  * @param allSurfaces All surfaces for ray casting
  * @param bounds Screen bounds
  * @param lastPlannedSurface The last planned surface (for polygon boundary)
+ * @param playerPosition Original player position (for input-side obstruction check)
  */
 export function buildPolygonFromSections(
   propagation: PropagatedVisibility,
   allSurfaces: readonly Surface[],
   bounds: ScreenBounds,
-  lastPlannedSurface: Surface
+  lastPlannedSurface: Surface,
+  playerPosition?: Vector2
 ): Vector2[] {
   if (propagation.sections.length === 0) {
     return [];
@@ -573,7 +576,13 @@ export function buildPolygonFromSections(
   // Use the section boundaries (left and right of first/last sections)
   // These are the actual visible bounds after propagation
   const firstSection = sections[0]!;
-  const lastSection = sections[sections.length - 1]!;
+  
+  // IMPORTANT: If sections are split (multiple non-contiguous sections), the visible
+  // region is discontinuous. A simple polygon cannot represent this accurately.
+  // For V.5 correctness, we use only the FIRST section to avoid over-approximation.
+  // This may under-approximate the visible region, but won't incorrectly include
+  // shadowed areas.
+  const lastSection = sections.length > 1 ? firstSection : sections[sections.length - 1]!;
   
   // Section boundaries are target points from the reflected origin
   const angleToSectionLeft = Math.atan2(firstSection.left.y - origin.y, firstSection.left.x - origin.x);
@@ -619,7 +628,7 @@ export function buildPolygonFromSections(
   // Collect critical angles within the window
   const criticalAngles: number[] = [];
 
-  // Add surface endpoints within the window
+  // Add surface endpoints within the window (output-side obstacles)
   for (const surface of surfacesForHits) {
     for (const endpoint of [surface.segment.start, surface.segment.end]) {
       const angle = Math.atan2(endpoint.y - origin.y, endpoint.x - origin.x);
@@ -629,6 +638,99 @@ export function buildPolygonFromSections(
       }
     }
   }
+  
+  // INPUT-SIDE SHADOW EDGES: Calculate shadow regions cast by obstacles between player and surface
+  // These shadows represent areas on the planned surface that the player cannot reach
+  const shadowRegions: Array<{ start: number; end: number; startPoint: Vector2; endPoint: Vector2 }> = [];
+  
+  if (playerPosition) {
+    for (const surface of surfacesForHits) {
+      const shadowEdges: Array<{ point: Vector2; angle: number }> = [];
+      
+      for (const endpoint of [surface.segment.start, surface.segment.end]) {
+        // Cast ray from player through obstacle endpoint to the planned surface
+        const rayToEndpoint: Ray = { source: playerPosition, target: endpoint };
+        const surfaceHit = raySegmentIntersection(
+          rayToEndpoint,
+          lastPlannedSurface.segment.start,
+          lastPlannedSurface.segment.end
+        );
+        
+        if (surfaceHit) {
+          // Check if the obstacle endpoint is between player and the surface hit
+          const distToEndpoint = Math.sqrt(
+            (endpoint.x - playerPosition.x) ** 2 + (endpoint.y - playerPosition.y) ** 2
+          );
+          const distToSurface = Math.sqrt(
+            (surfaceHit.x - playerPosition.x) ** 2 + (surfaceHit.y - playerPosition.y) ** 2
+          );
+          
+          // Also check that the ray is going TOWARD the planned surface (not away)
+          // by verifying the surface hit is in front of the player (t > 0 in ray direction)
+          const rayDx = endpoint.x - playerPosition.x;
+          const rayDy = endpoint.y - playerPosition.y;
+          const hitDx = surfaceHit.x - playerPosition.x;
+          const hitDy = surfaceHit.y - playerPosition.y;
+          const dotProduct = rayDx * hitDx + rayDy * hitDy;
+          
+          if (distToEndpoint < distToSurface - 0.5 && dotProduct > 0) {
+            // This obstacle endpoint creates a shadow edge on the planned surface
+            const angle = Math.atan2(surfaceHit.y - origin.y, surfaceHit.x - origin.x);
+            shadowEdges.push({ point: surfaceHit, angle });
+            
+            // Add as critical angle for polygon construction
+            if (isAngleInRange(angle, minAngle, maxAngle)) {
+              criticalAngles.push(angle);
+              criticalAngles.push(angle - 0.0001, angle + 0.0001);
+            }
+          }
+        }
+      }
+      
+      // If we found two shadow edges for this obstacle, it creates a shadow region
+      if (shadowEdges.length === 2) {
+        const [edge1, edge2] = shadowEdges;
+        let a1 = edge1!.angle;
+        let a2 = edge2!.angle;
+        // Normalize angles for range comparison
+        if (maxAngle > Math.PI) {
+          if (a1 < 0) a1 += 2 * Math.PI;
+          if (a2 < 0) a2 += 2 * Math.PI;
+        }
+        
+        // Store shadow region with points for polygon construction
+        if (a1 < a2) {
+          shadowRegions.push({
+            start: a1,
+            end: a2,
+            startPoint: edge1!.point,
+            endPoint: edge2!.point,
+          });
+        } else {
+          shadowRegions.push({
+            start: a2,
+            end: a1,
+            startPoint: edge2!.point,
+            endPoint: edge1!.point,
+          });
+        }
+        
+        // Shadow edge points will be added separately to the final polygon
+        // (not to vertices, as they'd be filtered out for being on the surface)
+      }
+    }
+  }
+  
+  // Shadow edge points are ON the planned surface.
+  // Adding them to the polygon would cause self-intersection since the polygon
+  // already uses the surface endpoints as start/end points.
+  // 
+  // Instead, we rely on the ray filtering (isAngleInShadow) to exclude rays
+  // within shadow angles. The polygon will slightly over-approximate the visible
+  // region, but the input-side obstruction check (isInputPathBlocked) will catch
+  // cases where a specific cursor position requires passing through a shadow.
+  const shadowBoundaryPoints: Array<{ point: Vector2; angle: number }> = [];
+  // Intentionally empty to avoid self-intersection
 
   // Add screen corners within the window
   const corners = [
@@ -648,23 +750,107 @@ export function buildPolygonFromSections(
   // Add small offsets around window edges
   criticalAngles.push(minAngle + 0.0001, maxAngle - 0.0001);
 
+  // Helper to check if an angle falls within any shadow region
+  const isAngleInShadow = (angle: number): boolean => {
+    let normAngle = angle;
+    if (maxAngle > Math.PI && normAngle < 0) {
+      normAngle += 2 * Math.PI;
+    }
+    for (const shadow of shadowRegions) {
+      // Check if angle is strictly within the shadow (not at edges)
+      if (normAngle > shadow.start + 0.0002 && normAngle < shadow.end - 0.0002) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   // Cast rays at each critical angle
+  // IMPORTANT: When the player image is outside the screen, we need to cast rays
+  // starting FROM the planned surface (the "window"), not from the image.
+  // This ensures we only find hits on the reflective side.
   for (const angle of criticalAngles) {
     if (!isAngleInRange(angle, minAngle, maxAngle)) continue;
+    
+    // Skip rays that fall within input-side shadow regions
+    if (isAngleInShadow(angle)) {
+      continue;
+    }
 
-    const target = {
+    const farTarget = {
       x: origin.x + Math.cos(angle) * 10000,
       y: origin.y + Math.sin(angle) * 10000,
     };
 
-    const hit = castRayToFirstHit({ source: origin, target }, surfacesForHits, bounds);
-    if (hit) {
-      vertices.push({ point: hit, angle });
+    // Find where this ray crosses the planned surface (the "window")
+    const surfaceIntersection = findRaySurfaceIntersection(origin, farTarget, lastPlannedSurface);
+    
+    if (surfaceIntersection) {
+      // INPUT-SIDE CHECK: Verify the player can reach this window entry point
+      // If there's a surface between the player and this point on the window,
+      // then this ray should not contribute to visibility
+      if (playerPosition) {
+        const inputBlocked = isInputPathBlocked(
+          playerPosition,
+          surfaceIntersection,
+          surfacesForHits,
+          lastPlannedSurface
+        );
+        if (inputBlocked) {
+          continue; // Skip this ray - player can't reach this part of the window
+        }
+      }
+      
+      // Cast ray from the surface intersection point outward (toward the side the player is on)
+      // This represents positions reachable by a ball that reflects off the surface
+      
+      // Add small offset in the ray direction to avoid hitting the surface itself
+      const offsetSource = {
+        x: surfaceIntersection.x + Math.cos(angle) * 0.1,
+        y: surfaceIntersection.y + Math.sin(angle) * 0.1,
+      };
+      
+      const hit = castRayToFirstHit({ source: offsetSource, target: farTarget }, surfacesForHits, bounds);
+      if (hit) {
+        vertices.push({ point: hit, angle });
+      }
+    } else {
+      // Ray doesn't cross surface (shouldn't happen within the window)
+      // Fall back to original behavior
+      const hit = castRayToFirstHit({ source: origin, target: farTarget }, surfacesForHits, bounds);
+      if (hit && isOnReflectiveSide(hit, lastPlannedSurface)) {
+        vertices.push({ point: hit, angle });
+      }
     }
   }
 
-  // Normalize angles for sorting
-  const normalizedVertices = vertices.map(v => {
+  // Separate surface endpoint vertices from ray hit vertices
+  // Surface endpoints are the "window" edges and should be at the start/end of the polygon
+  const rayHitVertices: Array<{ point: Vector2; angle: number }> = [];
+  
+  // Get the actual surface endpoints for comparison
+  const surfStart = lastPlannedSurface.segment.start;
+  const surfEnd = lastPlannedSurface.segment.end;
+
+  for (const v of vertices) {
+    // Check if this vertex is close to either surface endpoint
+    const isStartEndpoint = 
+      Math.abs(v.point.x - surfStart.x) < 1 && Math.abs(v.point.y - surfStart.y) < 1;
+    const isEndEndpoint = 
+      Math.abs(v.point.x - surfEnd.x) < 1 && Math.abs(v.point.y - surfEnd.y) < 1;
+    
+    // Check if this vertex lies ON the planned surface line segment
+    // (not just at endpoints, but anywhere along the segment)
+    const isOnSurfaceLine = isPointOnLineSegment(v.point, surfStart, surfEnd, 2);
+    
+    // Skip any points on the surface - we'll add endpoints explicitly later
+    if (!isStartEndpoint && !isEndEndpoint && !isOnSurfaceLine) {
+      rayHitVertices.push(v);
+    }
+  }
+
+  // Normalize angles for ray hits
+  const normalizedHits = rayHitVertices.map(v => {
     let normAngle = v.angle;
     if (maxAngle > Math.PI && normAngle < 0) {
       normAngle += 2 * Math.PI;
@@ -672,21 +858,96 @@ export function buildPolygonFromSections(
     return { point: v.point, angle: normAngle };
   });
 
-  // Sort by normalized angle
-  normalizedVertices.sort((a, b) => a.angle - b.angle);
+  // Sort ray hits by normalized angle
+  normalizedHits.sort((a, b) => a.angle - b.angle);
 
-  // Remove duplicates by position
-  const uniqueVertices: Vector2[] = [];
-  for (const v of normalizedVertices) {
-    const isDup = uniqueVertices.some(existing =>
-      Math.abs(existing.x - v.point.x) < 1 && Math.abs(existing.y - v.point.y) < 1
-    );
+  // Remove duplicates and near-duplicates from ray hits
+  // Use 2 pixel tolerance to catch very close vertices
+  const uniqueHits: Vector2[] = [];
+  for (const v of normalizedHits) {
+    const isDup = uniqueHits.some(existing => {
+      const dist = Math.sqrt((existing.x - v.point.x) ** 2 + (existing.y - v.point.y) ** 2);
+      return dist < 2;
+    });
     if (!isDup) {
-      uniqueVertices.push(v.point);
+      uniqueHits.push(v.point);
     }
   }
 
-  return uniqueVertices;
+  // Build the final polygon:
+  // 1. Start with one section boundary point (the visible "window" edge)
+  // 2. Add all ray hits in angle order, with shadow boundaries interspersed
+  // 3. End with the other section boundary point
+  // 
+  // IMPORTANT: Handle shadows - the polygon boundary must "notch in" at shadow regions
+  // to exclude areas that the player cannot reach due to input-side obstructions.
+  
+  // Get the actual section boundary points on the surface
+  const sectionLeftPoint = leftIntersection || firstSection.left;
+  const sectionRightPoint = rightIntersection || lastSection.right;
+  
+  // Use normalized angles for ordering
+  let normalizedLeftAngle = angleToStart;
+  let normalizedRightAngle = angleToEnd;
+  if (maxAngle > Math.PI) {
+    if (normalizedLeftAngle < 0) normalizedLeftAngle += 2 * Math.PI;
+    if (normalizedRightAngle < 0) normalizedRightAngle += 2 * Math.PI;
+  }
+  
+  // Normalize shadow boundary angles
+  const normalizedShadowPoints = shadowBoundaryPoints.map(sp => {
+    let normAngle = sp.angle;
+    if (maxAngle > Math.PI && normAngle < 0) {
+      normAngle += 2 * Math.PI;
+    }
+    return { point: sp.point, angle: normAngle };
+  });
+  
+  // Combine ray hits with shadow boundary points and sort by angle
+  const allBoundaryPoints: Array<{ point: Vector2; angle: number; isShadowEdge: boolean }> = [
+    ...uniqueHits.map(p => ({ point: p, angle: Math.atan2(p.y - origin.y, p.x - origin.x), isShadowEdge: false })),
+    ...normalizedShadowPoints.map(sp => ({ point: sp.point, angle: sp.angle, isShadowEdge: true })),
+  ];
+  
+  // Normalize all angles for consistent sorting
+  for (const bp of allBoundaryPoints) {
+    if (maxAngle > Math.PI && bp.angle < 0) {
+      bp.angle += 2 * Math.PI;
+    }
+  }
+  
+  // Sort by angle
+  allBoundaryPoints.sort((a, b) => a.angle - b.angle);
+  
+  // Remove duplicates
+  const deduped: Array<{ point: Vector2; angle: number; isShadowEdge: boolean }> = [];
+  for (const bp of allBoundaryPoints) {
+    const isDup = deduped.some(existing => {
+      const dist = Math.sqrt((existing.point.x - bp.point.x) ** 2 + (existing.point.y - bp.point.y) ** 2);
+      return dist < 2;
+    });
+    if (!isDup) {
+      deduped.push(bp);
+    }
+  }
+  
+  const finalVertices: Vector2[] = [];
+  
+  if (normalizedLeftAngle < normalizedRightAngle) {
+    finalVertices.push(sectionLeftPoint);
+    for (const bp of deduped) {
+      finalVertices.push(bp.point);
+    }
+    finalVertices.push(sectionRightPoint);
+  } else {
+    finalVertices.push(sectionRightPoint);
+    for (const bp of deduped) {
+      finalVertices.push(bp.point);
+    }
+    finalVertices.push(sectionLeftPoint);
+  }
+
+  return finalVertices;
 }
 
 /**
@@ -768,12 +1029,105 @@ function castRayToFirstHit(
 }
 
 /**
+ * Check if a point lies on a line segment (within tolerance).
+ * 
+ * Uses distance from point to line + parameter check to verify
+ * the point is within the segment bounds.
+ */
+function isPointOnLineSegment(
+  point: Vector2,
+  segStart: Vector2,
+  segEnd: Vector2,
+  tolerance: number
+): boolean {
+  const dx = segEnd.x - segStart.x;
+  const dy = segEnd.y - segStart.y;
+  const segLenSq = dx * dx + dy * dy;
+  
+  if (segLenSq < 0.001) {
+    // Degenerate segment - check distance to point
+    return Math.abs(point.x - segStart.x) < tolerance && 
+           Math.abs(point.y - segStart.y) < tolerance;
+  }
+  
+  // Project point onto line and get parameter t
+  const t = ((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / segLenSq;
+  
+  // Check if t is within [0, 1] (point is between endpoints)
+  if (t < 0 || t > 1) {
+    return false;
+  }
+  
+  // Find closest point on segment
+  const closestX = segStart.x + t * dx;
+  const closestY = segStart.y + t * dy;
+  
+  // Check distance from point to closest point on segment
+  const dist = Math.sqrt((point.x - closestX) ** 2 + (point.y - closestY) ** 2);
+  
+  return dist < tolerance;
+}
+
+/**
  * Check if a point is a duplicate of any in the list.
  */
 function isDuplicate(point: Vector2, list: Vector2[]): boolean {
   return list.some(p => 
     Math.abs(p.x - point.x) < 0.5 && Math.abs(p.y - point.y) < 0.5
   );
+}
+
+/**
+ * Check if the input path from player to window entry point is blocked.
+ * 
+ * This is crucial for V.5 compliance: even if the player can see the planned surface,
+ * certain shooting directions might be blocked by other surfaces between the player
+ * and the planned surface.
+ * 
+ * @param player The player position
+ * @param windowPoint The point on the planned surface (window entry)
+ * @param obstacles All surfaces that might block the path
+ * @param plannedSurface The planned surface (excluded from blocking check)
+ * @returns true if the path is blocked, false if clear
+ */
+function isInputPathBlocked(
+  player: Vector2,
+  windowPoint: Vector2,
+  obstacles: readonly Surface[],
+  plannedSurface: Surface
+): boolean {
+  const dx = windowPoint.x - player.x;
+  const dy = windowPoint.y - player.y;
+  const distToWindow = Math.sqrt(dx * dx + dy * dy);
+  
+  if (distToWindow < 0.01) return false; // Player at window
+  
+  const ray: Ray = { source: player, target: windowPoint };
+  
+  for (const obstacle of obstacles) {
+    // Skip the planned surface itself
+    if (obstacle.id === plannedSurface.id) continue;
+    
+    const intersection = raySegmentIntersection(
+      ray,
+      obstacle.segment.start,
+      obstacle.segment.end
+    );
+    
+    if (intersection) {
+      const distToHit = Math.sqrt(
+        (intersection.x - player.x) ** 2 + (intersection.y - player.y) ** 2
+      );
+      
+      // Blocked if we hit an obstacle before reaching the window
+      // Use small epsilon to avoid false positives at the window itself
+      if (distToHit < distToWindow - 0.5) {
+        return true; // Input path is blocked
+      }
+    }
+  }
+  
+  return false; // Path is clear
 }
 
 /**

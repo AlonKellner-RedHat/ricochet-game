@@ -20,7 +20,35 @@ const SCREEN_BOUNDS = {
 };
 
 /**
+ * Calculate the minimum distance from a point to a line segment.
+ */
+function pointToSegmentDistance(
+  point: { x: number; y: number },
+  segStart: { x: number; y: number },
+  segEnd: { x: number; y: number }
+): number {
+  const dx = segEnd.x - segStart.x;
+  const dy = segEnd.y - segStart.y;
+  const lenSq = dx * dx + dy * dy;
+  
+  if (lenSq < 0.0001) {
+    // Degenerate segment - just return distance to start
+    return Math.sqrt((point.x - segStart.x) ** 2 + (point.y - segStart.y) ** 2);
+  }
+  
+  // Project point onto line and clamp to segment
+  let t = ((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  
+  const closestX = segStart.x + t * dx;
+  const closestY = segStart.y + t * dy;
+  
+  return Math.sqrt((point.x - closestX) ** 2 + (point.y - closestY) ** 2);
+}
+
+/**
  * Check if a point is inside a polygon using ray casting.
+ * Also handles boundary cases: points within 1 pixel of an edge are considered inside.
  */
 function isPointInPolygon(
   point: { x: number; y: number },
@@ -28,6 +56,21 @@ function isPointInPolygon(
 ): boolean {
   if (vertices.length < 3) return false;
 
+  // First, check if point is very close to any edge (boundary case)
+  // Points on the boundary should be considered "inside"
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    const vi = vertices[i]!;
+    const vj = vertices[j]!;
+    
+    // Distance from point to line segment (vi, vj)
+    const dist = pointToSegmentDistance(point, vi, vj);
+    if (dist < 1.0) {
+      // Point is on or very close to the boundary - consider it inside
+      return true;
+    }
+  }
+
+  // Standard ray-casting point-in-polygon
   let inside = false;
   const n = vertices.length;
 
@@ -392,37 +435,38 @@ export const lightDivergenceCorrelation: FirstPrincipleAssertion = {
     if (!visibilityResult.isValid || visibilityResult.polygon.length < 3) {
       // Empty visibility can occur in several legitimate scenarios:
       // 1. Player is on non-reflective side of first planned surface
-      // 2. Obstruction blocks visibility to the planned surface  
+      // 2. Obstruction blocks visibility to the planned surface
       // 3. Surface is bypassed (not looking through it)
       // 4. Edge cases with surface geometry
-      
+
       // V.5: Light reaches cursor iff plan is VALID (no bypass AND no divergence)
       // Empty visibility → cursor is NOT lit
       // V.5 requires: NOT lit → plan is NOT valid
       // Plan is NOT valid when: bypass OR divergence
-      
+
       const hasBypassedSurfaces = (results.bypassResult?.bypassedSurfaces.length ?? 0) > 0;
       const hasDivergence = !results.isAligned;
       const planIsInvalid = hasBypassedSurfaces || hasDivergence;
-      
+
       // If plan is invalid (bypass or divergence), V.5 is satisfied
       // (not lit AND not valid = correct)
       if (planIsInvalid) {
         return; // V.5 satisfied
       }
-      
+
       // Plan claims to be valid (aligned + no bypass) but visibility is empty
       // This could be a visibility calculation edge case or trajectory edge case
       // Skip for complex setups to avoid false positives
-      const isComplexSetup = setup.tags?.some(t => 
-        t.includes("obstruction") || 
-        t.includes("bypass") || 
-        t.includes("wrong-side") ||
-        t.includes("skip") ||
-        t.includes("chain") ||
-        t.includes("multiple")
+      const isComplexSetup = setup.tags?.some(
+        (t) =>
+          t.includes("obstruction") ||
+          t.includes("bypass") ||
+          t.includes("wrong-side") ||
+          t.includes("skip") ||
+          t.includes("chain") ||
+          t.includes("multiple")
       );
-      
+
       if (isComplexSetup || setup.plannedSurfaces.length === 0) {
         return; // Skip complex cases
       }

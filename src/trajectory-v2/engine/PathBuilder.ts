@@ -596,7 +596,14 @@ export function buildActualPath(
     const dotWithDir =
       toCursor.x * currentDirection.x + toCursor.y * currentDirection.y;
 
-    if (dotWithDir > 0) {
+    // IMPORTANT: Only check for cursor on path AFTER all planned surfaces have been hit.
+    // If we have active surfaces and haven't hit them all yet, the cursor might be
+    // "on the path" but reached via reflection AFTER hitting the surface.
+    // Example: player (100,300) → surface (300,y) → cursor (150,300)
+    // The cursor IS on the forward path direction, but should be reached via reflection.
+    const allPlannedSurfacesHit = reflectionCount >= activeSurfaces.length;
+    
+    if (allPlannedSurfacesHit && dotWithDir > 0) {
       // Cursor is ahead in this direction
       const cursorDist = Math.sqrt(
         toCursor.x * toCursor.x + toCursor.y * toCursor.y

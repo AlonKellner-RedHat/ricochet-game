@@ -225,17 +225,22 @@ function calculateSectionBasedVisibility(
   }
 
   // Build the polygon from the final sections
+  // Pass playerOrigin for input-side obstruction checking (V.5 compliance)
   const lastPlannedSurface = plannedSurfaces[plannedSurfaces.length - 1]!;
   const polygon = buildPolygonFromSections(
     propagation,
     surfaces,
     sectionBounds,
-    lastPlannedSurface
+    lastPlannedSurface,
+    playerOrigin  // For input-side obstruction check
   );
 
+  // CRITICAL: Return the propagation origin (player image) not the original player
+  // The polygon vertices are calculated from the player image perspective,
+  // so the origin must match for correct triangle fan rendering
   return {
     polygon,
-    origin: playerOrigin,
+    origin: propagation.origin,  // Use player image for planned surfaces
     isValid: polygon.length >= 3,
   };
 }
