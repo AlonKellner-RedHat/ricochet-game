@@ -385,8 +385,24 @@ export const lightDivergenceCorrelation: FirstPrincipleAssertion = {
       setup.plannedSurfaces
     );
 
-    // Skip if visibility calculation failed
+    // If visibility calculation failed, this is a bug for most setups
     if (!visibilityResult.isValid || visibilityResult.polygon.length < 3) {
+      // Only skip for empty plan (trivial case) or tagged setups
+      if (setup.plannedSurfaces.length === 0 && setup.allSurfaces.length === 0) {
+        return;
+      }
+
+      // For setups with planned surfaces, visibility MUST work
+      // If it doesn't, fail loudly instead of silently skipping
+      if (setup.plannedSurfaces.length > 0) {
+        expect.fail(
+          `V.5: Visibility calculation failed for setup "${setup.name}" with ${setup.plannedSurfaces.length} planned surface(s). ` +
+          `Polygon has ${visibilityResult.polygon.length} vertices (needs >= 3). ` +
+          `This indicates a bug in the visibility algorithm.`
+        );
+      }
+
+      // Skip for empty-plan setups where visibility might legitimately be empty
       return;
     }
 
@@ -680,6 +696,75 @@ export const nearestSurfaceEdgeInOutline: FirstPrincipleAssertion = {
 };
 
 /**
+ * Principle V.7: Visibility Polygon Angular Ordering
+ *
+ * The visibility polygon vertices must be angularly sorted from the player origin.
+ * For a visibility polygon radiating from a point, vertices should form a
+ * continuous path around the player in one direction (all clockwise or all
+ * counter-clockwise).
+ *
+ * If vertices jump back and forth in angle, the polygon will appear to
+ * "fold over itself" creating visual artifacts even if edges don't technically cross.
+ */
+export const visibilityPolygonAngularOrder: FirstPrincipleAssertion = {
+  id: "visibility-polygon-angular-order",
+  principle: "V.7",
+  description: "Visibility polygon vertices must be angularly sorted from player",
+  assert: (setup: TestSetup, _results: TestResults) => {
+    // Calculate visibility
+    const visibilityResult = calculateSimpleVisibility(
+      setup.player,
+      setup.allSurfaces,
+      SCREEN_BOUNDS,
+      setup.plannedSurfaces
+    );
+
+    // Skip if polygon is invalid or too small
+    if (!visibilityResult.isValid || visibilityResult.polygon.length < 4) {
+      return;
+    }
+
+    const vertices = visibilityResult.polygon;
+    const origin = setup.player;
+    const n = vertices.length;
+
+    // Calculate angles from player to each vertex
+    const angles = vertices.map(v => Math.atan2(v.y - origin.y, v.x - origin.x));
+
+    // Check if angles are monotonically ordered (with one wrap-around allowed)
+    // Determine initial direction
+    const normalizedDiffs: number[] = [];
+    for (let i = 1; i < n; i++) {
+      let diff = angles[i]! - angles[i - 1]!;
+      // Normalize to [-PI, PI]
+      if (diff > Math.PI) diff -= 2 * Math.PI;
+      if (diff < -Math.PI) diff += 2 * Math.PI;
+      normalizedDiffs.push(diff);
+    }
+
+    // Count direction changes (sign changes in differences)
+    // A proper visibility polygon should have at most 1-2 direction changes
+    // (one for the wrap-around from the end back to start)
+    let positiveCount = normalizedDiffs.filter(d => d > 0.01).length;
+    let negativeCount = normalizedDiffs.filter(d => d < -0.01).length;
+
+    // Allow tolerance for small angular differences (nearly collinear points)
+    const significantPositive = normalizedDiffs.filter(d => d > 0.1).length;
+    const significantNegative = normalizedDiffs.filter(d => d < -0.1).length;
+
+    // If both significant positive and negative jumps exist, the polygon is badly ordered
+    if (significantPositive > 1 && significantNegative > 1) {
+      const anglesStr = angles.map(a => (a * 180 / Math.PI).toFixed(1)).join(", ");
+      expect.fail(
+        `V.7: Visibility polygon vertices are not angularly sorted! ` +
+        `Has ${significantPositive} positive and ${significantNegative} negative angular jumps. ` +
+        `Angles from player: [${anglesStr}]. Setup: ${setup.name}, ${n} vertices.`
+      );
+    }
+  },
+};
+
+/**
  * All visibility/lighting assertions.
  */
 export const visibilityLightingAssertions: FirstPrincipleAssertion[] = [
@@ -689,5 +774,6 @@ export const visibilityLightingAssertions: FirstPrincipleAssertion[] = [
   unobstructedPositionsLit,
   lightDivergenceCorrelation,
   nearestSurfaceEdgeInOutline,
+  visibilityPolygonAngularOrder,
 ];
 

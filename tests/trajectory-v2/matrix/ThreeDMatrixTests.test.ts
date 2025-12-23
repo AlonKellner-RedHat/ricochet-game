@@ -197,11 +197,8 @@ function shouldSkipAssertion(
     return true;
   }
 
-  // Skip visibility assertions (V.x) for setups with planned surfaces
-  // Cone propagation through planned surfaces is still being refined
-  if (assertion.principle.startsWith("V.") && base.plannedSurfaces.length > 0) {
-    return true;
-  }
+  // NOTE: We NO LONGER skip visibility assertions for planned surfaces!
+  // The visibility system must work correctly with planned surfaces (V.5 principle)
 
   return false;
 }

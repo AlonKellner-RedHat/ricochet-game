@@ -155,13 +155,14 @@ function calculateDirectVisibility(
  *
  * V.5 First Principle: Light reaches cursor ↔ (plan valid AND aligned)
  *
- * For planned surfaces, the visibility is the REFLECTIVE HALF-PLANE
- * of the last planned surface, intersected with the screen bounds.
+ * For planned surfaces, visibility is calculated by:
+ * 1. Reflect the player through the planned surface to get "player image"
+ * 2. Cast rays from the player image toward all surface endpoints
+ * 3. Only include rays that PASS THROUGH the planned surface segment
+ * 4. The hit points form the visibility polygon
  *
- * The reflective side is the side OPPOSITE to where the player is standing.
- *
- * This is a simplified approach: instead of complex ray tracing through
- * reflections, we simply constrain visibility to the half-plane.
+ * This is like looking through a mirror - you can see what's reflected,
+ * but only through the physical mirror surface (not beyond its edges).
  */
 function calculatePlannedVisibility(
   playerOrigin: Vector2,
@@ -169,33 +170,189 @@ function calculatePlannedVisibility(
   screenBounds: ScreenBounds,
   plannedSurfaces: readonly Surface[]
 ): SimpleVisibilityResult {
-  // Get the last planned surface
+  // For single planned surface
+  if (plannedSurfaces.length === 1) {
+    return calculateSingleSurfaceVisibility(
+      playerOrigin,
+      surfaces,
+      screenBounds,
+      plannedSurfaces[0]!
+    );
+  }
+
+  // For multiple planned surfaces, fall back to simpler approach for now
+  // (This could be enhanced for multi-bounce visibility)
   const lastPlannedSurface = plannedSurfaces[plannedSurfaces.length - 1]!;
+  return calculateSingleSurfaceVisibility(
+    playerOrigin,
+    surfaces,
+    screenBounds,
+    lastPlannedSurface
+  );
+}
 
-  // Determine which side of the surface the player is on
-  const playerSide = getSideOfLine(playerOrigin, lastPlannedSurface);
-
-  // The visibility region is the half-plane on the OPPOSITE side from the player
-  // We need to construct a polygon that covers this half-plane within screen bounds
-  const halfPlanePolygon = constructHalfPlanePolygon(
-    lastPlannedSurface,
-    playerSide,
-    screenBounds
+/**
+ * Calculate visibility through a single planned surface.
+ *
+ * Algorithm:
+ * 1. Reflect player through the surface to get the "image"
+ * 2. For angles that would pass through the surface segment:
+ *    - Cast ray from image, find where it hits surfaces/bounds
+ *    - These points are visible through reflection
+ */
+function calculateSingleSurfaceVisibility(
+  playerOrigin: Vector2,
+  surfaces: readonly Surface[],
+  screenBounds: ScreenBounds,
+  plannedSurface: Surface
+): SimpleVisibilityResult {
+  // Step 1: Reflect player through the planned surface
+  const playerImage = reflectPointThroughLine(
+    playerOrigin,
+    plannedSurface.segment.start,
+    plannedSurface.segment.end
   );
 
-  if (halfPlanePolygon.length < 3) {
-    return {
-      polygon: [],
-      origin: playerOrigin,
-      isValid: false,
-    };
+  // Step 2: Calculate the angular range that passes through the surface segment
+  const surfaceStart = plannedSurface.segment.start;
+  const surfaceEnd = plannedSurface.segment.end;
+
+  const angleToStart = Math.atan2(
+    surfaceStart.y - playerImage.y,
+    surfaceStart.x - playerImage.x
+  );
+  const angleToEnd = Math.atan2(
+    surfaceEnd.y - playerImage.y,
+    surfaceEnd.x - playerImage.x
+  );
+
+  // Determine the angular range (handle wrap-around)
+  let minAngle = Math.min(angleToStart, angleToEnd);
+  let maxAngle = Math.max(angleToStart, angleToEnd);
+
+  // Handle case where range crosses -PI/PI boundary
+  if (maxAngle - minAngle > Math.PI) {
+    // Swap and adjust
+    const temp = minAngle;
+    minAngle = maxAngle;
+    maxAngle = temp + 2 * Math.PI;
+  }
+
+  // Step 3: Collect critical angles within this range
+  const criticalAngles: number[] = [];
+
+  // Add surface endpoints as critical angles
+  criticalAngles.push(angleToStart, angleToEnd);
+
+  // Add small offsets around surface endpoints to capture edges
+  const epsilon = 0.0001;
+  criticalAngles.push(angleToStart - epsilon, angleToStart + epsilon);
+  criticalAngles.push(angleToEnd - epsilon, angleToEnd + epsilon);
+
+  // Add angles to all other surface endpoints (within the valid range)
+  for (const surface of surfaces) {
+    for (const endpoint of [surface.segment.start, surface.segment.end]) {
+      const angle = Math.atan2(
+        endpoint.y - playerImage.y,
+        endpoint.x - playerImage.x
+      );
+
+      if (isAngleInRange(angle, minAngle, maxAngle)) {
+        criticalAngles.push(angle);
+        criticalAngles.push(angle - epsilon, angle + epsilon);
+      }
+    }
+  }
+
+  // Add screen corners within range
+  const corners = [
+    { x: screenBounds.minX, y: screenBounds.minY },
+    { x: screenBounds.maxX, y: screenBounds.minY },
+    { x: screenBounds.maxX, y: screenBounds.maxY },
+    { x: screenBounds.minX, y: screenBounds.maxY },
+  ];
+
+  for (const corner of corners) {
+    const angle = Math.atan2(
+      corner.y - playerImage.y,
+      corner.x - playerImage.x
+    );
+
+    if (isAngleInRange(angle, minAngle, maxAngle)) {
+      criticalAngles.push(angle);
+    }
+  }
+
+  if (criticalAngles.length === 0) {
+    return { polygon: [], origin: playerOrigin, isValid: false };
+  }
+
+  // Step 4: Cast rays from player image and collect hit points
+  // Exclude the planned surface from ray casting (we're casting THROUGH it)
+  const surfacesExcludingPlanned = surfaces.filter(s => s.id !== plannedSurface.id);
+
+  const rayResults: RayResult[] = [];
+
+  for (const angle of criticalAngles) {
+    // Only process if angle is in valid range
+    // Rays within this range automatically pass through the surface segment
+    if (!isAngleInRange(angle, minAngle, maxAngle)) continue;
+
+    // Cast ray from player image, excluding the planned surface
+    const result = castRay(playerImage, angle, surfacesExcludingPlanned, screenBounds);
+    if (result) {
+      rayResults.push(result);
+    }
+  }
+
+  // Sort ray hits by angle (from player image) and remove duplicates
+  rayResults.sort((a, b) => a.angle - b.angle);
+  const uniqueFarHits = removeDuplicates(rayResults);
+
+  // Collect all polygon vertices: surface endpoints + ray hits
+  const allVertices: Vector2[] = [
+    surfaceStart,
+    surfaceEnd,
+    ...uniqueFarHits.map(hit => hit.point)
+  ];
+
+  // Sort ALL vertices by their angle from the PLAYER ORIGIN (not image)
+  // This ensures the polygon is properly ordered for rendering
+  allVertices.sort((a, b) => {
+    const angleA = Math.atan2(a.y - playerOrigin.y, a.x - playerOrigin.x);
+    const angleB = Math.atan2(b.y - playerOrigin.y, b.x - playerOrigin.x);
+    return angleA - angleB;
+  });
+
+  // Remove duplicate vertices (within small epsilon)
+  const polygon: Vector2[] = [];
+  for (const v of allVertices) {
+    const isDup = polygon.some(existing => 
+      Math.abs(existing.x - v.x) < 0.5 && Math.abs(existing.y - v.y) < 0.5
+    );
+    if (!isDup) {
+      polygon.push(v);
+    }
   }
 
   return {
-    polygon: halfPlanePolygon,
+    polygon,
     origin: playerOrigin,
-    isValid: true,
+    isValid: polygon.length >= 3,
   };
+}
+
+/**
+ * Check if an angle is within a range (handles wrap-around).
+ */
+function isAngleInRange(angle: number, minAngle: number, maxAngle: number): boolean {
+  // Normalize angle to same range
+  let normalized = angle;
+  if (maxAngle > Math.PI && angle < 0) {
+    normalized = angle + 2 * Math.PI;
+  }
+
+  return normalized >= minAngle - 0.001 && normalized <= maxAngle + 0.001;
 }
 
 /**
@@ -498,18 +655,18 @@ function removeDuplicates(results: RayResult[]): RayResult[] {
   if (results.length === 0) return [];
 
   const unique: RayResult[] = [results[0]!];
-  const angleEpsilon = 0.001;
-  const distEpsilon = 1;
+  const positionEpsilon = 0.5; // Pixels
 
   for (let i = 1; i < results.length; i++) {
     const prev = unique[unique.length - 1]!;
     const curr = results[i]!;
 
-    // Keep if angle or distance is significantly different
-    if (
-      Math.abs(curr.angle - prev.angle) > angleEpsilon ||
-      Math.abs(curr.distance - prev.distance) > distEpsilon
-    ) {
+    // Keep if position is significantly different
+    const dx = curr.point.x - prev.point.x;
+    const dy = curr.point.y - prev.point.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist > positionEpsilon) {
       unique.push(curr);
     }
   }
