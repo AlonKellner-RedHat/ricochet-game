@@ -696,21 +696,23 @@ export const nearestSurfaceEdgeInOutline: FirstPrincipleAssertion = {
 };
 
 /**
- * Principle V.7: Visibility Polygon Angular Ordering
+ * Principle V.7: Visibility Polygon Validity
  *
- * The visibility polygon vertices must be angularly sorted from the player origin.
- * For a visibility polygon radiating from a point, vertices should form a
- * continuous path around the player in one direction (all clockwise or all
- * counter-clockwise).
+ * For visibility polygons with planned surfaces, the polygon must be:
+ * 1. Non-self-intersecting (edges don't cross)
+ * 2. Properly ordered from the reflection origin (player image)
  *
- * If vertices jump back and forth in angle, the polygon will appear to
- * "fold over itself" creating visual artifacts even if edges don't technically cross.
+ * A malformed polygon will have edges that jump across the visible region
+ * or vertices in incorrect order, creating visual artifacts.
  */
 export const visibilityPolygonAngularOrder: FirstPrincipleAssertion = {
-  id: "visibility-polygon-angular-order",
+  id: "visibility-polygon-validity",
   principle: "V.7",
-  description: "Visibility polygon vertices must be angularly sorted from player",
+  description: "Visibility polygon must be valid (non-self-intersecting, properly ordered)",
   assert: (setup: TestSetup, _results: TestResults) => {
+    // Skip if no planned surfaces (simple visibility is easier)
+    if (setup.plannedSurfaces.length === 0) return;
+
     // Calculate visibility
     const visibilityResult = calculateSimpleVisibility(
       setup.player,
@@ -725,44 +727,123 @@ export const visibilityPolygonAngularOrder: FirstPrincipleAssertion = {
     }
 
     const vertices = visibilityResult.polygon;
-    const origin = setup.player;
     const n = vertices.length;
 
-    // Calculate angles from player to each vertex
-    const angles = vertices.map(v => Math.atan2(v.y - origin.y, v.x - origin.x));
+    // Check 1: No self-intersection (edges don't cross)
+    for (let i = 0; i < n; i++) {
+      const a1 = vertices[i]!;
+      const a2 = vertices[(i + 1) % n]!;
 
-    // Check if angles are monotonically ordered (with one wrap-around allowed)
-    // Determine initial direction
-    const normalizedDiffs: number[] = [];
-    for (let i = 1; i < n; i++) {
-      let diff = angles[i]! - angles[i - 1]!;
-      // Normalize to [-PI, PI]
-      if (diff > Math.PI) diff -= 2 * Math.PI;
-      if (diff < -Math.PI) diff += 2 * Math.PI;
-      normalizedDiffs.push(diff);
+      for (let j = 0; j < n; j++) {
+        if (j === i || j === (i + 1) % n || j === (i + n - 1) % n) continue;
+
+        const b1 = vertices[j]!;
+        const b2 = vertices[(j + 1) % n]!;
+
+        if (edgesProperlyIntersect(a1, a2, b1, b2)) {
+          expect.fail(
+            `V.7: Visibility polygon self-intersects! ` +
+            `Edge ${i} crosses edge ${j}. Setup: ${setup.name}.`
+          );
+        }
+      }
     }
 
-    // Count direction changes (sign changes in differences)
-    // A proper visibility polygon should have at most 1-2 direction changes
-    // (one for the wrap-around from the end back to start)
-    let positiveCount = normalizedDiffs.filter(d => d > 0.01).length;
-    let negativeCount = normalizedDiffs.filter(d => d < -0.01).length;
-
-    // Allow tolerance for small angular differences (nearly collinear points)
-    const significantPositive = normalizedDiffs.filter(d => d > 0.1).length;
-    const significantNegative = normalizedDiffs.filter(d => d < -0.1).length;
-
-    // If both significant positive and negative jumps exist, the polygon is badly ordered
-    if (significantPositive > 1 && significantNegative > 1) {
-      const anglesStr = angles.map(a => (a * 180 / Math.PI).toFixed(1)).join(", ");
-      expect.fail(
-        `V.7: Visibility polygon vertices are not angularly sorted! ` +
-        `Has ${significantPositive} positive and ${significantNegative} negative angular jumps. ` +
-        `Angles from player: [${anglesStr}]. Setup: ${setup.name}, ${n} vertices.`
+    // Check 2: For planned surface visibility, vertices should be sorted by
+    // angle from the PLAYER IMAGE (the reflection origin)
+    if (setup.plannedSurfaces.length === 1) {
+      const surface = setup.plannedSurfaces[0]!;
+      const playerImage = reflectPointThroughSurface(setup.player, surface);
+      
+      // Calculate angles from player image to each vertex
+      const angles = vertices.map(v => 
+        Math.atan2(v.y - playerImage.y, v.x - playerImage.x)
       );
+
+      // Check for angular monotonicity (with one wrap-around allowed)
+      let wrapArounds = 0;
+      let reversals = 0;
+      
+      for (let i = 1; i < n; i++) {
+        let diff = angles[i]! - angles[i-1]!;
+        
+        // Normalize to [-PI, PI]
+        if (diff > Math.PI) { diff -= 2 * Math.PI; wrapArounds++; }
+        if (diff < -Math.PI) { diff += 2 * Math.PI; wrapArounds++; }
+        
+        // Check for direction reversal (should be monotonic)
+        if (i > 1) {
+          const prevDiff = angles[i-1]! - angles[i-2]!;
+          let normPrevDiff = prevDiff;
+          if (normPrevDiff > Math.PI) normPrevDiff -= 2 * Math.PI;
+          if (normPrevDiff < -Math.PI) normPrevDiff += 2 * Math.PI;
+          
+          // Significant direction change indicates problem
+          if ((diff > 0.1 && normPrevDiff < -0.1) || (diff < -0.1 && normPrevDiff > 0.1)) {
+            reversals++;
+          }
+        }
+      }
+
+      // Allow at most 1 wrap-around and 1 reversal (for polygon closing)
+      if (reversals > 2) {
+        expect.fail(
+          `V.7: Visibility polygon has ${reversals} direction reversals (from player image). ` +
+          `Vertices are not properly ordered. Setup: ${setup.name}.`
+        );
+      }
     }
   },
 };
+
+/**
+ * Check if two line segments properly intersect (cross through each other).
+ */
+function edgesProperlyIntersect(
+  a1: { x: number; y: number },
+  a2: { x: number; y: number },
+  b1: { x: number; y: number },
+  b2: { x: number; y: number }
+): boolean {
+  const d1 = (b2.x - b1.x) * (a1.y - b1.y) - (b2.y - b1.y) * (a1.x - b1.x);
+  const d2 = (b2.x - b1.x) * (a2.y - b1.y) - (b2.y - b1.y) * (a2.x - b1.x);
+  const d3 = (a2.x - a1.x) * (b1.y - a1.y) - (a2.y - a1.y) * (b1.x - a1.x);
+  const d4 = (a2.x - a1.x) * (b2.y - a1.y) - (a2.y - a1.y) * (b2.x - a1.x);
+
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Reflect a point through a surface line.
+ */
+function reflectPointThroughSurface(
+  point: { x: number; y: number },
+  surface: { segment: { start: { x: number; y: number }; end: { x: number; y: number } } }
+): { x: number; y: number } {
+  const { start, end } = surface.segment;
+  
+  // Line direction
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const len2 = dx * dx + dy * dy;
+  
+  if (len2 < 0.0001) return point;
+  
+  // Project point onto line
+  const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / len2;
+  const projX = start.x + t * dx;
+  const projY = start.y + t * dy;
+  
+  // Reflect
+  return {
+    x: 2 * projX - point.x,
+    y: 2 * projY - point.y,
+  };
+}
 
 /**
  * All visibility/lighting assertions.

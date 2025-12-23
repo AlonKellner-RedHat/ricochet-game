@@ -305,35 +305,67 @@ function calculateSingleSurfaceVisibility(
     }
   }
 
-  // Sort ray hits by angle (from player image) and remove duplicates
-  rayResults.sort((a, b) => a.angle - b.angle);
-  const uniqueFarHits = removeDuplicates(rayResults);
-
-  // Collect all polygon vertices: surface endpoints + ray hits
-  const allVertices: Vector2[] = [
-    surfaceStart,
-    surfaceEnd,
-    ...uniqueFarHits.map(hit => hit.point)
-  ];
-
-  // Sort ALL vertices by their angle from the PLAYER ORIGIN (not image)
-  // This ensures the polygon is properly ordered for rendering
-  allVertices.sort((a, b) => {
-    const angleA = Math.atan2(a.y - playerOrigin.y, a.x - playerOrigin.x);
-    const angleB = Math.atan2(b.y - playerOrigin.y, b.x - playerOrigin.x);
-    return angleA - angleB;
-  });
-
-  // Remove duplicate vertices (within small epsilon)
-  const polygon: Vector2[] = [];
-  for (const v of allVertices) {
-    const isDup = polygon.some(existing => 
-      Math.abs(existing.x - v.x) < 0.5 && Math.abs(existing.y - v.y) < 0.5
-    );
-    if (!isDup) {
-      polygon.push(v);
-    }
+  // Normalize angles to the adjusted range
+  let startAngleNormalized = angleToStart;
+  let endAngleNormalized = angleToEnd;
+  if (maxAngle > Math.PI) {
+    if (startAngleNormalized < 0) startAngleNormalized += 2 * Math.PI;
+    if (endAngleNormalized < 0) endAngleNormalized += 2 * Math.PI;
   }
+
+  // Find the min/max angles for sorting
+  const sortedEndpoints = [
+    { point: surfaceStart, angle: startAngleNormalized, isSurface: true },
+    { point: surfaceEnd, angle: endAngleNormalized, isSurface: true },
+  ].sort((a, b) => a.angle - b.angle);
+
+  const firstEndpoint = sortedEndpoints[0]!;
+  const lastEndpoint = sortedEndpoints[1]!;
+
+  // Collect ray hits with normalized angles
+  const farBoundaryHits: Array<{ point: Vector2; angle: number }> = [];
+
+  for (const result of rayResults) {
+    let hitAngle = result.angle;
+    if (maxAngle > Math.PI && hitAngle < 0) {
+      hitAngle += 2 * Math.PI;
+    }
+    farBoundaryHits.push({ point: result.point, angle: hitAngle });
+  }
+
+  // Sort far boundary hits by angle
+  farBoundaryHits.sort((a, b) => a.angle - b.angle);
+
+  // Remove duplicate positions (keep distinct boundary points)
+  const filteredHits: Vector2[] = [];
+  const positionEpsilon = 1.0;
+
+  for (const hit of farBoundaryHits) {
+    // Skip if same position as a surface endpoint
+    const sameAsFirst = 
+      Math.abs(hit.point.x - firstEndpoint.point.x) < positionEpsilon &&
+      Math.abs(hit.point.y - firstEndpoint.point.y) < positionEpsilon;
+    const sameAsLast = 
+      Math.abs(hit.point.x - lastEndpoint.point.x) < positionEpsilon &&
+      Math.abs(hit.point.y - lastEndpoint.point.y) < positionEpsilon;
+    if (sameAsFirst || sameAsLast) continue;
+
+    // Skip if duplicate position with already-added hit
+    const isDup = filteredHits.some(existing =>
+      Math.abs(existing.x - hit.point.x) < positionEpsilon &&
+      Math.abs(existing.y - hit.point.y) < positionEpsilon
+    );
+    if (isDup) continue;
+
+    filteredHits.push(hit.point);
+  }
+
+  // Build polygon: first_surface_endpoint → far_hits → last_surface_endpoint
+  const polygon: Vector2[] = [
+    firstEndpoint.point,
+    ...filteredHits,
+    lastEndpoint.point,
+  ];
 
   return {
     polygon,

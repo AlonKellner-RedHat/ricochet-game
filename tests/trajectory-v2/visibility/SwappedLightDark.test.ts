@@ -571,31 +571,90 @@ describe("Visibility Polygon Self-Intersection (V.7)", () => {
     expect(result.isValid).toBe(true);
     const simpleCheck = isSimplePolygon(result.polygon);
     
-    // Check if vertices are in proper angular order from origin
-    const origin = player;
-    const angles = result.polygon.map(v => Math.atan2(v.y - origin.y, v.x - origin.x) * 180 / Math.PI);
-    console.log("  Angles from player:", angles.map(a => a.toFixed(1)).join(", "));
+    // Check for actual edge crossings (self-intersection)
+    // For planned surfaces, polygon is sorted by angle from IMAGE, not player
+    // So we only check for actual edge crossings
+    const crossingCheck = isSimplePolygon(result.polygon);
     
-    // Calculate angular differences
-    const normalizedDiffs: number[] = [];
-    for (let i = 1; i < angles.length; i++) {
-      let diff = angles[i]! - angles[i-1]!;
-      if (diff > 180) diff -= 360;
-      if (diff < -180) diff += 360;
-      normalizedDiffs.push(diff);
+    if (!crossingCheck.simple) {
+      console.log("  SELF-INTERSECTION DETECTED");
     }
     
-    const significantPositive = normalizedDiffs.filter(d => d > 5.7).length; // ~0.1 rad
-    const significantNegative = normalizedDiffs.filter(d => d < -5.7).length;
+    expect(crossingCheck.simple).toBe(true);
+  });
+
+  it("user-reported: polygon should not include player position with planned surface", () => {
+    // User's second report - light incorrectly reaches cursor
+    const player = { x: 581.3802317000005, y: 666 };
+    const cursor1 = { x: 741.6518424396442, y: 266.4803049555273 };
+    const cursor2 = { x: 640.8132147395171, y: 320.1524777636595 };
     
-    console.log(`  Direction changes: ${significantPositive} positive, ${significantNegative} negative`);
+    const plannedSurface = createTestSurface({
+      id: "ricochet-4",
+      start: { x: 850, y: 350 },
+      end: { x: 850, y: 500 },
+      canReflect: true,
+    });
+    const allSurfaces = [
+      createTestSurface({ id: "floor", start: { x: 0, y: 700 }, end: { x: 1280, y: 700 }, canReflect: false }),
+      createTestSurface({ id: "ceiling", start: { x: 0, y: 80 }, end: { x: 1280, y: 80 }, canReflect: false }),
+      createTestSurface({ id: "left-wall", start: { x: 20, y: 80 }, end: { x: 20, y: 700 }, canReflect: false }),
+      createTestSurface({ id: "right-wall", start: { x: 1260, y: 80 }, end: { x: 1260, y: 700 }, canReflect: false }),
+      createTestSurface({ id: "platform-1", start: { x: 300, y: 450 }, end: { x: 500, y: 450 }, canReflect: false }),
+      createTestSurface({ id: "platform-2", start: { x: 550, y: 350 }, end: { x: 750, y: 350 }, canReflect: false }),
+      createTestSurface({ id: "ricochet-1", start: { x: 800, y: 150 }, end: { x: 900, y: 250 }, canReflect: true }),
+      createTestSurface({ id: "ricochet-2", start: { x: 400, y: 250 }, end: { x: 550, y: 250 }, canReflect: true }),
+      createTestSurface({ id: "ricochet-3", start: { x: 100, y: 200 }, end: { x: 200, y: 300 }, canReflect: true }),
+      createTestSurface({ id: "ricochet-4", start: { x: 850, y: 350 }, end: { x: 850, y: 500 }, canReflect: true }),
+    ];
+
+    const result = calculateSimpleVisibility(
+      player,
+      allSurfaces,
+      screenBounds,
+      [plannedSurface]
+    );
+
+    console.log("Player position with planned surface test:");
+    console.log("  Player:", player);
+    console.log("  Polygon vertices:", result.polygon.length);
+    result.polygon.forEach((v, i) => 
+      console.log(`    [${i}] (${v.x.toFixed(1)}, ${v.y.toFixed(1)})`)
+    );
+
+    // Check if polygon is valid (non-self-intersecting)
+    expect(result.isValid).toBe(true);
+    const crossingCheck = isSimplePolygon(result.polygon);
+    expect(crossingCheck.simple).toBe(true);
+
+    // Check if player position is in polygon
+    // With a planned surface, the player position should NOT be guaranteed to be lit
+    const playerInPolygon = isPointInSimplePolygon(player, result.polygon);
+    console.log("  Player in polygon:", playerInPolygon);
+
+    // Check cursor positions
+    const cursor1InPolygon = isPointInSimplePolygon(cursor1, result.polygon);
+    const cursor2InPolygon = isPointInSimplePolygon(cursor2, result.polygon);
+    console.log("  Cursor1 in polygon:", cursor1InPolygon);
+    console.log("  Cursor2 in polygon:", cursor2InPolygon);
+
+    // Verify: is Cursor2 blocked by platform-2?
+    // Ray from player image to Cursor2, check if it crosses platform-2 (y=350, x=550-750)
+    const playerImage = { x: 2 * 850 - player.x, y: player.y }; // Reflected through x=850
+    console.log("  Player image:", playerImage);
     
-    // A proper visibility polygon should be mostly in one direction
-    // Both significant positive AND negative means vertices are out of order
-    expect(
-      !(significantPositive > 1 && significantNegative > 1),
-      "Visibility polygon vertices must be angularly sorted from player"
-    ).toBe(true);
+    // At y=350, where is the ray from image to Cursor2?
+    const t = (350 - playerImage.y) / (cursor2.y - playerImage.y);
+    const xAtPlatform = playerImage.x + t * (cursor2.x - playerImage.x);
+    console.log(`  Ray from image to Cursor2 at y=350: x=${xAtPlatform.toFixed(1)}`);
+    console.log(`  Platform-2 is from x=550 to x=750`);
+    const blockedByPlatform = xAtPlatform >= 550 && xAtPlatform <= 750;
+    console.log(`  Cursor2 blocked by platform: ${blockedByPlatform}`);
+
+    // If blocked, Cursor2 correctly should NOT be in polygon
+    if (blockedByPlatform) {
+      expect(cursor2InPolygon).toBe(false);
+    }
   });
 });
 
