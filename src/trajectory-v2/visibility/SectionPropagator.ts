@@ -410,13 +410,44 @@ function intersectTwoSections(
 // =============================================================================
 
 /**
+ * Check if a point is on the reflective side of a surface.
+ * 
+ * The reflective side is determined by the surface normal direction.
+ * For a segment from start to end, the normal points "left" (using right-hand rule).
+ * A point is on the reflective side if it's on the same side as the normal.
+ * 
+ * Uses exact arithmetic (no normalization, just cross-product sign).
+ */
+export function isOnReflectiveSide(point: Vector2, surface: Surface): boolean {
+  const { start, end } = surface.segment;
+  
+  // Get surface direction
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  
+  // Vector from surface start to point
+  const px = point.x - start.x;
+  const py = point.y - start.y;
+  
+  // Cross product determines which side the point is on
+  // If positive: point is to the LEFT of the line (start→end) = normal side = reflective side
+  // If negative: point is to the RIGHT = back side
+  const cross = dx * py - dy * px;
+  
+  // Point must be strictly on the reflective side (positive cross)
+  // Zero means point is exactly on the line (edge case)
+  return cross > 0;
+}
+
+/**
  * Propagate visibility through a chain of planned surfaces.
  *
  * Simplified algorithm:
- * 1. Calculate visible sections on first surface from player
- * 2. Reflect player through surface to get image
- * 3. The visible sections define the "window" through which light passes
- * 4. For multi-surface: repeat for each surface in sequence
+ * 1. Check if player is on reflective side of first surface
+ * 2. Calculate visible sections on first surface from player
+ * 3. Reflect player through surface to get image
+ * 4. The visible sections define the "window" through which light passes
+ * 5. For multi-surface: repeat for each surface in sequence
  *
  * @param player The player position
  * @param plannedSurfaces Ordered list of planned surfaces
@@ -440,36 +471,60 @@ export function propagateVisibility(
     };
   }
 
-  // For now, focus on single surface propagation
-  // Multi-surface is more complex and will be added later
-  const surface = plannedSurfaces[0]!;
-  
-  // Calculate which sections of the surface are visible from player
-  const obstaclesForLOS = allSurfaces.filter(s => s.id !== surface.id);
-  const visibleOnSurface = calculateVisibleSectionsOnSurface(
-    player,
-    surface,
-    obstaclesForLOS
-  );
+  // Multi-surface propagation:
+  // 1. For each surface in order, check if current origin can see it
+  // 2. Calculate visible sections on that surface
+  // 3. Reflect origin → next image, reflect sections
+  // 4. Continue with next surface using new origin
 
-  if (visibleOnSurface.length === 0) {
-    // No visibility to the surface
-    return { sections: [], origin: player };
+  let currentOrigin = player;
+  let currentSections: AngularSection[] = [];
+
+  for (let i = 0; i < plannedSurfaces.length; i++) {
+    const surface = plannedSurfaces[i]!;
+
+    // Check if current origin is on the reflective side of this surface
+    if (!isOnReflectiveSide(currentOrigin, surface)) {
+      // Cannot see this surface from reflective side - visibility is empty
+      return { sections: [], origin: currentOrigin };
+    }
+
+    // Calculate which sections of the surface are visible from current origin
+    // Exclude the current surface and all previous planned surfaces from obstacles
+    const processedSurfaceIds = new Set(
+      plannedSurfaces.slice(0, i + 1).map(s => s.id)
+    );
+    const obstaclesForLOS = allSurfaces.filter(s => !processedSurfaceIds.has(s.id));
+
+    const visibleOnSurface = calculateVisibleSectionsOnSurface(
+      currentOrigin,
+      surface,
+      obstaclesForLOS
+    );
+
+    if (visibleOnSurface.length === 0) {
+      // No visibility to this surface
+      return { sections: [], origin: currentOrigin };
+    }
+
+    // Reflect current origin through surface to get next image
+    const nextOrigin = reflectPointThroughLine(
+      currentOrigin,
+      surface.segment.start,
+      surface.segment.end
+    );
+
+    // Reflect the visible sections through this surface
+    const reflectedSections = visibleOnSurface.map(s => reflectSection(s, surface));
+
+    // Update for next iteration
+    currentSections = reflectedSections;
+    currentOrigin = nextOrigin;
   }
 
-  // Reflect player through surface to get image
-  const playerImage = reflectPointThroughLine(
-    player,
-    surface.segment.start,
-    surface.segment.end
-  );
-
-  // The visible sections, when reflected, define the angular bounds for rays from the image
-  const reflectedSections = visibleOnSurface.map(s => reflectSection(s, surface));
-
   return {
-    sections: reflectedSections,
-    origin: playerImage,
+    sections: currentSections,
+    origin: currentOrigin,
   };
 }
 
@@ -499,15 +554,35 @@ export function buildPolygonFromSections(
     return [];
   }
 
-  const { origin } = propagation;  // This is the player image
+  const { origin, sections } = propagation;  // origin is the final player image
   const vertices: Array<{ point: Vector2; angle: number }> = [];
 
-  // The planned surface endpoints define the "window" bounds
+  // For multi-surface, use the section boundaries (which are already constrained)
+  // instead of the full surface endpoints
+  // The sections define the visible "window" after all propagation
+  
+  // Collect all section boundary points (these are reflected points, so we use 
+  // the intersection with the last surface)
   const surfaceStart = lastPlannedSurface.segment.start;
   const surfaceEnd = lastPlannedSurface.segment.end;
-
-  const angleToStart = Math.atan2(surfaceStart.y - origin.y, surfaceStart.x - origin.x);
-  const angleToEnd = Math.atan2(surfaceEnd.y - origin.y, surfaceEnd.x - origin.x);
+  
+  // Calculate angles to both surface endpoints and section boundaries
+  const angleToSurfaceStart = Math.atan2(surfaceStart.y - origin.y, surfaceStart.x - origin.x);
+  const angleToSurfaceEnd = Math.atan2(surfaceEnd.y - origin.y, surfaceEnd.x - origin.x);
+  
+  // Use the section boundaries (left and right of first/last sections)
+  // These are the actual visible bounds after propagation
+  const firstSection = sections[0]!;
+  const lastSection = sections[sections.length - 1]!;
+  
+  // Section boundaries are target points from the reflected origin
+  const angleToSectionLeft = Math.atan2(firstSection.left.y - origin.y, firstSection.left.x - origin.x);
+  const angleToSectionRight = Math.atan2(lastSection.right.y - origin.y, lastSection.right.x - origin.x);
+  
+  // The visible window is the intersection of section bounds with surface bounds
+  // For now, use the section boundaries as they're already constrained
+  const angleToStart = angleToSectionLeft;
+  const angleToEnd = angleToSectionRight;
 
   // Determine angular range (the window)
   let minAngle = Math.min(angleToStart, angleToEnd);
@@ -520,9 +595,23 @@ export function buildPolygonFromSections(
     maxAngle = temp + 2 * Math.PI;
   }
 
-  // Add surface endpoints
-  vertices.push({ point: surfaceStart, angle: angleToStart });
-  vertices.push({ point: surfaceEnd, angle: angleToEnd });
+  // Add section boundary points (where rays hit the last surface)
+  // These are the intersections of section boundary rays with the last surface
+  const leftIntersection = findRaySurfaceIntersection(origin, firstSection.left, lastPlannedSurface);
+  const rightIntersection = findRaySurfaceIntersection(origin, lastSection.right, lastPlannedSurface);
+  
+  if (leftIntersection) {
+    vertices.push({ point: leftIntersection, angle: angleToStart });
+  } else {
+    // Fallback to section boundary point
+    vertices.push({ point: firstSection.left, angle: angleToStart });
+  }
+  
+  if (rightIntersection) {
+    vertices.push({ point: rightIntersection, angle: angleToEnd });
+  } else {
+    vertices.push({ point: lastSection.right, angle: angleToEnd });
+  }
 
   // Surfaces to check for hits (excluding the planned surface itself)
   const surfacesForHits = allSurfaces.filter(s => s.id !== lastPlannedSurface.id);
@@ -685,5 +774,18 @@ function isDuplicate(point: Vector2, list: Vector2[]): boolean {
   return list.some(p => 
     Math.abs(p.x - point.x) < 0.5 && Math.abs(p.y - point.y) < 0.5
   );
+}
+
+/**
+ * Find where a ray from origin through target intersects a surface.
+ * Returns null if no intersection.
+ */
+function findRaySurfaceIntersection(
+  origin: Vector2,
+  target: Vector2,
+  surface: Surface
+): Vector2 | null {
+  const ray: Ray = { source: origin, target };
+  return raySegmentIntersection(ray, surface.segment.start, surface.segment.end);
 }
 
