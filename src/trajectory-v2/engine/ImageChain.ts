@@ -24,6 +24,7 @@ import {
   lineLineIntersection,
   pointSideOfLine,
 } from "@/trajectory-v2/geometry/GeometryOps";
+import type { Ray } from "@/trajectory-v2/geometry/RayCore";
 
 /**
  * ImageChain interface - the contract for the single source of truth.
@@ -75,6 +76,49 @@ export interface ImageChain {
    * Uses exact cross-product (no floating-point tolerance).
    */
   isCursorOnReflectiveSide(surfaceIndex: number): boolean;
+
+  // ==========================================================================
+  // Ray Interface - Unified foundation for trajectory and visibility
+  // ==========================================================================
+
+  /**
+   * Get the ray for trajectory segment at given index.
+   *
+   * For segment i (0-indexed):
+   * - source = playerImage[i] (for first segment, this is player position)
+   * - target = cursorImage[n-i] where n = number of surfaces
+   *
+   * This ray intersects surface[i] at exactly the reflection point.
+   * For a plan with no surfaces, returns ray from player to cursor.
+   *
+   * @param segmentIndex Which segment (0 = first, from player)
+   * @returns Ray from playerImage toward cursorImage
+   */
+  getRay(segmentIndex: number): Ray;
+
+  /**
+   * Get the physical ray AFTER reflecting at a surface.
+   *
+   * This is the direction the ball travels after bouncing off surface[surfaceIndex].
+   * - source = reflectionPoint[surfaceIndex]
+   * - target = cursorImage[n-1-surfaceIndex] or cursor if it's the last surface
+   *
+   * @param surfaceIndex Which surface was just hit
+   * @returns Ray from reflection point toward next target
+   */
+  getReflectedRay(surfaceIndex: number): Ray;
+
+  /**
+   * Get all rays forming the complete planned path.
+   *
+   * Returns n+1 rays for n surfaces:
+   * - ray[0]: player → reflectionPoint[0]
+   * - ray[i]: reflectionPoint[i-1] → reflectionPoint[i]
+   * - ray[n]: reflectionPoint[n-1] → cursor
+   *
+   * For empty plan, returns single ray: player → cursor
+   */
+  getAllRays(): readonly Ray[];
 }
 
 /**
@@ -155,6 +199,86 @@ export function createImageChain(
         );
       }
       return isOnReflectiveSide(cursor, surfaces[surfaceIndex]!);
+    },
+
+    // Ray interface methods
+    getRay(segmentIndex: number): Ray {
+      const n = surfaces.length;
+
+      // For empty plan, only segment 0 is valid (player → cursor)
+      if (n === 0) {
+        if (segmentIndex !== 0) {
+          throw new Error(`Invalid segment index ${segmentIndex} for empty plan`);
+        }
+        return { source: player, target: cursor };
+      }
+
+      // For plan with surfaces: segment i uses playerImage[i] and cursorImage[n-i]
+      if (segmentIndex < 0 || segmentIndex > n) {
+        throw new Error(
+          `Invalid segment index ${segmentIndex}, valid range is 0..${n}`
+        );
+      }
+
+      const source = playerImages[segmentIndex]!;
+      const target = cursorImages[n - segmentIndex]!;
+
+      return { source, target };
+    },
+
+    getReflectedRay(surfaceIndex: number): Ray {
+      if (surfaceIndex < 0 || surfaceIndex >= surfaces.length) {
+        throw new Error(
+          `Invalid surface index ${surfaceIndex}, max is ${surfaces.length - 1}`
+        );
+      }
+
+      const n = surfaces.length;
+      const source = reflectionPoints[surfaceIndex]!;
+
+      // Target depends on whether this is the last surface
+      if (surfaceIndex === n - 1) {
+        // Last surface - ray goes to cursor
+        return { source, target: cursor };
+      } else {
+        // Not last - ray goes toward next reflection point
+        // But we use the cursorImage for the next segment for exactness
+        const nextCursorImage = cursorImages[n - surfaceIndex - 1]!;
+        return { source, target: nextCursorImage };
+      }
+    },
+
+    getAllRays(): readonly Ray[] {
+      const n = surfaces.length;
+      const rays: Ray[] = [];
+
+      if (n === 0) {
+        // No surfaces: single ray from player to cursor
+        rays.push({ source: player, target: cursor });
+        return rays;
+      }
+
+      // First ray: player → reflectionPoint[0]
+      rays.push({
+        source: player,
+        target: reflectionPoints[0]!,
+      });
+
+      // Middle rays: reflectionPoint[i-1] → reflectionPoint[i]
+      for (let i = 1; i < n; i++) {
+        rays.push({
+          source: reflectionPoints[i - 1]!,
+          target: reflectionPoints[i]!,
+        });
+      }
+
+      // Last ray: reflectionPoint[n-1] → cursor
+      rays.push({
+        source: reflectionPoints[n - 1]!,
+        target: cursor,
+      });
+
+      return rays;
     },
   };
 }

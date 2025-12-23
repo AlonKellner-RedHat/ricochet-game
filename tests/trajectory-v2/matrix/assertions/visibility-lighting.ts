@@ -30,19 +30,19 @@ function pointToSegmentDistance(
   const dx = segEnd.x - segStart.x;
   const dy = segEnd.y - segStart.y;
   const lenSq = dx * dx + dy * dy;
-  
+
   if (lenSq < 0.0001) {
     // Degenerate segment - just return distance to start
     return Math.sqrt((point.x - segStart.x) ** 2 + (point.y - segStart.y) ** 2);
   }
-  
+
   // Project point onto line and clamp to segment
   let t = ((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lenSq;
   t = Math.max(0, Math.min(1, t));
-  
+
   const closestX = segStart.x + t * dx;
   const closestY = segStart.y + t * dy;
-  
+
   return Math.sqrt((point.x - closestX) ** 2 + (point.y - closestY) ** 2);
 }
 
@@ -61,7 +61,7 @@ function isPointInPolygon(
   for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
     const vi = vertices[i]!;
     const vj = vertices[j]!;
-    
+
     // Distance from point to line segment (vi, vj)
     const dist = pointToSegmentDistance(point, vi, vj);
     if (dist < 1.0) {

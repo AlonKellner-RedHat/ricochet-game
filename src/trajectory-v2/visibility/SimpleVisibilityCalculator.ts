@@ -32,6 +32,14 @@ import {
   buildPolygonFromSections,
   type ScreenBounds as SectionScreenBounds,
 } from "./SectionPropagator";
+import {
+  isCursorLit as isCursorLitRayBased,
+  calculateRayVisibility,
+  type RayVisibilityResult,
+} from "./RayBasedVisibility";
+
+// Re-export ray-based functions for gradual migration
+export { isCursorLitRayBased, calculateRayVisibility, type RayVisibilityResult };
 
 /**
  * Screen bounds for visibility calculation.
