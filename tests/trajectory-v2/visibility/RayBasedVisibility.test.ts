@@ -199,6 +199,68 @@ describe("RayBasedVisibility", () => {
     });
   });
 
+  describe("Planned surface visibility", () => {
+    it("handles off-screen player image correctly - user reported issue", () => {
+      // User-reported issue: player image at (1316, -15.8) is off-screen
+      // Visibility polygon is tiny and in wrong location
+      const player: Vector2 = { x: 634.2, y: 666 };
+      const cursor: Vector2 = { x: 711.1, y: 252.5 };
+
+      const surfaces = [
+        createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }, false),
+        createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 }, false),
+        createTestSurface("left-wall", { x: 20, y: 80 }, { x: 20, y: 700 }, false),
+        createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 }, false),
+        createTestSurface("platform-1", { x: 300, y: 450 }, { x: 500, y: 450 }, false),
+        createTestSurface("platform-2", { x: 550, y: 350 }, { x: 750, y: 350 }, false),
+        createTestSurface("ricochet-1", { x: 800, y: 150 }, { x: 900, y: 250 }, true),
+        createTestSurface("ricochet-2", { x: 400, y: 250 }, { x: 550, y: 250 }, true),
+        createTestSurface("ricochet-3", { x: 100, y: 200 }, { x: 200, y: 300 }, true),
+        createTestSurface("ricochet-4", { x: 850, y: 350 }, { x: 850, y: 500 }, true),
+      ];
+
+      const plannedSurfaces = [
+        createTestSurface("ricochet-1", { x: 800, y: 150 }, { x: 900, y: 250 }, true),
+      ];
+
+      // The cursor should be lit if the plan is valid
+      const lit = isCursorLit(player, cursor, plannedSurfaces, surfaces);
+
+      // Check visibility polygon
+      const result = calculateRayVisibility(player, surfaces, screenBounds, plannedSurfaces);
+
+      // The polygon should be valid and contain the cursor if lit
+      expect(result.isValid).toBe(true);
+      expect(result.polygon.length).toBeGreaterThanOrEqual(3);
+
+      // If cursor is lit, polygon should contain it (V.5 correlation)
+      if (lit) {
+        const cursorInPolygon = isPointInPolygon(cursor, result.polygon);
+        expect(cursorInPolygon).toBe(true);
+      }
+    });
+
+    it("visibility polygon covers valid cursor positions through planned surface", () => {
+      // Simple case: player on left, planned surface in middle, cursor on left (reflected)
+      const player: Vector2 = { x: 100, y: 300 };
+      const cursor: Vector2 = { x: 150, y: 300 };
+      const plannedSurface = createTestSurface("s1", { x: 300, y: 100 }, { x: 300, y: 500 });
+
+      const surfaces = [plannedSurface];
+      const plannedSurfaces = [plannedSurface];
+
+      const lit = isCursorLit(player, cursor, plannedSurfaces, surfaces);
+      expect(lit).toBe(true);
+
+      const result = calculateRayVisibility(player, surfaces, screenBounds, plannedSurfaces);
+      expect(result.isValid).toBe(true);
+
+      // Cursor should be inside the visibility polygon
+      const cursorInPolygon = isPointInPolygon(cursor, result.polygon);
+      expect(cursorInPolygon).toBe(true);
+    });
+  });
+
   describe("Shadow edge handling (grazing rays)", () => {
     it("cursor in open area past obstacle should be lit - user reported issue", () => {
       // User-reported issue: cursor is in shadow but path is valid

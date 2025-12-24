@@ -272,13 +272,155 @@ function castRayAtAngle(
     x: origin.x + Math.cos(angle) * 10000,
     y: origin.y + Math.sin(angle) * 10000,
   };
-  
+
   const ray = createRay(origin, farPoint);
   return castRayToFirstSurface(ray, origin, surfaces, screenBounds);
 }
 
 /**
- * Calculate visibility through planned surfaces using rays.
+ * Cast a ray through a window point and find where it hits on the far side.
+ * This extends the ray past the window to find surfaces/screen on the player's side.
+ */
+function castRayThroughWindow(
+  origin: Vector2,
+  windowPoint: Vector2,
+  surfaces: readonly Surface[],
+  screenBounds: ScreenBounds
+): Vector2 | null {
+  // Create a ray that goes from origin through windowPoint
+  const dx = windowPoint.x - origin.x;
+  const dy = windowPoint.y - origin.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+
+  // Extend far past the window point
+  const farPoint = {
+    x: windowPoint.x + (dx / len) * 10000,
+    y: windowPoint.y + (dy / len) * 10000,
+  };
+
+  const ray = createRay(origin, farPoint);
+
+  // Find the first hit AFTER the window point
+  let closestHit: { point: Vector2; t: number } | null = null;
+  const windowT = 1.0; // Window point is at t=1 in the ray from origin to windowPoint
+
+  // Check surfaces
+  for (const surface of surfaces) {
+    const segment: Segment = {
+      start: surface.segment.start,
+      end: surface.segment.end,
+    };
+
+    const hit = intersectRaySegment(ray, segment);
+
+    // Hit must be past the window point (t > windowT scaled appropriately)
+    // Since ray goes to farPoint, we need to check if hit.t corresponds to past windowPoint
+    if (hit && hit.onSegment && hit.t > 0.001) {
+      const hitDist = distance(origin, hit.point);
+      const windowDist = distance(origin, windowPoint);
+
+      if (hitDist > windowDist + 1) {
+        // Hit is past the window
+        if (!closestHit || hit.t < closestHit.t) {
+          closestHit = { point: hit.point, t: hit.t };
+        }
+      }
+    }
+  }
+
+  // Check screen bounds
+  const screenSegments: Segment[] = [
+    { start: { x: screenBounds.minX, y: screenBounds.minY }, end: { x: screenBounds.maxX, y: screenBounds.minY } },
+    { start: { x: screenBounds.maxX, y: screenBounds.minY }, end: { x: screenBounds.maxX, y: screenBounds.maxY } },
+    { start: { x: screenBounds.maxX, y: screenBounds.maxY }, end: { x: screenBounds.minX, y: screenBounds.maxY } },
+    { start: { x: screenBounds.minX, y: screenBounds.maxY }, end: { x: screenBounds.minX, y: screenBounds.minY } },
+  ];
+
+  for (const segment of screenSegments) {
+    const hit = intersectRaySegment(ray, segment);
+
+    if (hit && hit.onSegment && hit.t > 0.001) {
+      const hitDist = distance(origin, hit.point);
+      const windowDist = distance(origin, windowPoint);
+
+      if (hitDist > windowDist + 1) {
+        if (!closestHit || hit.t < closestHit.t) {
+          closestHit = { point: hit.point, t: hit.t };
+        }
+      }
+    }
+  }
+
+  return closestHit?.point ?? null;
+}
+
+/**
+ * Cast a ray at a specific angle, including screen bounds in the hit check.
+ * This is important when the origin is off-screen.
+ */
+function castRayAtAngleIncludeScreen(
+  origin: Vector2,
+  angle: number,
+  surfaces: readonly Surface[],
+  screenBounds: ScreenBounds
+): Vector2 | null {
+  // Create a ray extending far in the given direction
+  const farPoint = {
+    x: origin.x + Math.cos(angle) * 10000,
+    y: origin.y + Math.sin(angle) * 10000,
+  };
+
+  const ray = createRay(origin, farPoint);
+
+  // Include screen boundary segments as surfaces
+  const screenSegments: Segment[] = [
+    { start: { x: screenBounds.minX, y: screenBounds.minY }, end: { x: screenBounds.maxX, y: screenBounds.minY } },
+    { start: { x: screenBounds.maxX, y: screenBounds.minY }, end: { x: screenBounds.maxX, y: screenBounds.maxY } },
+    { start: { x: screenBounds.maxX, y: screenBounds.maxY }, end: { x: screenBounds.minX, y: screenBounds.maxY } },
+    { start: { x: screenBounds.minX, y: screenBounds.maxY }, end: { x: screenBounds.minX, y: screenBounds.minY } },
+  ];
+
+  let closestHit: { point: Vector2; t: number } | null = null;
+
+  // Check surfaces
+  for (const surface of surfaces) {
+    const segment: Segment = {
+      start: surface.segment.start,
+      end: surface.segment.end,
+    };
+
+    const hit = intersectRaySegment(ray, segment);
+
+    if (hit && hit.onSegment && hit.t > 0.001) {
+      if (!closestHit || hit.t < closestHit.t) {
+        closestHit = { point: hit.point, t: hit.t };
+      }
+    }
+  }
+
+  // Check screen bounds
+  for (const segment of screenSegments) {
+    const hit = intersectRaySegment(ray, segment);
+
+    if (hit && hit.onSegment && hit.t > 0.001) {
+      if (!closestHit || hit.t < closestHit.t) {
+        closestHit = { point: hit.point, t: hit.t };
+      }
+    }
+  }
+
+  return closestHit?.point ?? null;
+}
+
+/**
+ * Calculate visibility through planned surfaces using rays with grazing ray technique.
+ *
+ * Key insight: The planned surface acts as a "window". Only the region visible
+ * through this window should be lit. We cast rays from the player image (reflected
+ * position) and only include points that would be seen through the window.
+ *
+ * For off-screen player images, we still cast rays toward the window and obstacles,
+ * but the polygon is built on the reflective side of the window.
  */
 function calculatePlannedRayVisibility(
   player: Vector2,
@@ -286,6 +428,8 @@ function calculatePlannedRayVisibility(
   screenBounds: ScreenBounds,
   plannedSurfaces: readonly Surface[]
 ): RayVisibilityResult {
+  const epsilon = 0.0001;
+
   // Reflect player through all planned surfaces to get "player image"
   let playerImage = player;
   for (const surface of plannedSurfaces) {
@@ -296,30 +440,132 @@ function calculatePlannedRayVisibility(
     );
   }
 
-  // The last planned surface acts as a "window" - only rays passing through
-  // this window are valid
+  // The last planned surface acts as a "window"
   const lastSurface = plannedSurfaces[plannedSurfaces.length - 1]!;
+  const windowStart = lastSurface.segment.start;
+  const windowEnd = lastSurface.segment.end;
 
-  // Collect critical points that would be visible through the window
-  const criticalPoints: Vector2[] = [];
+  // Filter surfaces to not include the planned surfaces (we cast through them)
+  const obstacleSurfaces = surfaces.filter(
+    (s) => !plannedSurfaces.some((ps) => ps.id === s.id)
+  );
 
-  // Add last surface endpoints (window bounds)
-  criticalPoints.push(lastSurface.segment.start);
-  criticalPoints.push(lastSurface.segment.end);
+  // Collect ray data with angles and hit points
+  const rayData: { angle: number; point: Vector2 | null }[] = [];
 
-  // Add other surface endpoints that are on the correct side
-  for (const surface of surfaces) {
-    if (surface.id === lastSurface.id) continue;
+  // Helper to check if a point is on the reflective side of the window
+  // (same side as the player, opposite side from the player image)
+  // Points ON the line (cross = 0) are considered valid (they're on the window)
+  const isOnReflectiveSide = (point: Vector2): boolean => {
+    const cross1 = crossProduct(windowStart, windowEnd, point);
+    const cross2 = crossProduct(windowStart, windowEnd, player);
+    // Point is on the line (valid - it's on the window itself)
+    if (Math.abs(cross1) < 0.001) return true;
+    // Point is on the same side as the player
+    return cross1 * cross2 > 0;
+  };
 
-    for (const endpoint of [surface.segment.start, surface.segment.end]) {
-      // Check if ray from playerImage through this point passes through the window
-      if (rayPassesThroughWindow(playerImage, endpoint, lastSurface)) {
-        criticalPoints.push(endpoint);
+  // Add window endpoints with grazing rays
+  // These are always included as they define the window boundaries
+  for (const endpoint of [windowStart, windowEnd]) {
+    const angle = Math.atan2(endpoint.y - playerImage.y, endpoint.x - playerImage.x);
+
+    // Ray before endpoint - cast to find where it hits obstacles or screen bounds
+    // Only include if the hit is on the reflective (player's) side
+    const beforeHit = castRayAtAngleIncludeScreen(playerImage, angle - epsilon, obstacleSurfaces, screenBounds);
+    if (beforeHit && isOnReflectiveSide(beforeHit)) {
+      rayData.push({ angle: angle - epsilon, point: beforeHit });
+    }
+
+    // Ray at endpoint - this hits the window edge itself
+    // Window endpoints are always included (they're on the boundary)
+    rayData.push({ angle, point: endpoint });
+
+    // Ray after endpoint
+    const afterHit = castRayAtAngleIncludeScreen(playerImage, angle + epsilon, obstacleSurfaces, screenBounds);
+    if (afterHit && isOnReflectiveSide(afterHit)) {
+      rayData.push({ angle: angle + epsilon, point: afterHit });
+    }
+  }
+
+  // For off-screen player image, we need to find where rays from the player image
+  // through the window endpoints exit on the player's side
+  // Cast rays through window and extend to find hits on reflective side
+  for (const endpoint of [windowStart, windowEnd]) {
+    const angle = Math.atan2(endpoint.y - playerImage.y, endpoint.x - playerImage.x);
+
+    // Cast ray THROUGH the window endpoint to find where it hits on the player's side
+    const throughHit = castRayThroughWindow(playerImage, endpoint, obstacleSurfaces, screenBounds);
+    if (throughHit && isOnReflectiveSide(throughHit)) {
+      rayData.push({ angle, point: throughHit });
+
+      // Also cast grazing rays around this direction
+      const beforeHitThrough = castRayThroughWindow(playerImage, {
+        x: endpoint.x + Math.cos(angle - epsilon) * 10,
+        y: endpoint.y + Math.sin(angle - epsilon) * 10
+      }, obstacleSurfaces, screenBounds);
+      if (beforeHitThrough && isOnReflectiveSide(beforeHitThrough)) {
+        rayData.push({ angle: angle - epsilon * 2, point: beforeHitThrough });
+      }
+
+      const afterHitThrough = castRayThroughWindow(playerImage, {
+        x: endpoint.x + Math.cos(angle + epsilon) * 10,
+        y: endpoint.y + Math.sin(angle + epsilon) * 10
+      }, obstacleSurfaces, screenBounds);
+      if (afterHitThrough && isOnReflectiveSide(afterHitThrough)) {
+        rayData.push({ angle: angle + epsilon * 2, point: afterHitThrough });
       }
     }
   }
 
-  // Add screen corners that are visible through the window
+  // Add screen boundary points that are visible through the window
+  // This is especially important for off-screen origins
+  const screenEdgePoints = [
+    // Sample points along screen edges
+    { x: screenBounds.minX, y: (screenBounds.minY + screenBounds.maxY) / 2 },
+    { x: screenBounds.maxX, y: (screenBounds.minY + screenBounds.maxY) / 2 },
+    { x: (screenBounds.minX + screenBounds.maxX) / 2, y: screenBounds.minY },
+    { x: (screenBounds.minX + screenBounds.maxX) / 2, y: screenBounds.maxY },
+  ];
+
+  for (const point of screenEdgePoints) {
+    if (!isOnReflectiveSide(point)) continue;
+    if (!rayPassesThroughWindow(playerImage, point, lastSurface)) continue;
+
+    const angle = Math.atan2(point.y - playerImage.y, point.x - playerImage.x);
+    rayData.push({ angle, point });
+  }
+
+  // Add obstacle endpoints that are visible through the window
+  for (const surface of obstacleSurfaces) {
+    for (const endpoint of [surface.segment.start, surface.segment.end]) {
+      // Only include points on the reflective side
+      if (!isOnReflectiveSide(endpoint)) continue;
+      // Only include points visible through the window
+      if (!rayPassesThroughWindow(playerImage, endpoint, lastSurface)) continue;
+
+      const angle = Math.atan2(endpoint.y - playerImage.y, endpoint.x - playerImage.x);
+
+      // Grazing rays
+      const beforeHit = castRayAtAngleIncludeScreen(playerImage, angle - epsilon, obstacleSurfaces, screenBounds);
+      if (beforeHit && isOnReflectiveSide(beforeHit)) {
+        rayData.push({ angle: angle - epsilon, point: beforeHit });
+      }
+
+      const exactRay = createRay(playerImage, endpoint);
+      const exactHit = castRayToFirstSurface(exactRay, playerImage, obstacleSurfaces, screenBounds);
+      if (exactHit && isOnReflectiveSide(exactHit)) {
+        rayData.push({ angle, point: exactHit });
+      }
+
+      const afterHit = castRayAtAngleIncludeScreen(playerImage, angle + epsilon, obstacleSurfaces, screenBounds);
+      if (afterHit && isOnReflectiveSide(afterHit)) {
+        rayData.push({ angle: angle + epsilon, point: afterHit });
+      }
+    }
+  }
+
+  // Add screen corners visible through the window
   const corners = [
     { x: screenBounds.minX, y: screenBounds.minY },
     { x: screenBounds.maxX, y: screenBounds.minY },
@@ -328,12 +574,21 @@ function calculatePlannedRayVisibility(
   ];
 
   for (const corner of corners) {
-    if (rayPassesThroughWindow(playerImage, corner, lastSurface)) {
-      criticalPoints.push(corner);
+    if (!isOnReflectiveSide(corner)) continue;
+    if (!rayPassesThroughWindow(playerImage, corner, lastSurface)) continue;
+
+    const angle = Math.atan2(corner.y - playerImage.y, corner.x - playerImage.x);
+    const ray = createRay(playerImage, corner);
+    const hit = castRayToFirstSurface(ray, playerImage, obstacleSurfaces, screenBounds);
+    if (hit && isOnReflectiveSide(hit)) {
+      rayData.push({ angle, point: hit });
     }
   }
 
-  if (criticalPoints.length < 2) {
+  // Filter out null points
+  const validRayData = rayData.filter((r) => r.point !== null);
+
+  if (validRayData.length < 3) {
     return {
       polygon: [],
       origin: playerImage,
@@ -342,41 +597,51 @@ function calculatePlannedRayVisibility(
     };
   }
 
-  // Sort points by angle from player image (CCW)
-  const sortedPoints = [...criticalPoints].sort((a, b) => {
-    const angleA = Math.atan2(a.y - playerImage.y, a.x - playerImage.x);
-    const angleB = Math.atan2(b.y - playerImage.y, b.x - playerImage.x);
+  // Extract polygon points
+  const allPoints: Vector2[] = validRayData
+    .map((r) => r.point)
+    .filter((p): p is Vector2 => p !== null);
+
+  // Remove duplicate points
+  const uniquePoints = removeDuplicatePoints(allPoints);
+
+  // For off-screen player image, sort points by walking around the polygon perimeter
+  // Use convex hull or centroid-based angle sorting
+  const centroid = {
+    x: uniquePoints.reduce((sum, p) => sum + p.x, 0) / uniquePoints.length,
+    y: uniquePoints.reduce((sum, p) => sum + p.y, 0) / uniquePoints.length,
+  };
+
+  // Sort by angle from centroid (not from off-screen origin)
+  const sortedPoints = [...uniquePoints].sort((a, b) => {
+    const angleA = Math.atan2(a.y - centroid.y, a.x - centroid.x);
+    const angleB = Math.atan2(b.y - centroid.y, b.x - centroid.x);
     return angleA - angleB;
   });
 
-  // Cast rays from player image
-  const rays: Ray[] = [];
-  const polygon: Vector2[] = [];
-
-  // Filter surfaces to not include the planned surfaces (we cast through them)
-  const obstacleSurfaces = surfaces.filter(
-    (s) => !plannedSurfaces.some((ps) => ps.id === s.id)
-  );
-
-  for (const point of sortedPoints) {
-    const ray = createRay(playerImage, point);
-    const hitPoint = castRayToFirstSurface(ray, playerImage, obstacleSurfaces, screenBounds);
-
-    rays.push(ray);
-    if (hitPoint) {
-      polygon.push(hitPoint);
-    }
-  }
-
-  // Remove duplicate points
-  const uniquePolygon = removeDuplicatePoints(polygon);
+  // Create rays for debugging
+  const rays: Ray[] = validRayData.map((r) => {
+    const farPoint = {
+      x: playerImage.x + Math.cos(r.angle) * 10000,
+      y: playerImage.y + Math.sin(r.angle) * 10000,
+    };
+    return createRay(playerImage, farPoint);
+  });
 
   return {
-    polygon: uniquePolygon,
+    polygon: sortedPoints,
     origin: playerImage,
     rays,
-    isValid: uniquePolygon.length >= 3,
+    isValid: sortedPoints.length >= 3,
   };
+}
+
+/**
+ * Cross product of vectors (p1 - origin) and (p2 - origin).
+ * Positive if p2 is counter-clockwise from p1.
+ */
+function crossProduct(origin: Vector2, p1: Vector2, p2: Vector2): number {
+  return (p1.x - origin.x) * (p2.y - origin.y) - (p1.y - origin.y) * (p2.x - origin.x);
 }
 
 /**
@@ -505,4 +770,5 @@ function removeDuplicatePoints(points: Vector2[]): Vector2[] {
 
   return unique;
 }
+
 

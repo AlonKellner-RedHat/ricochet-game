@@ -6,23 +6,23 @@
  * for A/B testing and gradual migration.
  */
 
-import type Phaser from "phaser";
 import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
-import type { DualTrajectoryResult, AlignmentResult } from "@/types";
-import { TrajectoryEngine } from "./engine/TrajectoryEngine";
+import type { AlignmentResult, DualTrajectoryResult } from "@/types";
+import type Phaser from "phaser";
+import { AngleBasedVisibilityCalculator } from "./calculators/AngleBasedVisibilityCalculator";
+import { RayBasedVisibilityCalculator } from "./calculators/RayBasedVisibilityCalculator";
 import { SystemCoordinator } from "./coordinator/SystemCoordinator";
-import { RenderSystem, type IGraphics } from "./systems/RenderSystem";
+import type { ITrajectoryEngine } from "./engine/ITrajectoryEngine";
+import { TrajectoryEngine } from "./engine/TrajectoryEngine";
 import { AimingSystem } from "./systems/AimingSystem";
 import { ArrowSystem } from "./systems/ArrowSystem";
-import type { ITrajectoryEngine } from "./engine/ITrajectoryEngine";
+import { type IGraphics, RenderSystem } from "./systems/RenderSystem";
 import {
-  ValidRegionRenderer,
   type IValidRegionGraphics,
   type ScreenBounds,
+  ValidRegionRenderer,
 } from "./visibility/ValidRegionRenderer";
-import { RayBasedVisibilityCalculator } from "./calculators/RayBasedVisibilityCalculator";
-import { AngleBasedVisibilityCalculator } from "./calculators/AngleBasedVisibilityCalculator";
 
 /**
  * Configuration for the game adapter.
@@ -66,7 +66,7 @@ export class GameAdapter {
   // Valid region overlay
   private validRegionGraphics: Phaser.GameObjects.Graphics | null = null;
   private validRegionRenderer: ValidRegionRenderer | null = null;
-  private showValidRegion: boolean = false;
+  private showValidRegion = false;
   private screenBounds: ScreenBounds;
 
   // Cached state for visibility rendering
@@ -93,9 +93,10 @@ export class GameAdapter {
       );
 
       // Choose visibility calculator based on config (ray-based by default)
-      const visibilityCalculator = (config.useRayBasedVisibility ?? true)
-        ? new RayBasedVisibilityCalculator()
-        : new AngleBasedVisibilityCalculator();
+      const visibilityCalculator =
+        (config.useRayBasedVisibility ?? true)
+          ? new RayBasedVisibilityCalculator()
+          : new AngleBasedVisibilityCalculator();
 
       this.validRegionRenderer = new ValidRegionRenderer(
         visibilityGraphicsWrapper,
@@ -144,9 +145,7 @@ export class GameAdapter {
   /**
    * Create a Phaser-compatible graphics wrapper for trajectory rendering.
    */
-  private createPhaserGraphicsWrapper(
-    graphics: Phaser.GameObjects.Graphics
-  ): IGraphics {
+  private createPhaserGraphicsWrapper(graphics: Phaser.GameObjects.Graphics): IGraphics {
     return {
       clear: () => graphics.clear(),
       lineStyle: (width, color, alpha) => graphics.lineStyle(width, color, alpha),
@@ -317,14 +316,14 @@ export class GameAdapter {
   getBypassedSurfaceIds(): Set<string> {
     const results = this.engine.getResults();
     const bypassedIds = new Set<string>();
-    
+
     // Get bypassed surfaces from the path result
     if (results.plannedPath?.bypassedSurfaces) {
       for (const bypassed of results.plannedPath.bypassedSurfaces) {
         bypassedIds.add(bypassed.surface.id);
       }
     }
-    
+
     return bypassedIds;
   }
 
@@ -455,4 +454,3 @@ export function createGameAdapter(
 ): GameAdapter {
   return new GameAdapter(scene, config);
 }
-
