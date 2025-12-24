@@ -30,6 +30,17 @@ import type {
   ValidPolygonStep,
   PlannedPolygonStep,
 } from "./PropagationTypes";
+import {
+  type RaySectors,
+  type RaySector,
+  isPointInSector,
+  isSectorsEmpty,
+  crossProduct,
+  fullSectors,
+  trimSectorsBySurface,
+  reflectSectors,
+  createSectorFromSurface,
+} from "./RaySector";
 
 export { type ScreenBounds } from "./PropagationTypes";
 
@@ -47,16 +58,28 @@ export { type ScreenBounds } from "./PropagationTypes";
  * 4. Cast "grazing rays" slightly past each endpoint to catch shadows
  * 5. Sort hit points angularly and build polygon
  *
+ * When sectorConstraint is provided:
+ * - Only cast rays to critical points inside the sector(s)
+ * - Add explicit rays along sector boundaries
+ * - All containment checks use cross-product (exact, no angles)
+ *
  * @param origin The viewpoint (player or reflected image)
  * @param obstacles All surfaces that block visibility
  * @param bounds Screen boundaries
+ * @param sectorConstraint Optional: Only build polygon within these angular sectors
  * @returns Polygon vertices in angular order
  */
 export function buildVisibilityPolygon(
   origin: Vector2,
   obstacles: readonly Surface[],
-  bounds: ScreenBounds
+  bounds: ScreenBounds,
+  sectorConstraint?: RaySectors
 ): Vector2[] {
+  // If sector constraint is empty, return empty polygon
+  if (sectorConstraint && isSectorsEmpty(sectorConstraint)) {
+    return [];
+  }
+
   // Collect all critical points
   const criticalPoints: Vector2[] = [];
 
@@ -72,6 +95,14 @@ export function buildVisibilityPolygon(
   criticalPoints.push({ x: bounds.maxX, y: bounds.maxY }); // Bottom-right
   criticalPoints.push({ x: bounds.minX, y: bounds.maxY }); // Bottom-left
 
+  // Add sector boundary points if constrained
+  if (sectorConstraint) {
+    for (const sector of sectorConstraint) {
+      criticalPoints.push(sector.leftBoundary);
+      criticalPoints.push(sector.rightBoundary);
+    }
+  }
+
   // For each critical point, cast rays
   const hits: Array<{ point: Vector2; angle: number }> = [];
 
@@ -80,6 +111,14 @@ export function buildVisibilityPolygon(
     const dx = target.x - origin.x;
     const dy = target.y - origin.y;
     if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) continue;
+
+    // If sector constraint, check if target is inside any sector
+    if (sectorConstraint) {
+      const isInSector = sectorConstraint.some((sector) =>
+        isPointInSector(target, sector)
+      );
+      if (!isInSector) continue;
+    }
 
     // Cast ray directly at target
     const directHit = castRayToFirstHit(origin, target, obstacles, bounds);
@@ -97,18 +136,23 @@ export function buildVisibilityPolygon(
     const targetLeft = { x: target.x + perpX, y: target.y + perpY };
     const targetRight = { x: target.x - perpX, y: target.y - perpY };
 
-    const leftHit = castRayToFirstHit(origin, targetLeft, obstacles, bounds);
-    if (leftHit) {
-      const ldx = targetLeft.x - origin.x;
-      const ldy = targetLeft.y - origin.y;
-      hits.push({ point: leftHit, angle: Math.atan2(ldy, ldx) });
+    // Only cast grazing rays if they're also in the sector
+    if (!sectorConstraint || sectorConstraint.some((s) => isPointInSector(targetLeft, s))) {
+      const leftHit = castRayToFirstHit(origin, targetLeft, obstacles, bounds);
+      if (leftHit) {
+        const ldx = targetLeft.x - origin.x;
+        const ldy = targetLeft.y - origin.y;
+        hits.push({ point: leftHit, angle: Math.atan2(ldy, ldx) });
+      }
     }
 
-    const rightHit = castRayToFirstHit(origin, targetRight, obstacles, bounds);
-    if (rightHit) {
-      const rdx = targetRight.x - origin.x;
-      const rdy = targetRight.y - origin.y;
-      hits.push({ point: rightHit, angle: Math.atan2(rdy, rdx) });
+    if (!sectorConstraint || sectorConstraint.some((s) => isPointInSector(targetRight, s))) {
+      const rightHit = castRayToFirstHit(origin, targetRight, obstacles, bounds);
+      if (rightHit) {
+        const rdx = targetRight.x - origin.x;
+        const rdy = targetRight.y - origin.y;
+        hits.push({ point: rightHit, angle: Math.atan2(rdy, rdx) });
+      }
     }
   }
 
@@ -364,14 +408,19 @@ export interface ScreenBounds {
  * - validPolygons: N+1 entries (full visibility from each origin, NOT cropped)
  * - plannedPolygons: N entries (valid[K] cropped by window to surface K)
  *
- * The algorithm:
- * 1. valid[0]: Full visibility from player
+ * The algorithm now uses ray-based sectors for angular constraints:
+ * 1. valid[0]: Full visibility from player (full 360° sector)
  * 2. For each planned surface K (0 to N-1):
  *    a. Check bypass: current origin must be on reflective side
- *    b. planned[K]: valid[K] cropped by window to surface K
- *    c. Reflect origin
- *    d. valid[K+1]: Full visibility from reflected origin (excluding passed surfaces)
+ *    b. plannedSector[K]: validSector[K] trimmed by surface K
+ *    c. planned[K]: valid[K] cropped by window to surface K
+ *    d. Reflect origin and sector
+ *    e. validSector[K+1]: reflected plannedSector[K]
+ *    f. valid[K+1]: Visibility within validSector[K+1]
  * 3. finalPolygon = valid[N] (the last valid polygon)
+ *
+ * Key: Sectors track the angular constraint accumulated through reflections,
+ * ensuring visibility is only calculated within reachable angular ranges.
  *
  * @param player The player position
  * @param plannedSurfaces Surfaces in the plan (order matters)
@@ -390,7 +439,10 @@ export function propagateWithIntermediates(
   const steps: PropagationStep[] = []; // Legacy compatibility
   let currentOrigin = player;
 
-  // valid[0]: Full visibility from player
+  // Track sectors: start with full 360° visibility
+  let currentSectors: RaySectors = fullSectors(player);
+
+  // valid[0]: Full visibility from player (no sector constraint yet)
   const valid0Polygon = buildVisibilityPolygon(currentOrigin, allSurfaces, bounds);
   validPolygons.push({
     index: 0,
@@ -440,6 +492,9 @@ export function propagateWithIntermediates(
       };
     }
 
+    // plannedSector[K]: validSector[K] trimmed by surface K angular extent
+    const plannedSectors = trimSectorsBySurface(currentSectors, surface);
+
     // Build window for cropping (from current origin to surface K)
     const window: VisibilityWindow = {
       leftRay: createRay(currentOrigin, surface.segment.start),
@@ -449,13 +504,15 @@ export function propagateWithIntermediates(
     };
 
     // planned[K]: valid[K] cropped by window to surface K
-    // Build full polygon from current origin, excluding the target surface
+    // Build polygon from current origin, excluding the target surface
     // (we're looking THROUGH it, not AT it)
+    // Use currentSectors as constraint to only build within reachable angles
     const obstaclesExcludingSurface = allSurfaces.filter(s => s.id !== surface.id);
     const fullPolygonForCropping = buildVisibilityPolygon(
       currentOrigin,
       obstaclesExcludingSurface,
-      bounds
+      bounds,
+      currentSectors  // Apply sector constraint
     );
     const croppedPolygon = cropPolygonByWindow(fullPolygonForCropping, currentOrigin, surface);
 
@@ -471,11 +528,28 @@ export function propagateWithIntermediates(
     // Reflect origin for next iteration
     currentOrigin = reflectPoint(currentOrigin, surface);
 
-    // valid[K+1]: Full visibility from reflected origin
+    // Reflect sectors: validSector[K+1] = reflect(plannedSector[K])
+    currentSectors = reflectSectors(plannedSectors, surface);
+
+    // Update sector origins to the new reflected origin
+    currentSectors = currentSectors.map(sector => ({
+      ...sector,
+      origin: currentOrigin,
+    }));
+
+    // valid[K+1]: Visibility from reflected origin within sector constraint
     // Exclude surfaces we've already passed through (0..K)
     const passedSurfaceIds = plannedSurfaces.slice(0, k + 1).map(s => s.id);
     const remainingObstacles = allSurfaces.filter(s => !passedSurfaceIds.includes(s.id));
-    const rawValidKPolygon = buildVisibilityPolygon(currentOrigin, remainingObstacles, bounds);
+    
+    // Build polygon with sector constraint - this is the key fix!
+    // Only build visibility within the angular range that passed through the surface
+    const rawValidKPolygon = buildVisibilityPolygon(
+      currentOrigin,
+      remainingObstacles,
+      bounds,
+      currentSectors  // Apply sector constraint
+    );
 
     // Filter valid[K+1] to only include points on the reflective side of all passed surfaces
     // This ensures the cursor must be in a position where the trajectory is actually valid

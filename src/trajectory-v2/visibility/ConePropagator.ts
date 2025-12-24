@@ -1,7 +1,9 @@
 /**
  * ConePropagator - Main cone propagation algorithm for visibility calculation
  *
- * @deprecated This module is deprecated. Use SimpleVisibilityCalculator instead.
+ * @deprecated This module is deprecated. Use RaySector.ts and AnalyticalPropagation.ts instead.
+ * This module uses angle-based cone sections which introduces floating-point precision loss.
+ * The new RaySector-based system uses positions for exact matching calculations.
  * This module is kept for backward compatibility with existing tests.
  *
  * Propagates a cone of "light" from the player through planned surfaces (windows).

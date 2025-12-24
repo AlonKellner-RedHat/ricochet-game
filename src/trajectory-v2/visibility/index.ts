@@ -24,6 +24,7 @@ export * from "./AnalyticalPropagation";
 export * from "./PropagationTypes";
 export * from "./ValidRegionRenderer";
 export * from "./VisibilityFromChain";
+export * from "./RaySector";
 
 // =============================================================================
 // DEPRECATED EXPORTS - Legacy Modules (for backward compatibility only)

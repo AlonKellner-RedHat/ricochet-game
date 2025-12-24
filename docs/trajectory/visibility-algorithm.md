@@ -203,6 +203,57 @@ This allows visual debugging of how visibility narrows at each step.
 
 3. **Degenerate cases**: Colinear points, zero-length segments handled gracefully
 
+## Ray-Based Sector Constraints
+
+### The Problem
+
+Without sector constraints, after reflecting through a surface, the visibility polygon 
+would be built with a full 360° field of view from the reflected origin. This causes 
+areas to appear "lit" that are geometrically unreachable.
+
+### The Solution: RaySector
+
+Sectors are defined by **positions**, not angles:
+
+```typescript
+interface RaySector {
+  origin: Vector2;        // Source of the rays
+  leftBoundary: Vector2;  // Point defining left boundary ray
+  rightBoundary: Vector2; // Point defining right boundary ray
+}
+```
+
+**Key Properties**:
+- NO ANGLES: All operations use cross-product comparisons (exact)
+- REVERSIBLE: `reflect(reflect(sector, line), line) === sector` exactly
+- POSITION-BASED: Boundaries are derived from surface endpoint images
+
+### Sector Propagation
+
+```
+function propagateWithIntermediates(player, plannedSurfaces, ...):
+  currentSectors = fullSectors(player)  // Start with 360°
+  
+  for each surface K:
+    // Trim sectors to surface angular extent
+    plannedSectors = trimSectorsBySurface(currentSectors, surface)
+    
+    // Build polygon within sector constraint
+    polygon = buildVisibilityPolygon(origin, obstacles, bounds, currentSectors)
+    
+    // Reflect sectors for next step
+    currentSectors = reflectSectors(plannedSectors, surface)
+```
+
+### Sector Operations
+
+All operations are **exact** (no epsilons):
+
+1. **isPointInSector**: Cross-product sign comparison
+2. **reflectSector**: Reflect all three points (origin, left, right)
+3. **trimSectorBySurface**: Intersect sector with surface angular extent
+4. **blockSectorByObstacle**: Split sector by obstacle (returns 0-2 sectors)
+
 ## Testing Strategy
 
 1. **Unit tests**: Each operation tested in isolation
@@ -210,4 +261,5 @@ This allows visual debugging of how visibility narrows at each step.
 3. **V.9 tests**: Equality verified across different plan lengths
 4. **V.5 correlation**: Grid sampling verifies `inPolygon === isCursorLit`
 5. **Matrix tests**: All assertions applied to diverse setups
+6. **Sector tests**: Exact matching and reversibility verified
 

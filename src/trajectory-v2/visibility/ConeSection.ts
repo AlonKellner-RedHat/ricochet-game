@@ -1,6 +1,10 @@
 /**
  * ConeSection - Angular sector operations for cone propagation visibility
  *
+ * @deprecated Use RaySector.ts instead for position-based sector operations.
+ * This module uses angles which introduces floating-point precision loss.
+ * RaySector uses positions (boundary points) for exact matching calculations.
+ *
  * A cone section represents a "slice" of light emanating from a point source.
  * Operations: block (remove blocked portion), trim (constrain to surface),
  * merge (combine adjacent sections), reflect (mirror through surface).
