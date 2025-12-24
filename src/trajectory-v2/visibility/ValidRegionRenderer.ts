@@ -20,6 +20,8 @@ import {
   TrajectoryDebugLogger,
   type IntermediatePolygonDebugInfo,
   type VisibilityDebugInfo,
+  type ValidPolygonDebugInfo,
+  type PlannedPolygonDebugInfo,
 } from "../TrajectoryDebugLogger";
 import { propagateWithIntermediates } from "./AnalyticalPropagation";
 import type { ScreenBounds } from "./ConePropagator";
@@ -181,8 +183,11 @@ export class ValidRegionRenderer {
 
     this.lastOutline = outline;
 
-    // Calculate intermediate polygons for logging and optional visualization
+    // Calculate polygons for logging and optional visualization
     let intermediatePolygons: IntermediatePolygonDebugInfo[] | undefined;
+    let validPolygons: ValidPolygonDebugInfo[] | undefined;
+    let plannedPolygonsDebug: PlannedPolygonDebugInfo[] | undefined;
+
     if (plannedSurfaces.length > 0) {
       const propagation = propagateWithIntermediates(
         player,
@@ -191,6 +196,7 @@ export class ValidRegionRenderer {
         this.screenBounds
       );
 
+      // Legacy format for compatibility
       intermediatePolygons = propagation.steps.map((step) => ({
         stepIndex: step.index,
         origin: { ...step.origin },
@@ -199,10 +205,29 @@ export class ValidRegionRenderer {
         isValid: step.isValid,
         windowSurfaceId: step.window?.surface.id,
       }));
+
+      // New format: valid polygons (N+1 for N surfaces)
+      validPolygons = propagation.validPolygons.map((vp) => ({
+        stepIndex: vp.index,
+        origin: { ...vp.origin },
+        vertexCount: vp.polygon.length,
+        vertices: vp.polygon.map((v) => ({ ...v })),
+        isValid: vp.isValid,
+      }));
+
+      // New format: planned polygons (N for N surfaces)
+      plannedPolygonsDebug = propagation.plannedPolygons.map((pp) => ({
+        stepIndex: pp.index,
+        origin: { ...pp.origin },
+        vertexCount: pp.polygon.length,
+        vertices: pp.polygon.map((v) => ({ ...v })),
+        isValid: pp.isValid,
+        targetSurfaceId: pp.targetSurface.id,
+      }));
     }
 
     // Log visibility data if debug logging is enabled
-    this.logVisibilitySimple(visibilityResult, intermediatePolygons);
+    this.logVisibilitySimple(visibilityResult, intermediatePolygons, validPolygons, plannedPolygonsDebug);
 
     // Clear previous render
     this.graphics.clear();
@@ -445,7 +470,9 @@ export class ValidRegionRenderer {
       origin: Vector2;
       isValid: boolean;
     },
-    intermediatePolygons?: IntermediatePolygonDebugInfo[]
+    intermediatePolygons?: IntermediatePolygonDebugInfo[],
+    validPolygons?: ValidPolygonDebugInfo[],
+    plannedPolygons?: PlannedPolygonDebugInfo[]
   ): void {
     if (!TrajectoryDebugLogger.isEnabled()) return;
 
@@ -458,7 +485,9 @@ export class ValidRegionRenderer {
         type: "surface" as const,
       })),
       isValid: result.isValid,
-      intermediatePolygons,
+      intermediatePolygons, // Legacy
+      validPolygons,
+      plannedPolygons,
     };
 
     TrajectoryDebugLogger.logVisibility(visibilityInfo);

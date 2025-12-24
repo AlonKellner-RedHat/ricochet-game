@@ -27,6 +27,8 @@ import type {
   PropagationStep,
   PropagationResult,
   VisibilityWindow,
+  ValidPolygonStep,
+  PlannedPolygonStep,
 } from "./PropagationTypes";
 
 export { type ScreenBounds } from "./PropagationTypes";
@@ -355,25 +357,27 @@ export interface ScreenBounds {
 }
 
 /**
- * Propagate visibility through planned surfaces, building intermediate polygons.
+ * Propagate visibility through planned surfaces, building valid and planned polygons.
  *
  * This is the main entry point for visibility calculation with planned surfaces.
- * It produces a PropagationResult with N+1 steps for N planned surfaces.
+ * It produces a PropagationResult with:
+ * - validPolygons: N+1 entries (full visibility from each origin, NOT cropped)
+ * - plannedPolygons: N entries (valid[K] cropped by window to surface K)
  *
  * The algorithm:
- * 1. Step 0: Full visibility from player (same code as empty plan)
- * 2. For each planned surface:
- *    a. Check if player is on reflective side (bypass detection)
- *    b. Build full visibility from current origin (SAME buildVisibilityPolygon function)
- *    c. Crop by window triangle
- *    d. Reflect origin for next step
- * 3. Return all intermediate polygons
+ * 1. valid[0]: Full visibility from player
+ * 2. For each planned surface K (0 to N-1):
+ *    a. Check bypass: current origin must be on reflective side
+ *    b. planned[K]: valid[K] cropped by window to surface K
+ *    c. Reflect origin
+ *    d. valid[K+1]: Full visibility from reflected origin (excluding passed surfaces)
+ * 3. finalPolygon = valid[N] (the last valid polygon)
  *
  * @param player The player position
  * @param plannedSurfaces Surfaces in the plan (order matters)
  * @param allSurfaces All surfaces in the scene (for obstruction)
  * @param bounds Screen boundaries
- * @returns PropagationResult with all intermediate steps
+ * @returns PropagationResult with valid and planned polygon lists
  */
 export function propagateWithIntermediates(
   player: Vector2,
@@ -381,48 +385,62 @@ export function propagateWithIntermediates(
   allSurfaces: readonly Surface[],
   bounds: ScreenBounds
 ): PropagationResult {
-  const steps: PropagationStep[] = [];
+  const validPolygons: ValidPolygonStep[] = [];
+  const plannedPolygons: PlannedPolygonStep[] = [];
+  const steps: PropagationStep[] = []; // Legacy compatibility
   let currentOrigin = player;
 
-  // Step 0: Full visibility from player (same code as empty plan)
-  const step0Polygon = buildVisibilityPolygon(currentOrigin, allSurfaces, bounds);
+  // valid[0]: Full visibility from player
+  const valid0Polygon = buildVisibilityPolygon(currentOrigin, allSurfaces, bounds);
+  validPolygons.push({
+    index: 0,
+    origin: { ...currentOrigin },
+    polygon: valid0Polygon,
+    isValid: valid0Polygon.length >= 3,
+  });
+
+  // Legacy step 0 for compatibility
   steps.push({
     index: 0,
     origin: { ...currentOrigin },
-    polygon: step0Polygon,
-    isValid: step0Polygon.length >= 3,
+    polygon: valid0Polygon,
+    isValid: valid0Polygon.length >= 3,
     window: undefined,
   });
 
   // If no planned surfaces, we're done
   if (plannedSurfaces.length === 0) {
     return {
+      validPolygons,
+      plannedPolygons,
       steps,
-      finalPolygon: step0Polygon,
-      isValid: step0Polygon.length >= 3,
+      finalPolygon: valid0Polygon,
+      isValid: valid0Polygon.length >= 3,
       playerPosition: player,
       finalOrigin: currentOrigin,
     };
   }
 
-  // For each planned surface
-  for (let i = 0; i < plannedSurfaces.length; i++) {
-    const surface = plannedSurfaces[i]!;
+  // For each planned surface K (0 to N-1)
+  for (let k = 0; k < plannedSurfaces.length; k++) {
+    const surface = plannedSurfaces[k]!;
 
-    // Check bypass: player (or current origin) must be on reflective side
+    // Check bypass: current origin must be on reflective side of surface K
     if (!isOnReflectiveSide(currentOrigin, surface)) {
       // Bypass detected - return invalid result
       return {
+        validPolygons,
+        plannedPolygons,
         steps,
         finalPolygon: [],
         isValid: false,
-        bypassAtSurface: i,
+        bypassAtSurface: k,
         playerPosition: player,
         finalOrigin: currentOrigin,
       };
     }
 
-    // Build window for cropping
+    // Build window for cropping (from current origin to surface K)
     const window: VisibilityWindow = {
       leftRay: createRay(currentOrigin, surface.segment.start),
       rightRay: createRay(currentOrigin, surface.segment.end),
@@ -430,33 +448,63 @@ export function propagateWithIntermediates(
       origin: { ...currentOrigin },
     };
 
-    // Build full polygon from current origin, excluding the planned surface
+    // planned[K]: valid[K] cropped by window to surface K
+    // Build full polygon from current origin, excluding the target surface
     // (we're looking THROUGH it, not AT it)
     const obstaclesExcludingSurface = allSurfaces.filter(s => s.id !== surface.id);
-    const fullPolygon = buildVisibilityPolygon(
+    const fullPolygonForCropping = buildVisibilityPolygon(
       currentOrigin,
       obstaclesExcludingSurface,
       bounds
     );
+    const croppedPolygon = cropPolygonByWindow(fullPolygonForCropping, currentOrigin, surface);
 
-    // Crop by window
-    const croppedPolygon = cropPolygonByWindow(fullPolygon, currentOrigin, surface);
-
-    // Reflect origin for next step
-    currentOrigin = reflectPoint(currentOrigin, surface);
-
-    steps.push({
-      index: i + 1,
+    plannedPolygons.push({
+      index: k,
       origin: { ...currentOrigin },
       polygon: croppedPolygon,
+      isValid: croppedPolygon.length >= 3,
+      window,
+      targetSurface: surface,
+    });
+
+    // Reflect origin for next iteration
+    currentOrigin = reflectPoint(currentOrigin, surface);
+
+    // valid[K+1]: Full visibility from reflected origin
+    // Exclude surfaces we've already passed through (0..K)
+    const passedSurfaceIds = plannedSurfaces.slice(0, k + 1).map(s => s.id);
+    const remainingObstacles = allSurfaces.filter(s => !passedSurfaceIds.includes(s.id));
+    const rawValidKPolygon = buildVisibilityPolygon(currentOrigin, remainingObstacles, bounds);
+
+    // Filter valid[K+1] to only include points on the reflective side of all passed surfaces
+    // This ensures the cursor must be in a position where the trajectory is actually valid
+    const passedSurfaces = plannedSurfaces.slice(0, k + 1);
+    const validKPolygon = filterPolygonToReflectiveSide(rawValidKPolygon, passedSurfaces);
+
+    validPolygons.push({
+      index: k + 1,
+      origin: { ...currentOrigin },
+      polygon: validKPolygon,
+      isValid: validKPolygon.length >= 3,
+    });
+
+    // Legacy step for compatibility
+    steps.push({
+      index: k + 1,
+      origin: { ...currentOrigin },
+      polygon: croppedPolygon, // Legacy steps used cropped polygon
       isValid: croppedPolygon.length >= 3,
       window,
     });
   }
 
-  const finalPolygon = steps[steps.length - 1]!.polygon;
+  // Final polygon is the last valid polygon (valid[N])
+  const finalPolygon = validPolygons[validPolygons.length - 1]!.polygon;
 
   return {
+    validPolygons,
+    plannedPolygons,
     steps,
     finalPolygon,
     isValid: finalPolygon.length >= 3,
@@ -515,5 +563,27 @@ function reflectPoint(point: Vector2, surface: Surface): Vector2 {
     x: 2 * closestX - point.x,
     y: 2 * closestY - point.y,
   };
+}
+
+/**
+ * Filter a polygon to only include points on the reflective side of all passed surfaces.
+ * Uses polygon clipping (Sutherland-Hodgman) against each surface's half-plane.
+ */
+function filterPolygonToReflectiveSide(
+  polygon: readonly Vector2[],
+  surfaces: readonly Surface[]
+): Vector2[] {
+  if (polygon.length < 3) return [];
+
+  let clipped: Vector2[] = [...polygon];
+
+  for (const surface of surfaces) {
+    const { start, end } = surface.segment;
+    // Clip by the surface line, keeping points on the reflective (positive) side
+    clipped = clipPolygonByEdge(clipped, start, end);
+    if (clipped.length < 3) return [];
+  }
+
+  return clipped;
 }
 

@@ -919,18 +919,19 @@ function reflectPointThroughSurface(
 }
 
 /**
- * Principle V.8: Intermediate Polygon Containment
+ * Principle V.8: Planned Polygon Containment
  *
- * The intermediate polygon Pk in an N-surface plan is fully contained within
- * the final polygon of the first K surfaces plan.
+ * The planned polygon planned[K] in an N-surface plan is fully contained within
+ * the final polygon of the first (K+1) surfaces plan.
  *
- * This ensures that each subsequent surface can only RESTRICT visibility,
- * never expand it. The window crops the polygon, removing area but never adding.
+ * This ensures that each planned polygon (paths to reach surface K) is a subset of
+ * what's achievable with that many surfaces. The window crops the polygon,
+ * removing area but never adding.
  */
 export const intermediatePolygonContainment: FirstPrincipleAssertion = {
   id: "intermediate-polygon-containment",
   principle: "V.8",
-  description: "Intermediate polygon K is contained in final polygon of first K surfaces",
+  description: "Planned polygon K is contained in final polygon of first K+1 surfaces",
   assert: (setup: TestSetup, _results: TestResults) => {
     // Only applies when there are at least 2 planned surfaces
     if (setup.plannedSurfaces.length < 2) return;
@@ -949,17 +950,17 @@ export const intermediatePolygonContainment: FirstPrincipleAssertion = {
     // Skip if propagation failed (bypass, etc.)
     if (!fullResult.isValid) return;
 
-    // For each intermediate polygon K, check containment in final polygon of [S1..SK]
-    for (let k = 1; k < setup.plannedSurfaces.length; k++) {
-      const intermediateK = fullResult.steps[k]!.polygon;
+    // For each planned polygon K (except the last one), check containment
+    for (let k = 0; k < fullResult.plannedPolygons.length - 1; k++) {
+      const plannedK = fullResult.plannedPolygons[k]!.polygon;
 
-      // Skip if intermediate is empty
-      if (intermediateK.length < 3) continue;
+      // Skip if planned is empty
+      if (plannedK.length < 3) continue;
 
-      // Get final polygon for partial plan [S1..SK]
+      // Get final polygon for partial plan [S0..SK]
       const partialResult = propagateWithIntermediates(
         setup.player,
-        setup.plannedSurfaces.slice(0, k),
+        setup.plannedSurfaces.slice(0, k + 1),
         setup.allSurfaces,
         SCREEN_BOUNDS
       );
@@ -969,12 +970,12 @@ export const intermediatePolygonContainment: FirstPrincipleAssertion = {
 
       const partialFinal = partialResult.finalPolygon;
 
-      // Check that every vertex of intermediateK is inside or on partialFinal
-      for (const v of intermediateK) {
+      // Check that every vertex of plannedK is inside or on partialFinal
+      for (const v of plannedK) {
         const contained = isPointInOrOnPolygon(v, partialFinal);
         expect(
           contained,
-          `V.8: Intermediate polygon ${k} vertex (${v.x.toFixed(1)}, ${v.y.toFixed(1)}) should be contained in final polygon of first ${k} surfaces. Setup: ${setup.name}`
+          `V.8: Planned polygon ${k} vertex (${v.x.toFixed(1)}, ${v.y.toFixed(1)}) should be contained in final polygon of first ${k + 1} surfaces. Setup: ${setup.name}`
         ).toBe(true);
       }
     }
@@ -982,17 +983,17 @@ export const intermediatePolygonContainment: FirstPrincipleAssertion = {
 };
 
 /**
- * Principle V.9: Intermediate Polygon Equality
+ * Principle V.9: Planned Polygon Equality
  *
- * The intermediate polygon Pk in an N-surface plan is exactly equal to
- * the intermediate polygon Pk in any T-surface plan where K < T ≤ N.
+ * The planned polygon planned[K] in an N-surface plan is exactly equal to
+ * the planned polygon planned[K] in any T-surface plan where K < T ≤ N.
  *
- * This ensures that future surfaces don't affect past intermediate results.
+ * This ensures that future surfaces don't affect past planned polygon results.
  */
 export const intermediatePolygonEquality: FirstPrincipleAssertion = {
   id: "intermediate-polygon-equality",
   principle: "V.9",
-  description: "Intermediate polygon K is equal across different plan lengths",
+  description: "Planned polygon K is equal across different plan lengths",
   assert: (setup: TestSetup, _results: TestResults) => {
     // Only applies when there are at least 2 planned surfaces
     if (setup.plannedSurfaces.length < 2) return;
@@ -1011,12 +1012,12 @@ export const intermediatePolygonEquality: FirstPrincipleAssertion = {
     // Skip if propagation failed
     if (!fullResult.isValid) return;
 
-    // For each intermediate polygon K, compare with same step in shorter plans
-    for (let k = 0; k < setup.plannedSurfaces.length; k++) {
-      const fullStepK = fullResult.steps[k]!.polygon;
+    // For each planned polygon K, compare with same step in longer plans
+    for (let k = 0; k < fullResult.plannedPolygons.length; k++) {
+      const fullPlannedK = fullResult.plannedPolygons[k]!.polygon;
 
-      // Compare with plans of length K+1, K+2, ... , N-1
-      for (let t = k + 1; t < setup.plannedSurfaces.length; t++) {
+      // Compare with plans of length K+2, K+3, ... , N (all plans that also have planned[K])
+      for (let t = k + 2; t <= setup.plannedSurfaces.length; t++) {
         const partialResult = propagateWithIntermediates(
           setup.player,
           setup.plannedSurfaces.slice(0, t),
@@ -1027,18 +1028,21 @@ export const intermediatePolygonEquality: FirstPrincipleAssertion = {
         // Skip if partial plan failed
         if (!partialResult.isValid) continue;
 
-        const partialStepK = partialResult.steps[k]!.polygon;
+        // Check that this plan also has planned[K]
+        if (k >= partialResult.plannedPolygons.length) continue;
+
+        const partialPlannedK = partialResult.plannedPolygons[k]!.polygon;
 
         // Check that polygons are equal
         expect(
-          fullStepK.length,
-          `V.9: Step ${k} polygon length should be same for plan length ${setup.plannedSurfaces.length} and ${t}`
-        ).toBe(partialStepK.length);
+          fullPlannedK.length,
+          `V.9: Planned[${k}] polygon length should be same for plan length ${setup.plannedSurfaces.length} and ${t}`
+        ).toBe(partialPlannedK.length);
 
         // Check vertex equality
-        for (let i = 0; i < fullStepK.length; i++) {
-          const v1 = fullStepK[i]!;
-          const v2 = partialStepK[i]!;
+        for (let i = 0; i < fullPlannedK.length; i++) {
+          const v1 = fullPlannedK[i]!;
+          const v2 = partialPlannedK[i]!;
 
           expect(v1.x).toBeCloseTo(v2.x, 2);
           expect(v1.y).toBeCloseTo(v2.y, 2);

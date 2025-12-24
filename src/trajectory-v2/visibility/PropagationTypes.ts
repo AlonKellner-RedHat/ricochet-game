@@ -2,13 +2,18 @@
  * PropagationTypes - Types for Section-Based Visibility Propagation
  *
  * These types support the analytical visibility algorithm that constructs
- * intermediate polygons at each propagation step through planned surfaces.
+ * visibility polygons at each propagation step through planned surfaces.
  *
  * Key Design Principles:
  * 1. Unified code path: Same buildVisibilityPolygon function used everywhere
- * 2. Intermediate polygons: N+1 polygons for N planned surfaces
- * 3. Exact calculations: Using rays, not angles (no floating-point precision loss)
- * 4. Cropping by window: Polygon intersection with triangle, not sampling
+ * 2. Valid polygons (N+1): Full visibility from each origin, NOT cropped
+ * 3. Planned polygons (N): Cropped paths to reach each surface
+ * 4. Exact calculations: Using rays, not angles (no floating-point precision loss)
+ * 5. Cropping by window: Polygon intersection with triangle, not sampling
+ *
+ * Definitions:
+ * - valid[K] = visibility from ImageK (player reflected through surfaces 0..K-1)
+ * - planned[K] = valid[K] cropped by window to surface K
  */
 
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
@@ -34,13 +39,59 @@ export interface VisibilityWindow {
 }
 
 /**
- * Result of a single propagation step.
+ * A valid polygon step - full visibility from an origin.
  *
- * For an N-surface plan:
- * - Step 0: Full visibility from player (before any surface)
- * - Step 1: Visibility cropped by first window
- * - Step K: Visibility from Image[K-1], cropped by window K
- * - Step N: Final visibility polygon
+ * Valid polygons are NOT cropped. They represent full visibility from:
+ * - valid[0]: Player position (empty plan visibility)
+ * - valid[K]: ImageK position (player reflected through surfaces 0..K-1)
+ *
+ * For N surfaces, there are N+1 valid polygons.
+ */
+export interface ValidPolygonStep {
+  /** Step index (0 = player, K = after K reflections) */
+  readonly index: number;
+
+  /** Origin for this step (player or reflected image) */
+  readonly origin: Vector2;
+
+  /** Full visibility polygon from this origin (NOT cropped) */
+  readonly polygon: readonly Vector2[];
+
+  /** Whether this polygon is valid (>= 3 vertices) */
+  readonly isValid: boolean;
+}
+
+/**
+ * A planned polygon step - cropped paths to reach a surface.
+ *
+ * Planned polygons ARE cropped. They represent:
+ * - planned[K] = valid[K] cropped by window triangle to surface K
+ *
+ * For N surfaces, there are N planned polygons.
+ */
+export interface PlannedPolygonStep {
+  /** Step index (0 to N-1, targeting surface K) */
+  readonly index: number;
+
+  /** Origin for this step (same as valid[K].origin) */
+  readonly origin: Vector2;
+
+  /** Cropped polygon (valid[K] cropped by window to surface K) */
+  readonly polygon: readonly Vector2[];
+
+  /** Whether this polygon is valid (>= 3 vertices) */
+  readonly isValid: boolean;
+
+  /** The window used for cropping */
+  readonly window: VisibilityWindow;
+
+  /** The target surface this planned polygon reaches */
+  readonly targetSurface: Surface;
+}
+
+/**
+ * Result of a single propagation step (legacy, kept for compatibility).
+ * @deprecated Use ValidPolygonStep and PlannedPolygonStep instead.
  */
 export interface PropagationStep {
   /** Step index (0 = initial, N = final for N surfaces) */
@@ -67,13 +118,32 @@ export interface PropagationStep {
  */
 export interface PropagationResult {
   /**
-   * All intermediate steps.
-   * Length = plannedSurfaces.length + 1
+   * Valid polygons - full visibility from each origin (NOT cropped).
+   * Length = N + 1 for N planned surfaces.
+   *
+   * - valid[0]: Full visibility from player
+   * - valid[K]: Full visibility from ImageK (after K reflections)
+   * - valid[N]: The final polygon to visualize
+   */
+  readonly validPolygons: readonly ValidPolygonStep[];
+
+  /**
+   * Planned polygons - cropped paths to reach each surface.
+   * Length = N for N planned surfaces.
+   *
+   * - planned[K]: valid[K] cropped by window to surface K
+   */
+  readonly plannedPolygons: readonly PlannedPolygonStep[];
+
+  /**
+   * Legacy: All intermediate steps (for compatibility).
+   * @deprecated Use validPolygons and plannedPolygons instead.
    */
   readonly steps: readonly PropagationStep[];
 
   /**
-   * The final visibility polygon (same as steps[N].polygon for N surfaces).
+   * The final visibility polygon (same as validPolygons[N].polygon for N surfaces).
+   * This is the polygon that should be visualized.
    */
   readonly finalPolygon: readonly Vector2[];
 

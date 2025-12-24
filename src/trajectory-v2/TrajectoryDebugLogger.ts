@@ -42,12 +42,17 @@ export interface VisibilityDebugInfo {
     type: "surface" | "screen" | "origin";
   }>;
   isValid: boolean;
-  /** Intermediate polygons from propagation (for multi-surface plans) */
+  /** @deprecated Use validPolygons and plannedPolygons instead */
   intermediatePolygons?: IntermediatePolygonDebugInfo[];
+  /** Valid polygons - full visibility from each origin (N+1 for N surfaces) */
+  validPolygons?: ValidPolygonDebugInfo[];
+  /** Planned polygons - cropped paths to reach each surface (N for N surfaces) */
+  plannedPolygons?: PlannedPolygonDebugInfo[];
 }
 
 /**
  * Debug info for an intermediate visibility polygon.
+ * @deprecated Use ValidPolygonDebugInfo and PlannedPolygonDebugInfo instead.
  */
 export interface IntermediatePolygonDebugInfo {
   stepIndex: number;
@@ -56,6 +61,40 @@ export interface IntermediatePolygonDebugInfo {
   vertices: Vector2[];
   isValid: boolean;
   windowSurfaceId?: string;
+}
+
+/**
+ * Debug info for a valid polygon step.
+ */
+export interface ValidPolygonDebugInfo {
+  /** Step index (0 = player, K = after K reflections) */
+  stepIndex: number;
+  /** Origin for this step */
+  origin: Vector2;
+  /** Number of vertices in the polygon */
+  vertexCount: number;
+  /** All polygon vertices */
+  vertices: Vector2[];
+  /** Whether this polygon is valid */
+  isValid: boolean;
+}
+
+/**
+ * Debug info for a planned polygon step.
+ */
+export interface PlannedPolygonDebugInfo {
+  /** Step index (0 to N-1, targeting surface K) */
+  stepIndex: number;
+  /** Origin for this step */
+  origin: Vector2;
+  /** Number of vertices in the polygon */
+  vertexCount: number;
+  /** All polygon vertices */
+  vertices: Vector2[];
+  /** Whether this polygon is valid */
+  isValid: boolean;
+  /** ID of the target surface */
+  targetSurfaceId: string;
 }
 
 export interface SurfaceDebugInfo {
@@ -398,12 +437,28 @@ class TrajectoryDebugLoggerImpl {
     let visibilityComment = "";
     if (log.visibility) {
       const v = log.visibility;
+
+      // New format: Valid and Planned polygons
+      let polygonSection = "";
+      if (v.validPolygons && v.validPolygons.length > 0) {
+        polygonSection += `
+ * - Valid Polygons: ${v.validPolygons.length} (N+1 for N surfaces)
+${v.validPolygons.map((p) => ` *   valid[${p.stepIndex}]: ${p.vertexCount} vertices, origin=(${p.origin.x.toFixed(1)}, ${p.origin.y.toFixed(1)})`).join('\n')}`;
+      }
+      if (v.plannedPolygons && v.plannedPolygons.length > 0) {
+        polygonSection += `
+ * - Planned Polygons: ${v.plannedPolygons.length} (N for N surfaces)
+${v.plannedPolygons.map((p) => ` *   planned[${p.stepIndex}]: ${p.vertexCount} vertices, target=${p.targetSurfaceId}`).join('\n')}`;
+      }
+
+      // Legacy format (for backwards compatibility)
       let intermediateSection = "";
-      if (v.intermediatePolygons && v.intermediatePolygons.length > 0) {
+      if (!v.validPolygons && v.intermediatePolygons && v.intermediatePolygons.length > 0) {
         intermediateSection = `
- * - Intermediate Polygons: ${v.intermediatePolygons.length}
+ * - Intermediate Polygons (legacy): ${v.intermediatePolygons.length}
 ${v.intermediatePolygons.map((p, i) => ` *   Step ${p.stepIndex}: ${p.vertexCount} vertices, origin=(${p.origin.x.toFixed(1)}, ${p.origin.y.toFixed(1)})${p.windowSurfaceId ? `, window=${p.windowSurfaceId}` : ''}`).join('\n')}`;
       }
+
       visibilityComment = `
 /**
  * Visibility Debug Info:
@@ -413,7 +468,7 @@ ${v.intermediatePolygons.map((p, i) => ` *   Step ${p.stepIndex}: ${p.vertexCoun
 ${v.coneSections.map((s, i) => ` *   [${i}] ${(s.startAngle * 180 / Math.PI).toFixed(1)}° to ${(s.endAngle * 180 / Math.PI).toFixed(1)}°`).join('\n')}
  * - Outline Vertices: ${v.outlineVertices.length}
 ${v.outlineVertices.slice(0, 20).map((v, i) => ` *   [${i}] (${v.position.x.toFixed(1)}, ${v.position.y.toFixed(1)}) - ${v.type}`).join('\n')}${v.outlineVertices.length > 20 ? `\n *   ... and ${v.outlineVertices.length - 20} more` : ''}
- * - Is Valid: ${v.isValid}${intermediateSection}
+ * - Is Valid: ${v.isValid}${polygonSection}${intermediateSection}
  */`;
     }
 
