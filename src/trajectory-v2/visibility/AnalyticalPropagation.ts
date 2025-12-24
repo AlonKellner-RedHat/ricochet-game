@@ -173,9 +173,9 @@ export function buildVisibilityPolygon(
     }
   }
 
-  // For sectors with a startLine, cast extended rays to find the visibility boundary.
-  // The near-edge points (surface crossing) are NOT added as separate vertices;
-  // instead, we only add the far-edge hits from extended rays.
+  // For sectors with a startLine, add both:
+  // 1. Extended rays along boundaries to find far edge
+  // 2. Surface endpoints as on-surface points (near edge)
   if (sectorConstraint) {
     for (const sector of sectorConstraint) {
       if (!isFullSector(sector) && sector.startLine) {
@@ -185,7 +185,6 @@ export function buildVisibilityPolygon(
         const rdy = sector.rightBoundary.y - origin.y;
 
         // Cast extended rays along sector boundaries to find far edge
-        // Use a large extension to ensure we hit screen bounds
         const farLeftTarget = { x: origin.x + 10 * ldx, y: origin.y + 10 * ldy };
         const leftExtStartRatio = computeStartRatioForTarget(origin, farLeftTarget, sector);
         const leftHit = castRayToFirstHit(origin, farLeftTarget, obstacles, bounds, leftExtStartRatio);
@@ -199,6 +198,17 @@ export function buildVisibilityPolygon(
         if (rightHit) {
           hits.push({ point: rightHit, angle: Math.atan2(rdy, rdx) });
         }
+
+        // Add surface endpoints as on-surface points (near boundary)
+        // These will be sorted separately and appended after off-surface points
+        hits.push({ 
+          point: { ...sector.startLine.start }, 
+          angle: Math.atan2(sector.startLine.start.y - origin.y, sector.startLine.start.x - origin.x) 
+        });
+        hits.push({ 
+          point: { ...sector.startLine.end }, 
+          angle: Math.atan2(sector.startLine.end.y - origin.y, sector.startLine.end.x - origin.x) 
+        });
       } else if (!isFullSector(sector)) {
         // No startLine - just add boundary points
         const ldx = sector.leftBoundary.x - origin.x;
@@ -212,16 +222,58 @@ export function buildVisibilityPolygon(
     }
   }
 
-  // Sort hits by angle from origin first
-  hits.sort((a, b) => a.angle - b.angle);
+  // New sorting scheme: separate off-surface and on-surface points
+  // This creates a proper closed polygon for both empty and reflected plans
+  const startLine = sectorConstraint?.[0]?.startLine;
+  
+  // Helper to check if a point is on the startLine
+  const isOnStartLine = (point: Vector2): boolean => {
+    if (!startLine) return false;
+    const { start, end } = startLine;
+    // Check if point is on the line segment with small epsilon
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-10) return false;
+    
+    // Project point onto line
+    const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lenSq;
+    if (t < -0.01 || t > 1.01) return false;
+    
+    // Check distance to line
+    const projX = start.x + t * dx;
+    const projY = start.y + t * dy;
+    const dist = Math.sqrt((point.x - projX) ** 2 + (point.y - projY) ** 2);
+    return dist < 1.0; // Within 1 pixel of line
+  };
+  
+  // Separate hits into off-surface and on-surface
+  const offSurfaceHits: Array<{ point: Vector2; angle: number }> = [];
+  const onSurfaceHits: Array<{ point: Vector2; angle: number }> = [];
+  
+  for (const hit of hits) {
+    if (isOnStartLine(hit.point)) {
+      onSurfaceHits.push(hit);
+    } else {
+      offSurfaceHits.push(hit);
+    }
+  }
+  
+  // Sort off-surface by angle (ascending) - traces far boundary
+  offSurfaceHits.sort((a, b) => a.angle - b.angle);
+  
+  // Sort on-surface by angle (descending) - traces near boundary in reverse
+  onSurfaceHits.sort((a, b) => b.angle - a.angle);
+  
+  // Concatenate: off-surface first, then on-surface
+  const sortedHits = [...offSurfaceHits, ...onSurfaceHits];
 
   // Remove duplicate points (within epsilon) and very close consecutive points
-  // The larger consecutive epsilon prevents thin triangles that cause flickering
   const polygon: Vector2[] = [];
   const posEpsilon = 0.5;
-  const consecutiveEpsilon = 2.0; // Minimum distance between consecutive vertices
+  const consecutiveEpsilon = 2.0;
 
-  for (const hit of hits) {
+  for (const hit of sortedHits) {
     // Check if this point is too close to ANY existing point
     const isDuplicate = polygon.some(
       (p) =>
@@ -231,8 +283,7 @@ export function buildVisibilityPolygon(
 
     if (isDuplicate) continue;
 
-    // Check if this point is too close to the PREVIOUS point in sorted order
-    // This prevents very thin triangles that cause flickering artifacts
+    // Check if this point is too close to the PREVIOUS point
     if (polygon.length > 0) {
       const prev = polygon[polygon.length - 1]!;
       const dist = Math.sqrt(
@@ -244,7 +295,7 @@ export function buildVisibilityPolygon(
     polygon.push(hit.point);
   }
 
-  // Also check wrap-around: if last point is too close to first
+  // Check wrap-around: if last point is too close to first
   if (polygon.length > 2) {
     const first = polygon[0]!;
     const last = polygon[polygon.length - 1]!;
@@ -253,10 +304,6 @@ export function buildVisibilityPolygon(
       polygon.pop();
     }
   }
-
-  // Origin-based angle sorting is correct for visibility polygons,
-  // including sector-constrained ones. Centroid-based sorting was causing
-  // incorrect vertex ordering for reflected sectors.
 
   return polygon;
 }
