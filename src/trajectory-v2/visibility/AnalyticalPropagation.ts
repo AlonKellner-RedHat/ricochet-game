@@ -129,10 +129,12 @@ export function buildVisibilityPolygon(
     }
 
     // Cast grazing rays slightly to either side
-    const epsilon = 0.0001;
+    // Use a larger offset that scales with distance to ensure meaningful angular separation
+    // even when the target is directly above/below the origin
     const len = Math.sqrt(dx * dx + dy * dy);
-    const perpX = (-dy / len) * epsilon;
-    const perpY = (dx / len) * epsilon;
+    const grazingOffset = Math.max(0.5, len * 0.001); // At least 0.5 pixels, or 0.1% of distance
+    const perpX = (-dy / len) * grazingOffset;
+    const perpY = (dx / len) * grazingOffset;
 
     const targetLeft = { x: target.x + perpX, y: target.y + perpY };
     const targetRight = { x: target.x - perpX, y: target.y - perpY };
@@ -179,19 +181,42 @@ export function buildVisibilityPolygon(
   // Sort hits by angle from origin first
   hits.sort((a, b) => a.angle - b.angle);
 
-  // Remove duplicate points (within epsilon)
+  // Remove duplicate points (within epsilon) and very close consecutive points
+  // The larger consecutive epsilon prevents thin triangles that cause flickering
   const polygon: Vector2[] = [];
   const posEpsilon = 0.5;
+  const consecutiveEpsilon = 2.0; // Minimum distance between consecutive vertices
 
   for (const hit of hits) {
+    // Check if this point is too close to ANY existing point
     const isDuplicate = polygon.some(
       (p) =>
         Math.abs(p.x - hit.point.x) < posEpsilon &&
         Math.abs(p.y - hit.point.y) < posEpsilon
     );
 
-    if (!isDuplicate) {
-      polygon.push(hit.point);
+    if (isDuplicate) continue;
+
+    // Check if this point is too close to the PREVIOUS point in sorted order
+    // This prevents very thin triangles that cause flickering artifacts
+    if (polygon.length > 0) {
+      const prev = polygon[polygon.length - 1]!;
+      const dist = Math.sqrt(
+        (hit.point.x - prev.x) ** 2 + (hit.point.y - prev.y) ** 2
+      );
+      if (dist < consecutiveEpsilon) continue;
+    }
+
+    polygon.push(hit.point);
+  }
+
+  // Also check wrap-around: if last point is too close to first
+  if (polygon.length > 2) {
+    const first = polygon[0]!;
+    const last = polygon[polygon.length - 1]!;
+    const wrapDist = Math.sqrt((first.x - last.x) ** 2 + (first.y - last.y) ** 2);
+    if (wrapDist < consecutiveEpsilon) {
+      polygon.pop();
     }
   }
 
