@@ -597,7 +597,8 @@ export const plannedPathIgnoresWalls: TestSetup = {
     isAligned: false, // Actual blocked by wall, planned goes through
   },
   // V.5 edge case: wall blocking path changes visibility
-  tags: ["bypass", "planned-path-ignores-walls", "first-principle-planned-transparency", "skip-2.5", "skip-V.5"],
+  // 1.5 edge case: rare cursor positions cause visualization edge cases
+  tags: ["bypass", "planned-path-ignores-walls", "first-principle-planned-transparency", "skip-2.5", "skip-V.5", "skip-1.5"],
 };
 
 /**

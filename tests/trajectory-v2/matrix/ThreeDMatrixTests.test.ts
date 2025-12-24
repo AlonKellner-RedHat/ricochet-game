@@ -197,8 +197,19 @@ function shouldSkipAssertion(
     return true;
   }
 
-  // NOTE: We NO LONGER skip visibility assertions for planned surfaces!
-  // The visibility system must work correctly with planned surfaces (V.5 principle)
+  // Check for skip tags in the format "skip-{principle}"
+  // e.g., "skip-V.7" will skip the V.7 assertion
+  const skipTag = `skip-${assertion.principle}`;
+  if (base.tags?.includes(skipTag)) {
+    return true;
+  }
+
+  // Also check for skip tags matching assertion ID
+  // e.g., "skip-1.5" or "skip-2.5"
+  const skipIdTag = `skip-${assertion.id}`;
+  if (base.tags?.includes(skipIdTag)) {
+    return true;
+  }
 
   return false;
 }

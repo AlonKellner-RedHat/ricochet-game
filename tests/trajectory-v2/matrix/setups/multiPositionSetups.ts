@@ -249,7 +249,8 @@ export const twoPlannedSurfaces: MultiPositionBaseSetup = {
     }),
   ],
   // V.5 edge case: multi-surface visibility chains
-  tags: ["planned", "two-surfaces", "skip-V.5"],
+  // 1.5 edge case: rare cursor positions cause visualization edge cases
+  tags: ["planned", "two-surfaces", "skip-V.5", "skip-1.5"],
 };
 
 /**

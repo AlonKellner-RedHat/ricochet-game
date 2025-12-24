@@ -203,7 +203,7 @@ describe("RaySector", () => {
       expect(reflected.origin.y).toBe(50);
     });
 
-    it("reflects boundaries correctly", () => {
+    it("reflects and swaps boundaries correctly", () => {
       const surface = createTestSurface({
         id: "test",
         start: { x: 0, y: 0 },
@@ -219,11 +219,13 @@ describe("RaySector", () => {
 
       const reflected = reflectSector(sector, surface);
 
-      // Boundaries should be reflected
+      // Boundaries should be reflected AND swapped to maintain sector orientation
+      // leftBoundary = reflect(rightBoundary) = reflect((-30, 20)) = (30, 20)
       expect(reflected.leftBoundary.x).toBe(30);
-      expect(reflected.leftBoundary.y).toBe(80);
+      expect(reflected.leftBoundary.y).toBe(20);
+      // rightBoundary = reflect(leftBoundary) = reflect((-30, 80)) = (30, 80)
       expect(reflected.rightBoundary.x).toBe(30);
-      expect(reflected.rightBoundary.y).toBe(20);
+      expect(reflected.rightBoundary.y).toBe(80);
     });
   });
 

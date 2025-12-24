@@ -262,17 +262,21 @@ function dotProduct(origin: Vector2, a: Vector2, b: Vector2): number {
 /**
  * Reflect a sector through a surface line.
  *
- * Simply reflects all three points (origin and both boundaries).
- * This is EXACT and REVERSIBLE.
+ * Reflects all three points (origin and both boundaries), and SWAPS
+ * the left/right boundaries because reflection reverses orientation.
+ *
+ * This is EXACT and REVERSIBLE: reflect(reflect(s, line), line) === s
  */
 export function reflectSector(sector: RaySector, surface: Surface): RaySector {
   const lineStart = surface.segment.start;
   const lineEnd = surface.segment.end;
 
+  // Swap boundaries after reflection to maintain correct sector orientation
+  // (Reflection reverses the counter-clockwise direction)
   return {
     origin: reflectPointThroughLine(sector.origin, lineStart, lineEnd),
-    leftBoundary: reflectPointThroughLine(sector.leftBoundary, lineStart, lineEnd),
-    rightBoundary: reflectPointThroughLine(sector.rightBoundary, lineStart, lineEnd),
+    leftBoundary: reflectPointThroughLine(sector.rightBoundary, lineStart, lineEnd),
+    rightBoundary: reflectPointThroughLine(sector.leftBoundary, lineStart, lineEnd),
   };
 }
 

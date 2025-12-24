@@ -35,6 +35,7 @@ import {
   type RaySector,
   isPointInSector,
   isSectorsEmpty,
+  isFullSector,
   crossProduct,
   fullSectors,
   trimSectorsBySurface,
@@ -156,7 +157,26 @@ export function buildVisibilityPolygon(
     }
   }
 
-  // Sort by angle
+  // Add sector boundary points directly as polygon vertices
+  // This ensures the "near" boundary of the visible area is included
+  // (important when sector boundaries are on excluded surfaces)
+  if (sectorConstraint) {
+    for (const sector of sectorConstraint) {
+      if (!isFullSector(sector)) {
+        // Add left boundary point
+        const ldx = sector.leftBoundary.x - origin.x;
+        const ldy = sector.leftBoundary.y - origin.y;
+        hits.push({ point: { ...sector.leftBoundary }, angle: Math.atan2(ldy, ldx) });
+
+        // Add right boundary point
+        const rdx = sector.rightBoundary.x - origin.x;
+        const rdy = sector.rightBoundary.y - origin.y;
+        hits.push({ point: { ...sector.rightBoundary }, angle: Math.atan2(rdy, rdx) });
+      }
+    }
+  }
+
+  // Sort hits by angle from origin first
   hits.sort((a, b) => a.angle - b.angle);
 
   // Remove duplicate points (within epsilon)
@@ -173,6 +193,22 @@ export function buildVisibilityPolygon(
     if (!isDuplicate) {
       polygon.push(hit.point);
     }
+  }
+
+  // For sector-constrained polygons, re-sort by centroid to avoid self-intersection
+  // when origin might be inside or near the polygon (e.g., reflected origin)
+  // For unconstrained polygons, the origin-based sorting is already correct
+  if (sectorConstraint && polygon.length >= 3) {
+    const centroid = {
+      x: polygon.reduce((sum, p) => sum + p.x, 0) / polygon.length,
+      y: polygon.reduce((sum, p) => sum + p.y, 0) / polygon.length,
+    };
+
+    polygon.sort((a, b) => {
+      const angleA = Math.atan2(a.y - centroid.y, a.x - centroid.x);
+      const angleB = Math.atan2(b.y - centroid.y, b.x - centroid.x);
+      return angleA - angleB;
+    });
   }
 
   return polygon;
