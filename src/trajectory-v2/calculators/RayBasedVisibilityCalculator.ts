@@ -20,14 +20,12 @@ import type {
   ScreenBounds,
   VisibilityResult,
 } from "@/trajectory-v2/interfaces/IVisibilityCalculator";
+import { isCursorLit as isCursorLitCore } from "@/trajectory-v2/visibility/RayBasedVisibility";
 import {
-  calculateRayVisibility,
-  isCursorLit as isCursorLitCore,
-} from "@/trajectory-v2/visibility/RayBasedVisibility";
-import {
+  buildVisibilityPolygon,
   propagateWithIntermediates,
-  type PropagationResult,
 } from "@/trajectory-v2/visibility/AnalyticalPropagation";
+import type { PropagationResult } from "@/trajectory-v2/visibility/PropagationTypes";
 
 /**
  * Ray-based visibility calculator implementation.
@@ -39,8 +37,11 @@ export class RayBasedVisibilityCalculator implements IVisibilityCalculator {
   /**
    * Calculate visibility polygon using ray-based algorithm.
    *
-   * For planned surfaces, the polygon is built from rays that pass through
-   * the "window" defined by each planned surface segment.
+   * For empty plans: Uses the new analytical buildVisibilityPolygon which
+   * correctly orders vertices angularly (no self-intersection).
+   *
+   * For planned surfaces: Uses propagateWithIntermediates which builds
+   * the visibility polygon by cropping through each window.
    */
   calculate(
     player: Vector2,
@@ -48,17 +49,29 @@ export class RayBasedVisibilityCalculator implements IVisibilityCalculator {
     screenBounds: ScreenBounds,
     plannedSurfaces: readonly Surface[]
   ): VisibilityResult {
-    const result = calculateRayVisibility(
+    // Use the new analytical algorithm which has correct polygon ordering
+    if (plannedSurfaces.length === 0) {
+      // Empty plan: direct visibility from player
+      const polygon = buildVisibilityPolygon(player, surfaces, screenBounds);
+      return {
+        polygon,
+        origin: player,
+        isValid: polygon.length >= 3,
+      };
+    }
+
+    // Planned surfaces: use propagation with intermediate polygons
+    const propagation = propagateWithIntermediates(
       player,
+      plannedSurfaces,
       surfaces,
-      screenBounds,
-      plannedSurfaces
+      screenBounds
     );
 
     return {
-      polygon: result.polygon,
-      origin: result.origin,
-      isValid: result.isValid,
+      polygon: propagation.finalPolygon,
+      origin: propagation.finalOrigin,
+      isValid: propagation.isValid,
     };
   }
 
