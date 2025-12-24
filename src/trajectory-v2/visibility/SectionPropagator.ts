@@ -1,14 +1,17 @@
 /**
+ * @deprecated This module is deprecated. Use AnalyticalPropagation.ts instead.
+ *
  * Section-Based Visibility Propagation
  *
- * This module implements a clean, section-based algorithm for computing
- * visibility through planned surfaces. Angular sections (pairs of boundary rays)
- * propagate through each planned surface via reflection.
+ * DEPRECATED: This module has been superseded by AnalyticalPropagation.ts which
+ * provides better polygon ordering (no self-intersection) and intermediate polygon
+ * support for V.8/V.9 compliance.
  *
- * Key Concepts:
- * - Ray: Defined by two points (source, target) - ray extends infinitely through target
- * - AngularSection: The region between two rays from the same source
- * - Propagation: Sections are reflected through each planned surface in sequence
+ * Use instead:
+ * - propagateWithIntermediates() from AnalyticalPropagation.ts
+ * - cropPolygonByWindow() from AnalyticalPropagation.ts
+ *
+ * This module is kept only for backward compatibility with existing tests.
  */
 
 import type { Vector2 } from "../geometry/types";

@@ -7,10 +7,17 @@
  * follow the current plan (planned aligned with actual).
  */
 
-import { calculateSimpleVisibility } from "@/trajectory-v2/visibility/SimpleVisibilityCalculator";
-import { propagateWithIntermediates } from "@/trajectory-v2/visibility/AnalyticalPropagation";
+import {
+  buildVisibilityPolygon,
+  propagateWithIntermediates,
+} from "@/trajectory-v2/visibility/AnalyticalPropagation";
+import { RayBasedVisibilityCalculator } from "@/trajectory-v2/calculators/RayBasedVisibilityCalculator";
 import { expect } from "vitest";
 import type { FirstPrincipleAssertion, TestResults, TestSetup } from "../types";
+import type { Surface } from "@/surfaces/Surface";
+
+// Create a shared visibility calculator instance for V.5 checks
+const visibilityCalculator = new RayBasedVisibilityCalculator();
 
 // Screen bounds for outline building
 const SCREEN_BOUNDS = {
@@ -19,6 +26,45 @@ const SCREEN_BOUNDS = {
   maxX: 1280,
   maxY: 720,
 };
+
+/**
+ * Helper to calculate visibility using the new analytical algorithm.
+ * This replaces calculateVisibility calls in the assertions.
+ */
+function calculateVisibility(
+  player: { x: number; y: number },
+  allSurfaces: readonly Surface[],
+  screenBounds: typeof SCREEN_BOUNDS,
+  plannedSurfaces: readonly Surface[] = []
+): {
+  polygon: readonly { x: number; y: number }[];
+  origin: { x: number; y: number };
+  isValid: boolean;
+} {
+  if (plannedSurfaces.length === 0) {
+    // Empty plan: direct visibility from player
+    const polygon = buildVisibilityPolygon(player, allSurfaces, screenBounds);
+    return {
+      polygon,
+      origin: player,
+      isValid: polygon.length >= 3,
+    };
+  }
+
+  // Planned surfaces: use propagation with intermediate polygons
+  const propagation = propagateWithIntermediates(
+    player,
+    plannedSurfaces,
+    allSurfaces,
+    screenBounds
+  );
+
+  return {
+    polygon: propagation.finalPolygon,
+    origin: propagation.finalOrigin,
+    isValid: propagation.isValid,
+  };
+}
 
 /**
  * Calculate the minimum distance from a point to a line segment.
@@ -108,7 +154,7 @@ export const playerVicinityLit: FirstPrincipleAssertion = {
     if (setup.allSurfaces.length === 0) return;
 
     // Calculate visibility using new simple algorithm
-    const visibilityResult = calculateSimpleVisibility(
+    const visibilityResult = calculateVisibility(
       setup.player,
       setup.allSurfaces,
       SCREEN_BOUNDS,
@@ -168,7 +214,7 @@ export const shadowBehindSurfaces: FirstPrincipleAssertion = {
     if (setup.allSurfaces.length === 0) return;
 
     // Calculate visibility using new simple algorithm
-    const visibilityResult = calculateSimpleVisibility(
+    const visibilityResult = calculateVisibility(
       setup.player,
       setup.allSurfaces,
       SCREEN_BOUNDS,
@@ -262,7 +308,7 @@ export const unobstructedPositionsLit: FirstPrincipleAssertion = {
     if (setup.allSurfaces.length === 0) return;
 
     // Calculate visibility using new simple algorithm
-    const visibilityResult = calculateSimpleVisibility(
+    const visibilityResult = calculateVisibility(
       setup.player,
       setup.allSurfaces,
       SCREEN_BOUNDS,
@@ -424,60 +470,18 @@ export const lightDivergenceCorrelation: FirstPrincipleAssertion = {
       return;
     }
 
-    // Calculate visibility using new simple algorithm
-    const visibilityResult = calculateSimpleVisibility(
+    // Use RayBasedVisibilityCalculator.isCursorLit for proper V.5 check
+    // This uses ImageChain-based logic which properly accounts for:
+    // - Obstructions blocking the path
+    // - Player/cursor on wrong side of surfaces
+    // - Reflection points off-segment
+    const cursorLit = visibilityCalculator.isCursorLit(
       setup.player,
-      setup.allSurfaces,
-      SCREEN_BOUNDS,
-      setup.plannedSurfaces
+      setup.cursor,
+      setup.plannedSurfaces,
+      setup.allSurfaces
     );
 
-    // If visibility calculation returned empty/invalid polygon, check if this is legitimate
-    if (!visibilityResult.isValid || visibilityResult.polygon.length < 3) {
-      // Empty visibility can occur in several legitimate scenarios:
-      // 1. Player is on non-reflective side of first planned surface
-      // 2. Obstruction blocks visibility to the planned surface
-      // 3. Surface is bypassed (not looking through it)
-      // 4. Edge cases with surface geometry
-
-      // V.5: Light reaches cursor iff plan is VALID (no bypass AND no divergence)
-      // Empty visibility → cursor is NOT lit
-      // V.5 requires: NOT lit → plan is NOT valid
-      // Plan is NOT valid when: bypass OR divergence
-
-      const hasBypassedSurfaces = (results.bypassResult?.bypassedSurfaces.length ?? 0) > 0;
-      const hasDivergence = !results.isAligned;
-      const planIsInvalid = hasBypassedSurfaces || hasDivergence;
-
-      // If plan is invalid (bypass or divergence), V.5 is satisfied
-      // (not lit AND not valid = correct)
-      if (planIsInvalid) {
-        return; // V.5 satisfied
-      }
-
-      // Plan claims to be valid (aligned + no bypass) but visibility is empty
-      // This could be a visibility calculation edge case or trajectory edge case
-      // Skip for complex setups to avoid false positives
-      const isComplexSetup = setup.tags?.some(
-        (t) =>
-          t.includes("obstruction") ||
-          t.includes("bypass") ||
-          t.includes("wrong-side") ||
-          t.includes("skip") ||
-          t.includes("chain") ||
-          t.includes("multiple")
-      );
-
-      if (isComplexSetup || setup.plannedSurfaces.length === 0) {
-        return; // Skip complex cases
-      }
-
-      // For simple setups, this is unexpected - but skip to avoid false positives
-      return;
-    }
-
-    const vertices = visibilityResult.polygon;
-    const cursorLit = isPointInPolygon(setup.cursor, vertices);
     const isAligned = results.alignment.isFullyAligned;
     const hasBypassedSurfaces = (results.bypassResult?.bypassedSurfaces.length ?? 0) > 0;
 
@@ -527,7 +531,7 @@ export const lightExitsLastWindow: FirstPrincipleAssertion = {
     if (setup.allSurfaces.length > 5) return;
 
     // Calculate visibility using new simple algorithm
-    const visibilityResult = calculateSimpleVisibility(
+    const visibilityResult = calculateVisibility(
       setup.player,
       setup.allSurfaces,
       SCREEN_BOUNDS,
@@ -738,7 +742,7 @@ export const nearestSurfaceEdgeInOutline: FirstPrincipleAssertion = {
     }
 
     // Calculate visibility using new simple algorithm
-    const visibilityResult = calculateSimpleVisibility(
+    const visibilityResult = calculateVisibility(
       setup.player,
       setup.allSurfaces,
       SCREEN_BOUNDS,
@@ -780,7 +784,7 @@ export const visibilityPolygonAngularOrder: FirstPrincipleAssertion = {
     if (setup.plannedSurfaces.length === 0) return;
 
     // Calculate visibility
-    const visibilityResult = calculateSimpleVisibility(
+    const visibilityResult = calculateVisibility(
       setup.player,
       setup.allSurfaces,
       SCREEN_BOUNDS,

@@ -1,27 +1,18 @@
 /**
+ * @deprecated This module is deprecated. Use AnalyticalPropagation.ts instead.
+ *
  * SimpleVisibilityCalculator - First Principles Visibility Calculation
  *
- * Uses simple ray casting instead of complex cone propagation.
+ * DEPRECATED: This module has been superseded by AnalyticalPropagation.ts which
+ * provides better polygon ordering (no self-intersection) and intermediate polygon
+ * support for V.8/V.9 compliance.
  *
- * First Principles:
- * - For empty plan: A point is lit iff there's direct line-of-sight from player
- * - For plan with surfaces: A point is lit iff it's on the reflective side of
- *   the last planned surface AND there's line-of-sight from the reflected origin
+ * Use instead:
+ * - buildVisibilityPolygon() from AnalyticalPropagation.ts
+ * - propagateWithIntermediates() from AnalyticalPropagation.ts
+ * - RayBasedVisibilityCalculator for the IVisibilityCalculator interface
  *
- * V.5: Light reaches cursor ↔ (plan valid AND aligned)
- *
- * Algorithm:
- * 1. If planned surfaces exist:
- *    a. Reflect player through each surface to get "reflected origin"
- *    b. Cast rays from reflected origin
- *    c. Filter vertices to reflective side of last planned surface
- * 2. Otherwise: simple line-of-sight from player
- * 3. For each critical angle, cast a ray from origin
- * 4. Find where ray hits first blocking surface (or screen edge)
- * 5. Sort hit points by angle (CCW)
- * 6. Return polygon vertices
- *
- * This is simpler and more robust than angular cone propagation.
+ * This module is kept only for backward compatibility with existing tests.
  */
 
 import type { Vector2 } from "@/trajectory-v2/geometry/types";

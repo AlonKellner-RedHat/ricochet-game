@@ -10,7 +10,7 @@
  */
 
 import type { Surface } from "@/surfaces/Surface";
-import { AngleBasedVisibilityCalculator } from "@/trajectory-v2/calculators/AngleBasedVisibilityCalculator";
+import { RayBasedVisibilityCalculator } from "@/trajectory-v2/calculators/RayBasedVisibilityCalculator";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type {
   IVisibilityCalculator,
@@ -24,7 +24,6 @@ import {
 import { propagateWithIntermediates } from "./AnalyticalPropagation";
 import type { ScreenBounds } from "./ConePropagator";
 import type { ValidRegionOutline } from "./OutlineBuilder";
-import { calculateSimpleVisibility } from "./SimpleVisibilityCalculator";
 
 /**
  * Configuration for the valid region overlay.
@@ -115,8 +114,8 @@ export class ValidRegionRenderer {
     this.graphics = graphics;
     this.screenBounds = screenBounds;
     this.config = { ...DEFAULT_VALID_REGION_CONFIG, ...config };
-    // Default to angle-based for backward compatibility
-    this.visibilityCalculator = visibilityCalculator ?? new AngleBasedVisibilityCalculator();
+    // Default to ray-based (new analytical algorithm)
+    this.visibilityCalculator = visibilityCalculator ?? new RayBasedVisibilityCalculator();
   }
 
   /**

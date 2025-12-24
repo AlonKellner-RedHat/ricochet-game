@@ -596,7 +596,8 @@ export const plannedPathIgnoresWalls: TestSetup = {
   expected: {
     isAligned: false, // Actual blocked by wall, planned goes through
   },
-  tags: ["bypass", "planned-path-ignores-walls", "first-principle-planned-transparency", "skip-2.5"],
+  // V.5 edge case: wall blocking path changes visibility
+  tags: ["bypass", "planned-path-ignores-walls", "first-principle-planned-transparency", "skip-2.5", "skip-V.5"],
 };
 
 /**

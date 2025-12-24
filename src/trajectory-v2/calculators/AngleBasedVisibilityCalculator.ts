@@ -1,8 +1,18 @@
 /**
- * AngleBasedVisibilityCalculator - Adapter for Existing Visibility Implementation
+ * @deprecated This class is deprecated. Use RayBasedVisibilityCalculator instead.
  *
- * Wraps the existing calculateSimpleVisibility() function to implement
- * the IVisibilityCalculator interface, enabling backward compatibility.
+ * AngleBasedVisibilityCalculator - Adapter for Legacy Visibility Implementation
+ *
+ * DEPRECATED: This class wraps the deprecated calculateSimpleVisibility() function.
+ * It is kept only for backward compatibility.
+ *
+ * Use instead:
+ * - RayBasedVisibilityCalculator (default, uses new analytical algorithm)
+ *
+ * The new algorithm provides:
+ * - Correct polygon ordering (no self-intersection)
+ * - Intermediate polygons for V.8/V.9 compliance
+ * - Better performance and simpler code
  */
 
 import type { Vector2 } from "@/trajectory-v2/geometry/types";

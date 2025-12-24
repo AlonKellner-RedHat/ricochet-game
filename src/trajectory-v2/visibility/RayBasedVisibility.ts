@@ -1,19 +1,18 @@
 /**
+ * @deprecated This module is deprecated. Use AnalyticalPropagation.ts instead.
+ *
  * RayBasedVisibility - Visibility Calculation Using ImageChain Rays
  *
- * This module calculates visibility polygons using the same ray-based
- * approach as trajectory calculation, ensuring V.5 correlation:
- * Light reaches cursor ↔ (plan valid AND aligned)
+ * DEPRECATED: This module has been superseded by AnalyticalPropagation.ts which
+ * provides better polygon ordering (no self-intersection) and intermediate polygon
+ * support for V.8/V.9 compliance.
  *
- * First Principles:
- * 1. Visibility is defined by rays, not angles
- * 2. For planned surfaces, use ImageChain to get reflection geometry
- * 3. A cursor position is "lit" iff its ImageChain shows no divergence
- * 4. The visibility polygon is built from rays to surface endpoints
+ * Use instead:
+ * - buildVisibilityPolygon() from AnalyticalPropagation.ts
+ * - propagateWithIntermediates() from AnalyticalPropagation.ts
+ * - RayBasedVisibilityCalculator for the IVisibilityCalculator interface
  *
- * Key Insight: Instead of casting rays at angles and checking if they pass
- * through the planned surface, we use rays defined by surface endpoints
- * and their images through the planned surface.
+ * This module is kept only for backward compatibility with existing tests.
  */
 
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
