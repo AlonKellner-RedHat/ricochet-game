@@ -42,6 +42,7 @@ import {
   trimSectorsBySurface,
   reflectSectors,
   createSectorFromSurface,
+  blockSectorsByObstacle,
 } from "./RaySector";
 
 export { type ScreenBounds } from "./PropagationTypes";
@@ -709,7 +710,19 @@ export function propagateWithIntermediates(
     }
 
     // plannedSector[K]: currentSectors trimmed by surface K angular extent
-    const plannedSectors = trimSectorsBySurface(currentSectors, surface);
+    let plannedSectors = trimSectorsBySurface(currentSectors, surface);
+
+    // Block sectors by obstacles between origin and target surface
+    // This ensures only light that actually reaches the surface is reflected
+    const distToSurface = distanceToSurface(currentOrigin, surface);
+    for (const obstacle of allSurfaces) {
+      if (obstacle.id === surface.id) continue;
+      const distToObstacle = distanceToSurface(currentOrigin, obstacle);
+      // Only block by obstacles closer than the target surface
+      if (distToObstacle < distToSurface) {
+        plannedSectors = blockSectorsByObstacle(plannedSectors, obstacle, distToObstacle);
+      }
+    }
 
     // Build window for cropping
     const window: VisibilityWindow = {
@@ -825,6 +838,17 @@ function reflectPoint(point: Vector2, surface: Surface): Vector2 {
     x: 2 * closestX - point.x,
     y: 2 * closestY - point.y,
   };
+}
+
+/**
+ * Calculate approximate distance from a point to a surface's midpoint.
+ * Used to determine if an obstacle is between the origin and target surface.
+ */
+function distanceToSurface(point: Vector2, surface: Surface): number {
+  const { start, end } = surface.segment;
+  const midX = (start.x + end.x) / 2;
+  const midY = (start.y + end.y) / 2;
+  return Math.sqrt((point.x - midX) ** 2 + (point.y - midY) ** 2);
 }
 
 /**
