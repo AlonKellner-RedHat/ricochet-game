@@ -259,6 +259,80 @@ describe("RayBasedVisibility", () => {
       const cursorInPolygon = isPointInPolygon(cursor, result.polygon);
       expect(cursorInPolygon).toBe(true);
     });
+
+    it("returns empty visibility when player is on non-reflective side (bypass)", () => {
+      // User-reported issue: player on right side of vertical surface
+      // Surface only reflects from the LEFT (normal points left)
+      // Player on right → surface is bypassed → no light
+      const player: Vector2 = { x: 1028.3, y: 666 }; // Right of surface at x=850
+      const cursor: Vector2 = { x: 949.7, y: 336.3 };
+
+      // Create a surface that only reflects from the LEFT side (normal points left)
+      const createDirectionalSurface = (
+        id: string,
+        start: Vector2,
+        end: Vector2
+      ): Surface => {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        // Normal points to the left of the line direction
+        const normal = { x: -dy / len, y: dx / len };
+
+        return {
+          id,
+          segment: { start, end },
+          surfaceType: "ricochet" as const,
+          onArrowHit: () => ({ type: "reflect" as const }),
+          isPlannable: () => true,
+          getVisualProperties: () => ({ color: 0xffffff, lineWidth: 2, alpha: 1 }),
+          getNormal: () => normal,
+          // Only reflect from the direction that faces the normal
+          canReflectFrom: (arrowDir: Vector2) => {
+            // Arrow is coming FROM this direction, toward the surface
+            // It can only reflect if it's coming from the normal side
+            const dot = arrowDir.x * normal.x + arrowDir.y * normal.y;
+            // Arrow direction is opposite to normal direction = coming from normal side
+            return dot < 0;
+          },
+        };
+      };
+
+      // Surface from (850, 350) to (850, 500) - vertical, normal points LEFT (x < 850)
+      const directionalSurface = createDirectionalSurface(
+        "ricochet-4",
+        { x: 850, y: 350 },
+        { x: 850, y: 500 }
+      );
+
+      const surfaces = [
+        createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }, false),
+        createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 }, false),
+        createTestSurface("left-wall", { x: 20, y: 80 }, { x: 20, y: 700 }, false),
+        createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 }, false),
+        directionalSurface,
+      ];
+
+      const plannedSurfaces = [directionalSurface];
+
+      // Player is at x=1028.3 (RIGHT of surface at x=850)
+      // Surface normal points LEFT (x < 850)
+      // Player is on the BACK side (opposite of normal) → surface is bypassed
+
+      // Check if cursor is lit - should be false since surface is bypassed
+      const lit = isCursorLit(player, cursor, plannedSurfaces, surfaces);
+      console.log("Bypass test - isCursorLit:", lit);
+
+      const result = calculateRayVisibility(player, surfaces, screenBounds, plannedSurfaces);
+      console.log("Bypass test - isValid:", result.isValid, "polygon.length:", result.polygon.length);
+
+      // When surface is bypassed, cursor should not be lit
+      expect(lit).toBe(false);
+
+      // And visibility should be empty/invalid
+      expect(result.isValid).toBe(false);
+      expect(result.polygon.length).toBe(0);
+    });
   });
 
   describe("Shadow edge handling (grazing rays)", () => {

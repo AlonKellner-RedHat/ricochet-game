@@ -430,6 +430,22 @@ function calculatePlannedRayVisibility(
 ): RayVisibilityResult {
   const epsilon = 0.0001;
 
+  // Use ImageChain to check for bypass conditions
+  // This ensures we use the same logic as isCursorLit
+  // Note: We use a dummy cursor since we only need player-side checks
+  const dummyCursor = player; // Will be replaced per-cursor position
+  const chain = createImageChain(player, dummyCursor, plannedSurfaces);
+
+  // Check 1: Player must be on reflective side of first planned surface
+  if (!chain.isPlayerOnReflectiveSide(0)) {
+    return {
+      polygon: [],
+      origin: player,
+      rays: [],
+      isValid: false,
+    };
+  }
+
   // Reflect player through all planned surfaces to get "player image"
   let playerImage = player;
   for (const surface of plannedSurfaces) {
