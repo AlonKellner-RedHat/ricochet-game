@@ -22,10 +22,21 @@ import type { Vector2 } from "./types";
  * This preserves exactness - direction is implicit, no sqrt needed.
  *
  * The ray starts at `source` and extends infinitely through `target`.
+ *
+ * Optional `startRatio` defines where the ray actually starts:
+ * - startRatio = 0: ray starts at source (default)
+ * - startRatio = 0.5: ray starts at midpoint
+ * - startRatio = 1: ray starts at target
+ *
+ * Use case: When source is off-screen (reflected player image),
+ * set startRatio so the ray effectively starts ON the reflecting surface.
+ * This avoids issues with rays hitting screen boundaries between
+ * the off-screen source and the actual visible geometry.
  */
 export interface Ray {
-  readonly source: Vector2; // Ray origin
+  readonly source: Vector2; // Ray origin (may be off-screen)
   readonly target: Vector2; // A point the ray passes through (NOT the endpoint)
+  readonly startRatio?: number; // Where ray actually starts (0=source, 1=target)
 }
 
 /**
@@ -52,10 +63,47 @@ export interface RayHit {
 // =============================================================================
 
 /**
- * Create a ray from source to target.
+ * Create a ray from source to target (startRatio defaults to 0).
  */
 export function createRay(source: Vector2, target: Vector2): Ray {
   return { source, target };
+}
+
+/**
+ * Create a ray with a specified startRatio.
+ *
+ * The ray conceptually starts at effectiveStart = source + startRatio * (target - source).
+ * This is useful when the source is off-screen but the ray should start on a surface.
+ *
+ * @param source The logical source (e.g., reflected player image)
+ * @param target A point defining the ray direction
+ * @param startRatio Where the ray actually starts (0=source, 1=target)
+ */
+export function createRayWithStart(
+  source: Vector2,
+  target: Vector2,
+  startRatio: number
+): Ray {
+  return { source, target, startRatio };
+}
+
+/**
+ * Get the effective starting point of a ray.
+ *
+ * For a ray with startRatio, this computes:
+ *   effectiveStart = source + startRatio * (target - source)
+ *
+ * This is exact: no sqrt, no normalization.
+ *
+ * @param ray The ray
+ * @returns The effective starting point
+ */
+export function effectiveStart(ray: Ray): Vector2 {
+  const ratio = ray.startRatio ?? 0;
+  return {
+    x: ray.source.x + ratio * (ray.target.x - ray.source.x),
+    y: ray.source.y + ratio * (ray.target.y - ray.source.y),
+  };
 }
 
 // =============================================================================
@@ -66,16 +114,19 @@ export function createRay(source: Vector2, target: Vector2): Ray {
  * Calculate intersection of a ray with a line segment.
  *
  * Uses parametric form:
- * - Ray: P = source + t * (target - source), t >= 0
+ * - Ray: P = source + t * (target - source), t >= startRatio
  * - Segment: Q = start + s * (end - start), s ∈ [0, 1]
  *
  * Returns null if:
  * - Ray and segment are parallel
- * - Intersection is behind the ray origin (t < 0)
+ * - Intersection is before the ray's effective start (t < startRatio)
+ *
+ * When ray has startRatio set, hits before that position are ignored.
+ * This is crucial for off-screen origins where the ray should start on a surface.
  *
  * @param ray The ray to intersect
  * @param segment The segment to check
- * @returns RayHit with intersection details, or null if no forward intersection
+ * @returns RayHit with intersection details, or null if no valid intersection
  */
 export function intersectRaySegment(ray: Ray, segment: Segment): RayHit | null {
   const { source: p1, target: p2 } = ray;
@@ -102,8 +153,11 @@ export function intersectRaySegment(ray: Ray, segment: Segment): RayHit | null {
   const t = (dx * d2y - dy * d2x) / -denominator;
   const s = (d1x * dy - d1y * dx) / denominator;
 
-  // Intersection is behind ray origin
-  if (t < 0) {
+  // Use startRatio as the minimum t value (default 0)
+  const minT = ray.startRatio ?? 0;
+
+  // Intersection is before the ray's effective start
+  if (t < minT - 1e-9) {
     return null;
   }
 
@@ -128,12 +182,9 @@ export function intersectRaySegment(ray: Ray, segment: Segment): RayHit | null {
  *
  * Uses exact arithmetic (no normalization until target point calculation).
  *
- * Formula:
- * reflected_direction = direction - 2 * (direction · normal) * normal
- *
  * @param ray The incoming ray
  * @param surface The surface to reflect off
- * @returns The reflected ray, or original ray if no intersection
+ * @returns The reflected ray starting from hit point
  */
 export function reflectRay(ray: Ray, surface: Segment): Ray {
   const hit = intersectRaySegment(ray, surface);
@@ -152,12 +203,10 @@ export function reflectRay(ray: Ray, surface: Segment): Ray {
   const sy = surface.end.y - surface.start.y;
 
   // Normal vector (perpendicular to surface) - not normalized
-  // Using right-hand rule: rotate surface direction 90 degrees
   const nx = -sy;
   const ny = sx;
 
   // Calculate reflection using formula: r = d - 2(d·n/n·n)n
-  // This avoids normalization by computing the ratio
   const dotDN = dx * nx + dy * ny;
   const dotNN = nx * nx + ny * ny;
 
@@ -177,6 +226,74 @@ export function reflectRay(ray: Ray, surface: Segment): Ray {
   };
 
   return { source: hit.point, target };
+}
+
+/**
+ * Reflect a ray THROUGH a surface line (mirror reflection).
+ *
+ * This function reflects the SOURCE and TARGET points through the surface line,
+ * preserving the startRatio. This is used for visibility calculations
+ * where we want to track the "image" of the source through reflections.
+ *
+ * The reflected ray maintains the same parametric structure:
+ * - source is reflected through the surface line
+ * - target is reflected through the surface line
+ * - startRatio is preserved (so effective start stays on the surface)
+ *
+ * @param ray The incoming ray
+ * @param surface The surface to reflect through (as a mirror)
+ * @returns The reflected ray with same startRatio
+ */
+export function reflectRayThroughLine(ray: Ray, surface: Segment): Ray {
+  // Reflect source and target through the surface line
+  const reflectedSource = reflectPointThroughSegment(ray.source, surface);
+  const reflectedTarget = reflectPointThroughSegment(ray.target, surface);
+
+  return {
+    source: reflectedSource,
+    target: reflectedTarget,
+    startRatio: ray.startRatio, // Preserved!
+  };
+}
+
+/**
+ * Reflect a point through a line segment (as an infinite line).
+ *
+ * Formula: P' = P - 2 * ((P - A) · n) / (n · n) * n
+ * where n is the normal to the line, A is a point on the line.
+ */
+export function reflectPointThroughSegment(point: Vector2, segment: Segment): Vector2 {
+  const { start: a, end: b } = segment;
+
+  // Direction of segment (line)
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+
+  // Normal to the line (perpendicular)
+  const nx = -dy;
+  const ny = dx;
+
+  // Vector from line point A to the point P
+  const px = point.x - a.x;
+  const py = point.y - a.y;
+
+  // Project onto normal: (P - A) · n
+  const dotPN = px * nx + py * ny;
+
+  // Normal squared: n · n
+  const dotNN = nx * nx + ny * ny;
+
+  if (dotNN < 1e-20) {
+    return point; // Degenerate segment
+  }
+
+  // Reflection: P' = P - 2 * ((P - A) · n / n · n) * n
+  const factor = (2 * dotPN) / dotNN;
+
+  return {
+    x: point.x - factor * nx,
+    y: point.y - factor * ny,
+  };
 }
 
 /**

@@ -19,6 +19,7 @@ import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
 import {
   createRay,
+  createRayWithStart,
   intersectRaySegment,
   type Ray,
   type Segment,
@@ -96,11 +97,13 @@ export function buildVisibilityPolygon(
   criticalPoints.push({ x: bounds.maxX, y: bounds.maxY }); // Bottom-right
   criticalPoints.push({ x: bounds.minX, y: bounds.maxY }); // Bottom-left
 
-  // Add sector boundary points if constrained
+  // Add sector boundary points if constrained (skip full sectors)
   if (sectorConstraint) {
     for (const sector of sectorConstraint) {
-      criticalPoints.push(sector.leftBoundary);
-      criticalPoints.push(sector.rightBoundary);
+      if (!isFullSector(sector)) {
+        criticalPoints.push(sector.leftBoundary);
+        criticalPoints.push(sector.rightBoundary);
+      }
     }
   }
 
@@ -113,16 +116,21 @@ export function buildVisibilityPolygon(
     const dy = target.y - origin.y;
     if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) continue;
 
-    // If sector constraint, check if target is inside any sector
+    // If sector constraint, check if target is inside any sector and get startRatio
+    let startRatio = 0;
     if (sectorConstraint) {
-      const isInSector = sectorConstraint.some((sector) =>
+      const containingSector = sectorConstraint.find((sector) =>
         isPointInSector(target, sector)
       );
-      if (!isInSector) continue;
+      if (!containingSector) continue;
+
+      // Compute startRatio for this ray based on the sector's startRatios
+      // Use interpolation between left and right startRatios based on angular position
+      startRatio = computeStartRatioForTarget(origin, target, containingSector);
     }
 
     // Cast ray directly at target
-    const directHit = castRayToFirstHit(origin, target, obstacles, bounds);
+    const directHit = castRayToFirstHit(origin, target, obstacles, bounds, startRatio);
     if (directHit) {
       const angle = Math.atan2(dy, dx);
       hits.push({ point: directHit, angle });
@@ -141,7 +149,10 @@ export function buildVisibilityPolygon(
 
     // Only cast grazing rays if they're also in the sector
     if (!sectorConstraint || sectorConstraint.some((s) => isPointInSector(targetLeft, s))) {
-      const leftHit = castRayToFirstHit(origin, targetLeft, obstacles, bounds);
+      const leftStartRatio = sectorConstraint
+        ? computeStartRatioForTarget(origin, targetLeft, sectorConstraint.find(s => isPointInSector(targetLeft, s))!)
+        : 0;
+      const leftHit = castRayToFirstHit(origin, targetLeft, obstacles, bounds, leftStartRatio);
       if (leftHit) {
         const ldx = targetLeft.x - origin.x;
         const ldy = targetLeft.y - origin.y;
@@ -150,7 +161,10 @@ export function buildVisibilityPolygon(
     }
 
     if (!sectorConstraint || sectorConstraint.some((s) => isPointInSector(targetRight, s))) {
-      const rightHit = castRayToFirstHit(origin, targetRight, obstacles, bounds);
+      const rightStartRatio = sectorConstraint
+        ? computeStartRatioForTarget(origin, targetRight, sectorConstraint.find(s => isPointInSector(targetRight, s))!)
+        : 0;
+      const rightHit = castRayToFirstHit(origin, targetRight, obstacles, bounds, rightStartRatio);
       if (rightHit) {
         const rdx = targetRight.x - origin.x;
         const rdy = targetRight.y - origin.y;
@@ -159,18 +173,38 @@ export function buildVisibilityPolygon(
     }
   }
 
-  // Add sector boundary points directly as polygon vertices
-  // This ensures the "near" boundary of the visible area is included
-  // (important when sector boundaries are on excluded surfaces)
+  // For sectors with a startLine, cast extended rays to find the visibility boundary.
+  // The near-edge points (surface crossing) are NOT added as separate vertices;
+  // instead, we only add the far-edge hits from extended rays.
   if (sectorConstraint) {
     for (const sector of sectorConstraint) {
-      if (!isFullSector(sector)) {
-        // Add left boundary point
+      if (!isFullSector(sector) && sector.startLine) {
+        const ldx = sector.leftBoundary.x - origin.x;
+        const ldy = sector.leftBoundary.y - origin.y;
+        const rdx = sector.rightBoundary.x - origin.x;
+        const rdy = sector.rightBoundary.y - origin.y;
+
+        // Cast extended rays along sector boundaries to find far edge
+        // Use a large extension to ensure we hit screen bounds
+        const farLeftTarget = { x: origin.x + 10 * ldx, y: origin.y + 10 * ldy };
+        const leftExtStartRatio = computeStartRatioForTarget(origin, farLeftTarget, sector);
+        const leftHit = castRayToFirstHit(origin, farLeftTarget, obstacles, bounds, leftExtStartRatio);
+        if (leftHit) {
+          hits.push({ point: leftHit, angle: Math.atan2(ldy, ldx) });
+        }
+
+        const farRightTarget = { x: origin.x + 10 * rdx, y: origin.y + 10 * rdy };
+        const rightExtStartRatio = computeStartRatioForTarget(origin, farRightTarget, sector);
+        const rightHit = castRayToFirstHit(origin, farRightTarget, obstacles, bounds, rightExtStartRatio);
+        if (rightHit) {
+          hits.push({ point: rightHit, angle: Math.atan2(rdy, rdx) });
+        }
+      } else if (!isFullSector(sector)) {
+        // No startLine - just add boundary points
         const ldx = sector.leftBoundary.x - origin.x;
         const ldy = sector.leftBoundary.y - origin.y;
         hits.push({ point: { ...sector.leftBoundary }, angle: Math.atan2(ldy, ldx) });
 
-        // Add right boundary point
         const rdx = sector.rightBoundary.x - origin.x;
         const rdy = sector.rightBoundary.y - origin.y;
         hits.push({ point: { ...sector.rightBoundary }, angle: Math.atan2(rdy, rdx) });
@@ -220,41 +254,111 @@ export function buildVisibilityPolygon(
     }
   }
 
-  // For sector-constrained polygons, re-sort by centroid to avoid self-intersection
-  // when origin might be inside or near the polygon (e.g., reflected origin)
-  // For unconstrained polygons, the origin-based sorting is already correct
-  if (sectorConstraint && polygon.length >= 3) {
-    const centroid = {
-      x: polygon.reduce((sum, p) => sum + p.x, 0) / polygon.length,
-      y: polygon.reduce((sum, p) => sum + p.y, 0) / polygon.length,
-    };
-
-    polygon.sort((a, b) => {
-      const angleA = Math.atan2(a.y - centroid.y, a.x - centroid.x);
-      const angleB = Math.atan2(b.y - centroid.y, b.x - centroid.x);
-      return angleA - angleB;
-    });
-  }
+  // Origin-based angle sorting is correct for visibility polygons,
+  // including sector-constrained ones. Centroid-based sorting was causing
+  // incorrect vertex ordering for reflected sectors.
 
   return polygon;
 }
 
 /**
+ * Compute the startRatio for a ray from origin to target, based on sector's start ratios.
+ *
+ * Uses linear interpolation between the sector's left and right start ratios
+ * based on the target's angular position within the sector.
+ *
+ * @param origin The ray origin
+ * @param target The ray target
+ * @param sector The sector containing the target
+ * @returns The interpolated startRatio for this ray
+ */
+/**
+ * Compute the startRatio for a ray from origin toward target, based on the sector's startLine.
+ *
+ * The startRatio is a value in [0, 1] where:
+ * - 0 means the ray starts at the origin
+ * - The computed value means the ray starts where it crosses the startLine
+ *
+ * For reflected sectors, rays should start ON the reflecting surface, not from
+ * the (possibly off-screen) reflected origin. This function computes the exact
+ * t-value where the ray crosses the surface line.
+ *
+ * @returns t-value where ray crosses startLine (0 = origin, values > 0 = on surface)
+ */
+function computeStartRatioForTarget(
+  origin: Vector2,
+  target: Vector2,
+  sector: RaySector
+): number {
+  // If no startLine, ray starts at origin (t=0)
+  if (!sector.startLine) {
+    return 0;
+  }
+
+  const lineStart = sector.startLine.start;
+  const lineEnd = sector.startLine.end;
+
+  // Ray direction vector (not normalized - we need the parametric t)
+  const rdx = target.x - origin.x;
+  const rdy = target.y - origin.y;
+
+  // Line direction vector
+  const ldx = lineEnd.x - lineStart.x;
+  const ldy = lineEnd.y - lineStart.y;
+
+  // Cross product for denominator: ray × line
+  // This is zero if ray is parallel to line
+  const denom = rdx * ldy - rdy * ldx;
+  if (Math.abs(denom) < 1e-10) {
+    // Ray parallel to surface - start at origin
+    return 0;
+  }
+
+  // Compute t where ray crosses the surface line
+  // Ray equation: P = origin + t * (target - origin)
+  // Line equation: Q = lineStart + s * (lineEnd - lineStart)
+  // Solving P = Q for t:
+  // t = ((lineStart - origin) × lineDir) / (rayDir × lineDir)
+  const t =
+    ((lineStart.x - origin.x) * ldy - (lineStart.y - origin.y) * ldx) / denom;
+
+  // The ray should start at the surface crossing
+  // If t < 0, the surface is "behind" the origin (shouldn't happen for valid sectors)
+  // If t > 1, the surface is past the target (ray doesn't reach surface before target)
+  // We want rays to start at the surface, so return the computed t (clamped to >= 0)
+  return Math.max(0, t);
+}
+
+/**
  * Cast a ray from origin toward target and find first hit.
- * Returns the hit point, or null if ray doesn't hit anything.
+ *
+ * @param origin The ray source (may be off-screen for reflected images)
+ * @param target The point defining ray direction
+ * @param obstacles Surfaces that can block the ray
+ * @param bounds Screen boundaries
+ * @param startRatio Optional: Where the ray actually starts (0=origin, 1=target)
+ *                   Used for off-screen origins where ray should start on a surface.
+ * @returns The first hit point, or null if no hit
  */
 function castRayToFirstHit(
   origin: Vector2,
   target: Vector2,
   obstacles: readonly Surface[],
-  bounds: ScreenBounds
+  bounds: ScreenBounds,
+  startRatio: number = 0
 ): Vector2 | null {
-  const ray = createRay(origin, target);
+  // Create ray with startRatio - intersectRaySegment will ignore hits before this
+  const ray = startRatio > 0
+    ? createRayWithStart(origin, target, startRatio)
+    : createRay(origin, target);
 
   let closestT = Infinity;
   let closestPoint: Vector2 | null = null;
 
   // Check all obstacles
+  // Use a small epsilon to avoid self-intersection when origin is on a surface
+  const minT = Math.max(startRatio, 0.001);
+
   for (const obstacle of obstacles) {
     const segment: Segment = {
       start: obstacle.segment.start,
@@ -262,28 +366,27 @@ function castRayToFirstHit(
     };
 
     const hit = intersectRaySegment(ray, segment);
-    if (hit && hit.onSegment && hit.t > 0.001 && hit.t < closestT) {
+    if (hit && hit.onSegment && hit.t > minT && hit.t < closestT) {
       closestT = hit.t;
       closestPoint = hit.point;
     }
   }
 
-  // If no obstacle hit, find screen boundary hit
-  if (!closestPoint) {
-    closestPoint = findScreenBoundaryHit(ray, bounds);
-  } else {
-    // Check if there's a screen boundary closer than the obstacle
-    const screenHit = findScreenBoundaryHit(ray, bounds);
-    if (screenHit) {
+  // Check screen boundaries (also respects startRatio)
+  const screenHit = findScreenBoundaryHit(ray, bounds);
+  if (screenHit) {
+    // Calculate t value for screen hit
+    const dx = target.x - origin.x;
+    const dy = target.y - origin.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq > 0) {
       const screenDx = screenHit.x - origin.x;
       const screenDy = screenHit.y - origin.y;
-      const screenDistSq = screenDx * screenDx + screenDy * screenDy;
+      const screenT = (screenDx * dx + screenDy * dy) / lenSq;
 
-      const obstacleDx = closestPoint.x - origin.x;
-      const obstacleDy = closestPoint.y - origin.y;
-      const obstacleDistSq = obstacleDx * obstacleDx + obstacleDy * obstacleDy;
-
-      if (screenDistSq < obstacleDistSq) {
+      // Only consider screen hit if it's after startRatio and closer than obstacle
+      if (screenT >= startRatio && screenT < closestT) {
+        closestT = screenT;
         closestPoint = screenHit;
       }
     }
@@ -498,49 +601,54 @@ export function propagateWithIntermediates(
   const validPolygons: ValidPolygonStep[] = [];
   const plannedPolygons: PlannedPolygonStep[] = [];
   const steps: PropagationStep[] = []; // Legacy compatibility
-  let currentOrigin = player;
 
-  // Track sectors: start with full 360° visibility
+  // Initialize: origin starts at player, sectors start as full 360°
+  let currentOrigin = player;
   let currentSectors: RaySectors = fullSectors(player);
 
-  // valid[0]: Full visibility from player (no sector constraint yet)
-  const valid0Polygon = buildVisibilityPolygon(currentOrigin, allSurfaces, bounds);
-  validPolygons.push({
-    index: 0,
-    origin: { ...currentOrigin },
-    polygon: valid0Polygon,
-    isValid: valid0Polygon.length >= 3,
-  });
+  // =========================================================================
+  // UNIFIED LOOP: Process each step K from 0 to N
+  // - Step 0: valid[0] from player with full 360° sector
+  // - Step K>0: valid[K] from reflected origin with constrained sector
+  // =========================================================================
+  for (let k = 0; k <= plannedSurfaces.length; k++) {
+    // Build valid[K]: visibility from currentOrigin within currentSectors
+    // Uses allSurfaces as obstacles - startRatio handles surface pass-through
+    const validKPolygon = buildVisibilityPolygon(
+      currentOrigin,
+      allSurfaces,
+      bounds,
+      currentSectors
+    );
 
-  // Legacy step 0 for compatibility
-  steps.push({
-    index: 0,
-    origin: { ...currentOrigin },
-    polygon: valid0Polygon,
-    isValid: valid0Polygon.length >= 3,
-    window: undefined,
-  });
+    validPolygons.push({
+      index: k,
+      origin: { ...currentOrigin },
+      polygon: validKPolygon,
+      isValid: validKPolygon.length >= 3,
+    });
 
-  // If no planned surfaces, we're done
-  if (plannedSurfaces.length === 0) {
-    return {
-      validPolygons,
-      plannedPolygons,
-      steps,
-      finalPolygon: valid0Polygon,
-      isValid: valid0Polygon.length >= 3,
-      playerPosition: player,
-      finalOrigin: currentOrigin,
-    };
-  }
+    // Legacy step for compatibility - window will be set on NEXT step if there's a planned surface
+    steps.push({
+      index: k,
+      origin: { ...currentOrigin },
+      polygon: validKPolygon,
+      isValid: validKPolygon.length >= 3,
+      window: undefined,
+    });
 
-  // For each planned surface K (0 to N-1)
-  for (let k = 0; k < plannedSurfaces.length; k++) {
+    // If we've processed all planned surfaces, we're done
+    if (k >= plannedSurfaces.length) {
+      break;
+    }
+
+    // -----------------------------------------------------------------------
+    // Prepare for next step: reflect through surface K
+    // -----------------------------------------------------------------------
     const surface = plannedSurfaces[k]!;
 
     // Check bypass: current origin must be on reflective side of surface K
     if (!isOnReflectiveSide(currentOrigin, surface)) {
-      // Bypass detected - return invalid result
       return {
         validPolygons,
         plannedPolygons,
@@ -553,10 +661,10 @@ export function propagateWithIntermediates(
       };
     }
 
-    // plannedSector[K]: validSector[K] trimmed by surface K angular extent
+    // plannedSector[K]: currentSectors trimmed by surface K angular extent
     const plannedSectors = trimSectorsBySurface(currentSectors, surface);
 
-    // Build window for cropping (from current origin to surface K)
+    // Build window for cropping
     const window: VisibilityWindow = {
       leftRay: createRay(currentOrigin, surface.segment.start),
       rightRay: createRay(currentOrigin, surface.segment.end),
@@ -564,74 +672,46 @@ export function propagateWithIntermediates(
       origin: { ...currentOrigin },
     };
 
-    // planned[K]: valid[K] cropped by window to surface K
-    // Build polygon from current origin, excluding the target surface
-    // (we're looking THROUGH it, not AT it)
-    // Use currentSectors as constraint to only build within reachable angles
-    const obstaclesExcludingSurface = allSurfaces.filter(s => s.id !== surface.id);
-    const fullPolygonForCropping = buildVisibilityPolygon(
+    // planned[K]: visibility within plannedSectors (constrained to surface angular extent)
+    // Uses allSurfaces as obstacles - the sector constraint naturally limits to the window
+    // The sector constraint already defines the angular bounds, so no additional cropping needed
+    // Exclude the planned surface from obstacles so rays can "see" the surface endpoints
+    const obstaclesForPlanned = allSurfaces.filter(s => s.id !== surface.id);
+    const plannedPolygon = buildVisibilityPolygon(
       currentOrigin,
-      obstaclesExcludingSurface,
+      obstaclesForPlanned,
       bounds,
-      currentSectors  // Apply sector constraint
+      plannedSectors
     );
-    const croppedPolygon = cropPolygonByWindow(fullPolygonForCropping, currentOrigin, surface);
 
     plannedPolygons.push({
       index: k,
       origin: { ...currentOrigin },
-      polygon: croppedPolygon,
-      isValid: croppedPolygon.length >= 3,
+      polygon: plannedPolygon,
+      isValid: plannedPolygon.length >= 3,
       window,
       targetSurface: surface,
     });
 
-    // Reflect origin for next iteration
+    // Reflect origin through surface
     currentOrigin = reflectPoint(currentOrigin, surface);
 
-    // Reflect sectors: validSector[K+1] = reflect(plannedSector[K])
-    currentSectors = reflectSectors(plannedSectors, surface);
-
-    // Update sector origins to the new reflected origin
-    currentSectors = currentSectors.map(sector => ({
+    // Reflect sectors - reflectSector now automatically sets startLine to the surface
+    // This ensures rays start ON the surface, not from the (possibly off-screen) reflected origin
+    currentSectors = reflectSectors(plannedSectors, surface).map(sector => ({
       ...sector,
       origin: currentOrigin,
     }));
+  }
 
-    // valid[K+1]: Visibility from reflected origin within sector constraint
-    // Exclude surfaces we've already passed through (0..K)
-    const passedSurfaceIds = plannedSurfaces.slice(0, k + 1).map(s => s.id);
-    const remainingObstacles = allSurfaces.filter(s => !passedSurfaceIds.includes(s.id));
-    
-    // Build polygon with sector constraint - this is the key fix!
-    // Only build visibility within the angular range that passed through the surface
-    const rawValidKPolygon = buildVisibilityPolygon(
-      currentOrigin,
-      remainingObstacles,
-      bounds,
-      currentSectors  // Apply sector constraint
-    );
-
-    // Filter valid[K+1] to only include points on the reflective side of all passed surfaces
-    // This ensures the cursor must be in a position where the trajectory is actually valid
-    const passedSurfaces = plannedSurfaces.slice(0, k + 1);
-    const validKPolygon = filterPolygonToReflectiveSide(rawValidKPolygon, passedSurfaces);
-
-    validPolygons.push({
-      index: k + 1,
-      origin: { ...currentOrigin },
-      polygon: validKPolygon,
-      isValid: validKPolygon.length >= 3,
-    });
-
-    // Legacy step for compatibility
-    steps.push({
-      index: k + 1,
-      origin: { ...currentOrigin },
-      polygon: croppedPolygon, // Legacy steps used cropped polygon
-      isValid: croppedPolygon.length >= 3,
-      window,
-    });
+  // Set window on legacy steps: step[K+1] gets window from planned surface K
+  for (let k = 0; k < plannedPolygons.length; k++) {
+    if (steps[k + 1]) {
+      steps[k + 1] = {
+        ...steps[k + 1]!,
+        window: plannedPolygons[k]!.window,
+      };
+    }
   }
 
   // Final polygon is the last valid polygon (valid[N])

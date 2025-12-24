@@ -37,6 +37,16 @@ import {
  * traces the sector's interior.
  *
  * All positions are source-of-truth values (or images derived from them).
+ *
+ * Optional start ratios define where each boundary ray actually starts:
+ * - leftStartRatio: where the left boundary ray starts (0=origin, 1=leftBoundary)
+ * - rightStartRatio: where the right boundary ray starts (0=origin, 1=rightBoundary)
+ *
+ * Optional startLine defines a line that rays must start from (e.g., the surface line).
+ * When set, rays start where they cross this line, not at the origin.
+ *
+ * Use case: When origin is off-screen (reflected player image), set startLine
+ * so rays effectively start ON the reflecting surface.
  */
 export interface RaySector {
   /** Source of the rays (player position or player image) */
@@ -47,6 +57,15 @@ export interface RaySector {
 
   /** Point defining the right boundary ray (e.g., surface.start or its image) */
   readonly rightBoundary: Vector2;
+
+  /** Where the left boundary ray starts (0=origin, 1=leftBoundary, default 0) */
+  readonly leftStartRatio?: number;
+
+  /** Where the right boundary ray starts (0=origin, 1=rightBoundary, default 0) */
+  readonly rightStartRatio?: number;
+
+  /** Line that all rays in this sector must start from (for reflected sectors) */
+  readonly startLine?: { start: Vector2; end: Vector2 };
 }
 
 /**
@@ -179,7 +198,11 @@ export function crossProduct(origin: Vector2, a: Vector2, b: Vector2): number {
  *
  * Convention: Counter-clockwise from right to left defines the interior.
  */
-export function isPointInSector(point: Vector2, sector: RaySector): boolean {
+export function isPointInSector(
+  point: Vector2,
+  sector: RaySector,
+  checkDistance: boolean = false
+): boolean {
   // Special case: full sector
   if (isFullSector(sector)) {
     return true;
@@ -205,16 +228,41 @@ export function isPointInSector(point: Vector2, sector: RaySector): boolean {
   // by checking if left is to the left of right
   const sectorCross = crossProduct(origin, right, left);
 
+  let angularlyInside: boolean;
   if (sectorCross >= 0) {
     // Sector is less than 180 degrees (normal case)
     // Point must be inside both half-planes
-    return rightCross >= 0 && leftCross <= 0;
+    angularlyInside = rightCross >= 0 && leftCross <= 0;
   } else {
     // Sector is more than 180 degrees (reflex case)
     // Point is inside if it's NOT in the excluded region
     // Excluded region: right of right boundary AND left of left boundary
-    return rightCross >= 0 || leftCross <= 0;
+    angularlyInside = rightCross >= 0 || leftCross <= 0;
   }
+
+  if (!angularlyInside) {
+    return false;
+  }
+
+  // Optional distance check: point must be at least as far as the nearest boundary
+  // This is needed when the origin is off-screen to exclude points between
+  // the origin and the sector boundaries
+  if (checkDistance) {
+    const distToPoint =
+      (point.x - origin.x) ** 2 + (point.y - origin.y) ** 2;
+    const distToRight =
+      (right.x - origin.x) ** 2 + (right.y - origin.y) ** 2;
+    const distToLeft =
+      (left.x - origin.x) ** 2 + (left.y - origin.y) ** 2;
+    const minBoundaryDist = Math.min(distToRight, distToLeft);
+
+    // Allow a small tolerance (95% of boundary distance)
+    if (distToPoint < minBoundaryDist * 0.9) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -273,10 +321,15 @@ export function reflectSector(sector: RaySector, surface: Surface): RaySector {
 
   // Swap boundaries after reflection to maintain correct sector orientation
   // (Reflection reverses the counter-clockwise direction)
+  // Note: leftStartRatio and rightStartRatio are also swapped because the boundaries swap
   return {
     origin: reflectPointThroughLine(sector.origin, lineStart, lineEnd),
     leftBoundary: reflectPointThroughLine(sector.rightBoundary, lineStart, lineEnd),
     rightBoundary: reflectPointThroughLine(sector.leftBoundary, lineStart, lineEnd),
+    leftStartRatio: sector.rightStartRatio, // Swapped!
+    rightStartRatio: sector.leftStartRatio, // Swapped!
+    // Set the surface as the start line - rays from reflected origin start on this surface
+    startLine: { start: lineStart, end: lineEnd },
   };
 }
 
@@ -391,10 +444,17 @@ export function intersectSectors(
     return null;
   }
 
+  // Preserve startRatios from sector a (the primary sector being constrained)
+  // But use the ratio from whichever sector contributed each boundary
+  const newLeftStartRatio = newLeft === leftA ? a.leftStartRatio : b.leftStartRatio;
+  const newRightStartRatio = newRight === rightA ? a.rightStartRatio : b.rightStartRatio;
+
   return {
     origin,
     leftBoundary: newLeft,
     rightBoundary: newRight,
+    leftStartRatio: newLeftStartRatio,
+    rightStartRatio: newRightStartRatio,
   };
 }
 
@@ -477,12 +537,16 @@ export function blockSectorByObstacle(
       origin,
       leftBoundary: sector.leftBoundary,
       rightBoundary: obsLeft,
+      leftStartRatio: sector.leftStartRatio,
+      rightStartRatio: undefined, // Obstacle endpoint - starts from origin
     };
 
     const rightSector: RaySector = {
       origin,
       leftBoundary: obsRight,
       rightBoundary: sector.rightBoundary,
+      leftStartRatio: undefined, // Obstacle endpoint - starts from origin
+      rightStartRatio: sector.rightStartRatio,
     };
 
     const result: RaySectors = [];
@@ -512,6 +576,8 @@ export function blockSectorByObstacle(
           origin,
           leftBoundary: sector.leftBoundary,
           rightBoundary: obsStart,
+          leftStartRatio: sector.leftStartRatio,
+          rightStartRatio: undefined, // Obstacle endpoint
         },
       ];
     } else {
@@ -521,6 +587,8 @@ export function blockSectorByObstacle(
           origin,
           leftBoundary: obsStart,
           rightBoundary: sector.rightBoundary,
+          leftStartRatio: undefined, // Obstacle endpoint
+          rightStartRatio: sector.rightStartRatio,
         },
       ];
     }
@@ -535,6 +603,8 @@ export function blockSectorByObstacle(
           origin,
           leftBoundary: sector.leftBoundary,
           rightBoundary: obsEnd,
+          leftStartRatio: sector.leftStartRatio,
+          rightStartRatio: undefined, // Obstacle endpoint
         },
       ];
     } else {
@@ -544,6 +614,8 @@ export function blockSectorByObstacle(
           origin,
           leftBoundary: obsEnd,
           rightBoundary: sector.rightBoundary,
+          leftStartRatio: undefined, // Obstacle endpoint
+          rightStartRatio: sector.rightStartRatio,
         },
       ];
     }
