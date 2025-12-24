@@ -333,6 +333,60 @@ describe("RayBasedVisibility", () => {
       expect(result.isValid).toBe(false);
       expect(result.polygon.length).toBe(0);
     });
+
+    it("visibility polygon correctly includes/excludes cursor based on plan validity", () => {
+      // User-reported issue: same visibility polygon, but different cursor positions
+      // One cursor has valid plan (should be lit), other has invalid plan (should be dark)
+      const player: Vector2 = { x: 668.7, y: 666 };
+      const cursor1: Vector2 = { x: 745.9, y: 382.1 }; // Claimed: valid plan, in dark
+      const cursor2: Vector2 = { x: 622.6, y: 47.1 }; // Claimed: invalid plan, in light
+
+      const surfaces = [
+        createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }, false),
+        createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 }, false),
+        createTestSurface("left-wall", { x: 20, y: 80 }, { x: 20, y: 700 }, false),
+        createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 }, false),
+        createTestSurface("platform-1", { x: 300, y: 450 }, { x: 500, y: 450 }, false),
+        createTestSurface("platform-2", { x: 550, y: 350 }, { x: 750, y: 350 }, false),
+        createTestSurface("ricochet-1", { x: 800, y: 150 }, { x: 900, y: 250 }, true),
+        createTestSurface("ricochet-2", { x: 400, y: 250 }, { x: 550, y: 250 }, true),
+        createTestSurface("ricochet-3", { x: 100, y: 200 }, { x: 200, y: 300 }, true),
+        createTestSurface("ricochet-4", { x: 850, y: 350 }, { x: 850, y: 500 }, true),
+      ];
+
+      const plannedSurfaces = [
+        createTestSurface("ricochet-4", { x: 850, y: 350 }, { x: 850, y: 500 }, true),
+      ];
+
+      // Check cursor 1 (745.9, 382.1)
+      const lit1 = isCursorLit(player, cursor1, plannedSurfaces, surfaces);
+      const result = calculateRayVisibility(player, surfaces, screenBounds, plannedSurfaces);
+      const inPolygon1 = result.isValid && isPointInPolygon(cursor1, result.polygon);
+
+      console.log("V.5 Correlation Test:");
+      console.log("  Player:", player);
+      console.log("  Origin (player image):", result.origin);
+      console.log("  Polygon valid:", result.isValid, "vertices:", result.polygon.length);
+      console.log("  Polygon vertices:", result.polygon.map(p => `(${p.x.toFixed(1)}, ${p.y.toFixed(1)})`));
+      console.log("  Cursor 1:", cursor1);
+      console.log("    isCursorLit:", lit1);
+      console.log("    inPolygon:", inPolygon1);
+      console.log("    V.5 satisfied:", lit1 === inPolygon1);
+
+      // Check cursor 2 (622.6, 47.1)
+      const lit2 = isCursorLit(player, cursor2, plannedSurfaces, surfaces);
+      const inPolygon2 = result.isValid && isPointInPolygon(cursor2, result.polygon);
+
+      console.log("  Cursor 2:", cursor2);
+      console.log("    isCursorLit:", lit2);
+      console.log("    inPolygon:", inPolygon2);
+      console.log("    V.5 satisfied:", lit2 === inPolygon2);
+
+      // V.5: Light reaches cursor iff plan is valid
+      // cursor lit === cursor in polygon
+      expect(lit1).toBe(inPolygon1);
+      expect(lit2).toBe(inPolygon2);
+    });
   });
 
   describe("Shadow edge handling (grazing rays)", () => {

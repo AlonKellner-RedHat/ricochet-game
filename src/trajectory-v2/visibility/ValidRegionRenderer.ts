@@ -16,7 +16,12 @@ import type {
   IVisibilityCalculator,
   VisibilityResult,
 } from "@/trajectory-v2/interfaces/IVisibilityCalculator";
-import { TrajectoryDebugLogger, type VisibilityDebugInfo } from "../TrajectoryDebugLogger";
+import {
+  TrajectoryDebugLogger,
+  type IntermediatePolygonDebugInfo,
+  type VisibilityDebugInfo,
+} from "../TrajectoryDebugLogger";
+import { propagateWithIntermediates } from "./AnalyticalPropagation";
 import type { ScreenBounds } from "./ConePropagator";
 import type { ValidRegionOutline } from "./OutlineBuilder";
 import { calculateSimpleVisibility } from "./SimpleVisibilityCalculator";
@@ -37,6 +42,12 @@ export interface ValidRegionConfig {
   readonly outlineColor: number;
   /** Outline width (for debugging) */
   readonly outlineWidth: number;
+  /** Whether to show intermediate polygons */
+  readonly showIntermediatePolygons: boolean;
+  /** Base alpha for intermediate polygons (most faded) */
+  readonly intermediateAlphaBase: number;
+  /** Alpha decay factor for each step toward final */
+  readonly intermediateAlphaDecay: number;
 }
 
 /**
@@ -52,6 +63,9 @@ export const DEFAULT_VALID_REGION_CONFIG: ValidRegionConfig = {
   showOutline: false,
   outlineColor: 0x00ffff,
   outlineWidth: 2,
+  showIntermediatePolygons: false,
+  intermediateAlphaBase: 0.08, // Most faded for step 0
+  intermediateAlphaDecay: 0.85, // Each step less faded
 };
 
 /**
@@ -168,8 +182,28 @@ export class ValidRegionRenderer {
 
     this.lastOutline = outline;
 
+    // Calculate intermediate polygons for logging and optional visualization
+    let intermediatePolygons: IntermediatePolygonDebugInfo[] | undefined;
+    if (plannedSurfaces.length > 0) {
+      const propagation = propagateWithIntermediates(
+        player,
+        plannedSurfaces,
+        allSurfaces,
+        this.screenBounds
+      );
+
+      intermediatePolygons = propagation.steps.map((step) => ({
+        stepIndex: step.index,
+        origin: { ...step.origin },
+        vertexCount: step.polygon.length,
+        vertices: step.polygon.map((v) => ({ ...v })),
+        isValid: step.isValid,
+        windowSurfaceId: step.window?.surface.id,
+      }));
+    }
+
     // Log visibility data if debug logging is enabled
-    this.logVisibilitySimple(visibilityResult);
+    this.logVisibilitySimple(visibilityResult, intermediatePolygons);
 
     // Clear previous render
     this.graphics.clear();
@@ -180,6 +214,11 @@ export class ValidRegionRenderer {
       return;
     }
 
+    // Render intermediate polygons if enabled
+    if (this.config.showIntermediatePolygons && intermediatePolygons && intermediatePolygons.length > 1) {
+      this.renderIntermediatePolygons(intermediatePolygons);
+    }
+
     // Render the overlay with valid region cutout
     // Pass whether we have planned surfaces to determine rendering strategy
     const hasPlannedSurfaces = plannedSurfaces.length > 0;
@@ -188,6 +227,56 @@ export class ValidRegionRenderer {
     // Debug: show outline
     if (this.config.showOutline) {
       this.renderOutline(outline);
+    }
+  }
+
+  /**
+   * Render intermediate polygons with faded alphas.
+   * Each step is rendered with decreasing opacity from base to final.
+   */
+  private renderIntermediatePolygons(intermediates: IntermediatePolygonDebugInfo[]): void {
+    const totalSteps = intermediates.length;
+
+    for (let i = 0; i < totalSteps - 1; i++) {
+      // Skip the final polygon (it's rendered as the main cutout)
+      const step = intermediates[i]!;
+
+      if (!step.isValid || step.vertices.length < 3) continue;
+
+      // Calculate alpha for this step (earlier steps are more faded)
+      // Alpha increases from base toward final
+      const stepsFromEnd = totalSteps - 1 - i;
+      const alpha = this.config.intermediateAlphaBase * Math.pow(
+        1 / this.config.intermediateAlphaDecay,
+        i
+      );
+
+      // Render the intermediate polygon with subtle tint
+      this.graphics.setBlendMode(BlendModes.NORMAL);
+      this.graphics.fillStyle(0x4488ff, Math.min(alpha, 0.3)); // Blue tint, capped
+
+      this.graphics.beginPath();
+      this.graphics.moveTo(step.vertices[0]!.x, step.vertices[0]!.y);
+
+      for (let j = 1; j < step.vertices.length; j++) {
+        this.graphics.lineTo(step.vertices[j]!.x, step.vertices[j]!.y);
+      }
+
+      this.graphics.closePath();
+      this.graphics.fillPath();
+
+      // Draw outline for the intermediate polygon
+      this.graphics.lineStyle(1, 0x4488ff, alpha * 2);
+
+      for (let j = 0; j < step.vertices.length; j++) {
+        const v1 = step.vertices[j]!;
+        const v2 = step.vertices[(j + 1) % step.vertices.length]!;
+
+        this.graphics.beginPath();
+        this.graphics.moveTo(v1.x, v1.y);
+        this.graphics.lineTo(v2.x, v2.y);
+        this.graphics.strokePath();
+      }
     }
   }
 
@@ -351,11 +440,14 @@ export class ValidRegionRenderer {
   /**
    * Log visibility data for debugging (new simple algorithm).
    */
-  private logVisibilitySimple(result: {
-    polygon: readonly Vector2[];
-    origin: Vector2;
-    isValid: boolean;
-  }): void {
+  private logVisibilitySimple(
+    result: {
+      polygon: readonly Vector2[];
+      origin: Vector2;
+      isValid: boolean;
+    },
+    intermediatePolygons?: IntermediatePolygonDebugInfo[]
+  ): void {
     if (!TrajectoryDebugLogger.isEnabled()) return;
 
     const visibilityInfo: VisibilityDebugInfo = {
@@ -367,6 +459,7 @@ export class ValidRegionRenderer {
         type: "surface" as const,
       })),
       isValid: result.isValid,
+      intermediatePolygons,
     };
 
     TrajectoryDebugLogger.logVisibility(visibilityInfo);

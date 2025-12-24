@@ -5,6 +5,7 @@
  * - SimpleVisibilityCalculator: Main visibility algorithm (new)
  * - ValidRegionRenderer: Dark overlay rendering
  * - VisibilityFromChain: ImageChain-derived visibility
+ * - AnalyticalPropagation: Unified visibility with intermediate polygons
  *
  * Legacy exports (deprecated, used by tests):
  * - ConeSection: Angular sector operations
@@ -16,6 +17,8 @@
 export * from "./SimpleVisibilityCalculator";
 export * from "./ValidRegionRenderer";
 export * from "./VisibilityFromChain";
+export * from "./AnalyticalPropagation";
+export * from "./PropagationTypes";
 
 // Legacy (kept for test compatibility, to be removed)
 export * from "./ConeSection";

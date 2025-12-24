@@ -42,6 +42,20 @@ export interface VisibilityDebugInfo {
     type: "surface" | "screen" | "origin";
   }>;
   isValid: boolean;
+  /** Intermediate polygons from propagation (for multi-surface plans) */
+  intermediatePolygons?: IntermediatePolygonDebugInfo[];
+}
+
+/**
+ * Debug info for an intermediate visibility polygon.
+ */
+export interface IntermediatePolygonDebugInfo {
+  stepIndex: number;
+  origin: Vector2;
+  vertexCount: number;
+  vertices: Vector2[];
+  isValid: boolean;
+  windowSurfaceId?: string;
 }
 
 export interface SurfaceDebugInfo {
@@ -384,6 +398,12 @@ class TrajectoryDebugLoggerImpl {
     let visibilityComment = "";
     if (log.visibility) {
       const v = log.visibility;
+      let intermediateSection = "";
+      if (v.intermediatePolygons && v.intermediatePolygons.length > 0) {
+        intermediateSection = `
+ * - Intermediate Polygons: ${v.intermediatePolygons.length}
+${v.intermediatePolygons.map((p, i) => ` *   Step ${p.stepIndex}: ${p.vertexCount} vertices, origin=(${p.origin.x.toFixed(1)}, ${p.origin.y.toFixed(1)})${p.windowSurfaceId ? `, window=${p.windowSurfaceId}` : ''}`).join('\n')}`;
+      }
       visibilityComment = `
 /**
  * Visibility Debug Info:
@@ -393,7 +413,7 @@ class TrajectoryDebugLoggerImpl {
 ${v.coneSections.map((s, i) => ` *   [${i}] ${(s.startAngle * 180 / Math.PI).toFixed(1)}° to ${(s.endAngle * 180 / Math.PI).toFixed(1)}°`).join('\n')}
  * - Outline Vertices: ${v.outlineVertices.length}
 ${v.outlineVertices.slice(0, 20).map((v, i) => ` *   [${i}] (${v.position.x.toFixed(1)}, ${v.position.y.toFixed(1)}) - ${v.type}`).join('\n')}${v.outlineVertices.length > 20 ? `\n *   ... and ${v.outlineVertices.length - 20} more` : ''}
- * - Is Valid: ${v.isValid}
+ * - Is Valid: ${v.isValid}${intermediateSection}
  */`;
     }
 

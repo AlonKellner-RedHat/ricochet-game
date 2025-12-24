@@ -8,6 +8,7 @@
  */
 
 import { calculateSimpleVisibility } from "@/trajectory-v2/visibility/SimpleVisibilityCalculator";
+import { propagateWithIntermediates } from "@/trajectory-v2/visibility/AnalyticalPropagation";
 import { expect } from "vitest";
 import type { FirstPrincipleAssertion, TestResults, TestSetup } from "../types";
 
@@ -914,6 +915,158 @@ function reflectPointThroughSurface(
 }
 
 /**
+ * Principle V.8: Intermediate Polygon Containment
+ *
+ * The intermediate polygon Pk in an N-surface plan is fully contained within
+ * the final polygon of the first K surfaces plan.
+ *
+ * This ensures that each subsequent surface can only RESTRICT visibility,
+ * never expand it. The window crops the polygon, removing area but never adding.
+ */
+export const intermediatePolygonContainment: FirstPrincipleAssertion = {
+  id: "intermediate-polygon-containment",
+  principle: "V.8",
+  description: "Intermediate polygon K is contained in final polygon of first K surfaces",
+  assert: (setup: TestSetup, _results: TestResults) => {
+    // Only applies when there are at least 2 planned surfaces
+    if (setup.plannedSurfaces.length < 2) return;
+
+    // Skip complex setups
+    if (setup.tags?.includes("skip-V.8") || setup.tags?.includes("bypass")) return;
+
+    // Get propagation for full plan
+    const fullResult = propagateWithIntermediates(
+      setup.player,
+      setup.plannedSurfaces,
+      setup.allSurfaces,
+      SCREEN_BOUNDS
+    );
+
+    // Skip if propagation failed (bypass, etc.)
+    if (!fullResult.isValid) return;
+
+    // For each intermediate polygon K, check containment in final polygon of [S1..SK]
+    for (let k = 1; k < setup.plannedSurfaces.length; k++) {
+      const intermediateK = fullResult.steps[k]!.polygon;
+
+      // Skip if intermediate is empty
+      if (intermediateK.length < 3) continue;
+
+      // Get final polygon for partial plan [S1..SK]
+      const partialResult = propagateWithIntermediates(
+        setup.player,
+        setup.plannedSurfaces.slice(0, k),
+        setup.allSurfaces,
+        SCREEN_BOUNDS
+      );
+
+      // Skip if partial plan failed
+      if (!partialResult.isValid) continue;
+
+      const partialFinal = partialResult.finalPolygon;
+
+      // Check that every vertex of intermediateK is inside or on partialFinal
+      for (const v of intermediateK) {
+        const contained = isPointInOrOnPolygon(v, partialFinal);
+        expect(
+          contained,
+          `V.8: Intermediate polygon ${k} vertex (${v.x.toFixed(1)}, ${v.y.toFixed(1)}) should be contained in final polygon of first ${k} surfaces. Setup: ${setup.name}`
+        ).toBe(true);
+      }
+    }
+  },
+};
+
+/**
+ * Principle V.9: Intermediate Polygon Equality
+ *
+ * The intermediate polygon Pk in an N-surface plan is exactly equal to
+ * the intermediate polygon Pk in any T-surface plan where K < T ≤ N.
+ *
+ * This ensures that future surfaces don't affect past intermediate results.
+ */
+export const intermediatePolygonEquality: FirstPrincipleAssertion = {
+  id: "intermediate-polygon-equality",
+  principle: "V.9",
+  description: "Intermediate polygon K is equal across different plan lengths",
+  assert: (setup: TestSetup, _results: TestResults) => {
+    // Only applies when there are at least 2 planned surfaces
+    if (setup.plannedSurfaces.length < 2) return;
+
+    // Skip complex setups
+    if (setup.tags?.includes("skip-V.9") || setup.tags?.includes("bypass")) return;
+
+    // Get propagation for full plan
+    const fullResult = propagateWithIntermediates(
+      setup.player,
+      setup.plannedSurfaces,
+      setup.allSurfaces,
+      SCREEN_BOUNDS
+    );
+
+    // Skip if propagation failed
+    if (!fullResult.isValid) return;
+
+    // For each intermediate polygon K, compare with same step in shorter plans
+    for (let k = 0; k < setup.plannedSurfaces.length; k++) {
+      const fullStepK = fullResult.steps[k]!.polygon;
+
+      // Compare with plans of length K+1, K+2, ... , N-1
+      for (let t = k + 1; t < setup.plannedSurfaces.length; t++) {
+        const partialResult = propagateWithIntermediates(
+          setup.player,
+          setup.plannedSurfaces.slice(0, t),
+          setup.allSurfaces,
+          SCREEN_BOUNDS
+        );
+
+        // Skip if partial plan failed
+        if (!partialResult.isValid) continue;
+
+        const partialStepK = partialResult.steps[k]!.polygon;
+
+        // Check that polygons are equal
+        expect(
+          fullStepK.length,
+          `V.9: Step ${k} polygon length should be same for plan length ${setup.plannedSurfaces.length} and ${t}`
+        ).toBe(partialStepK.length);
+
+        // Check vertex equality
+        for (let i = 0; i < fullStepK.length; i++) {
+          const v1 = fullStepK[i]!;
+          const v2 = partialStepK[i]!;
+
+          expect(v1.x).toBeCloseTo(v2.x, 2);
+          expect(v1.y).toBeCloseTo(v2.y, 2);
+        }
+      }
+    }
+  },
+};
+
+/**
+ * Helper: Check if a point is inside or on a polygon.
+ */
+function isPointInOrOnPolygon(
+  point: { x: number; y: number },
+  polygon: readonly { x: number; y: number }[],
+  tolerance: number = 2.0
+): boolean {
+  if (polygon.length < 3) return false;
+
+  // Check if point is close to any edge
+  for (let i = 0; i < polygon.length; i++) {
+    const p1 = polygon[i]!;
+    const p2 = polygon[(i + 1) % polygon.length]!;
+    const dist = pointToSegmentDistance(point, p1, p2);
+    if (dist < tolerance) return true;
+  }
+
+  // Check if point is inside
+  return isPointInPolygon(point, polygon);
+}
+
+/**
  * All visibility/lighting assertions.
  */
 export const visibilityLightingAssertions: FirstPrincipleAssertion[] = [
@@ -924,4 +1077,6 @@ export const visibilityLightingAssertions: FirstPrincipleAssertion[] = [
   lightDivergenceCorrelation,
   nearestSurfaceEdgeInOutline,
   visibilityPolygonAngularOrder,
+  intermediatePolygonContainment,
+  intermediatePolygonEquality,
 ];

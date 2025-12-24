@@ -8,6 +8,9 @@
  * 1. Visibility derives from ImageChain rays (same as trajectory)
  * 2. A cursor is lit iff its ImageChain shows no divergence
  * 3. No angle calculations - uses ray-segment intersection
+ *
+ * Now includes the new analytical propagation with intermediate polygons
+ * for V.8 and V.9 compliance.
  */
 
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
@@ -21,6 +24,10 @@ import {
   calculateRayVisibility,
   isCursorLit as isCursorLitCore,
 } from "@/trajectory-v2/visibility/RayBasedVisibility";
+import {
+  propagateWithIntermediates,
+  type PropagationResult,
+} from "@/trajectory-v2/visibility/AnalyticalPropagation";
 
 /**
  * Ray-based visibility calculator implementation.
@@ -75,5 +82,33 @@ export class RayBasedVisibilityCalculator implements IVisibilityCalculator {
   ): boolean {
     return isCursorLitCore(player, cursor, plannedSurfaces, allSurfaces);
   }
+
+  /**
+   * Calculate visibility with intermediate polygons for V.8/V.9 compliance.
+   *
+   * This uses the new analytical propagation algorithm that builds
+   * N+1 intermediate polygons for N planned surfaces.
+   *
+   * The intermediate polygons satisfy:
+   * - V.8: Intermediate Pk ⊆ Final([S1..Sk])
+   * - V.9: Intermediate Pk is equal across different plan lengths
+   *
+   * @param player Player position
+   * @param plannedSurfaces Ordered planned surfaces
+   * @param allSurfaces All surfaces
+   * @param screenBounds Screen boundaries
+   * @returns Propagation result with all intermediate polygons
+   */
+  calculateWithIntermediates(
+    player: Vector2,
+    plannedSurfaces: readonly Surface[],
+    allSurfaces: readonly Surface[],
+    screenBounds: ScreenBounds
+  ): PropagationResult {
+    return propagateWithIntermediates(player, plannedSurfaces, allSurfaces, screenBounds);
+  }
 }
+
+// Re-export PropagationResult for consumers
+export type { PropagationResult };
 

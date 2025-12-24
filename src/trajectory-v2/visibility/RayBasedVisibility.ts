@@ -504,52 +504,75 @@ function calculatePlannedRayVisibility(
     }
   }
 
-  // For off-screen player image, we need to find where rays from the player image
-  // through the window endpoints exit on the player's side
-  // Cast rays through window and extend to find hits on reflective side
-  for (const endpoint of [windowStart, windowEnd]) {
-    const angle = Math.atan2(endpoint.y - playerImage.y, endpoint.x - playerImage.x);
+  // Cast rays through the window at multiple sample points
+  // This ensures we capture the full visible region, including areas between obstacles
+  const windowSamples = 10; // Number of sample points along the window
+  for (let i = 0; i <= windowSamples; i++) {
+    const t = i / windowSamples;
+    const samplePoint = {
+      x: windowStart.x + t * (windowEnd.x - windowStart.x),
+      y: windowStart.y + t * (windowEnd.y - windowStart.y),
+    };
 
-    // Cast ray THROUGH the window endpoint to find where it hits on the player's side
-    const throughHit = castRayThroughWindow(playerImage, endpoint, obstacleSurfaces, screenBounds);
+    const angle = Math.atan2(samplePoint.y - playerImage.y, samplePoint.x - playerImage.x);
+
+    // Cast ray THROUGH the window sample point to find where it hits on the player's side
+    const throughHit = castRayThroughWindow(playerImage, samplePoint, obstacleSurfaces, screenBounds);
     if (throughHit && isOnReflectiveSide(throughHit)) {
       rayData.push({ angle, point: throughHit });
-
-      // Also cast grazing rays around this direction
-      const beforeHitThrough = castRayThroughWindow(playerImage, {
-        x: endpoint.x + Math.cos(angle - epsilon) * 10,
-        y: endpoint.y + Math.sin(angle - epsilon) * 10
-      }, obstacleSurfaces, screenBounds);
-      if (beforeHitThrough && isOnReflectiveSide(beforeHitThrough)) {
-        rayData.push({ angle: angle - epsilon * 2, point: beforeHitThrough });
-      }
-
-      const afterHitThrough = castRayThroughWindow(playerImage, {
-        x: endpoint.x + Math.cos(angle + epsilon) * 10,
-        y: endpoint.y + Math.sin(angle + epsilon) * 10
-      }, obstacleSurfaces, screenBounds);
-      if (afterHitThrough && isOnReflectiveSide(afterHitThrough)) {
-        rayData.push({ angle: angle + epsilon * 2, point: afterHitThrough });
-      }
     }
   }
 
-  // Add screen boundary points that are visible through the window
-  // This is especially important for off-screen origins
-  const screenEdgePoints = [
-    // Sample points along screen edges
-    { x: screenBounds.minX, y: (screenBounds.minY + screenBounds.maxY) / 2 },
-    { x: screenBounds.maxX, y: (screenBounds.minY + screenBounds.maxY) / 2 },
-    { x: (screenBounds.minX + screenBounds.maxX) / 2, y: screenBounds.minY },
-    { x: (screenBounds.minX + screenBounds.maxX) / 2, y: screenBounds.maxY },
+  // Also cast grazing rays at window endpoints for edge definition
+  for (const endpoint of [windowStart, windowEnd]) {
+    const angle = Math.atan2(endpoint.y - playerImage.y, endpoint.x - playerImage.x);
+
+    // Grazing rays just inside the window
+    const beforeHitThrough = castRayThroughWindow(playerImage, {
+      x: endpoint.x + Math.cos(angle - epsilon) * 10,
+      y: endpoint.y + Math.sin(angle - epsilon) * 10
+    }, obstacleSurfaces, screenBounds);
+    if (beforeHitThrough && isOnReflectiveSide(beforeHitThrough)) {
+      rayData.push({ angle: angle - epsilon * 2, point: beforeHitThrough });
+    }
+
+    const afterHitThrough = castRayThroughWindow(playerImage, {
+      x: endpoint.x + Math.cos(angle + epsilon) * 10,
+      y: endpoint.y + Math.sin(angle + epsilon) * 10
+    }, obstacleSurfaces, screenBounds);
+    if (afterHitThrough && isOnReflectiveSide(afterHitThrough)) {
+      rayData.push({ angle: angle + epsilon * 2, point: afterHitThrough });
+    }
+  }
+
+  // Add screen corner points that are visible through the window
+  // IMPORTANT: We cast rays through window to find actual hit points,
+  // not just add screen corners directly (which ignores obstacles after the window)
+  const screenCorners = [
+    { x: screenBounds.minX, y: screenBounds.minY },
+    { x: screenBounds.maxX, y: screenBounds.minY },
+    { x: screenBounds.maxX, y: screenBounds.maxY },
+    { x: screenBounds.minX, y: screenBounds.maxY },
   ];
 
-  for (const point of screenEdgePoints) {
-    if (!isOnReflectiveSide(point)) continue;
-    if (!rayPassesThroughWindow(playerImage, point, lastSurface)) continue;
+  for (const corner of screenCorners) {
+    if (!isOnReflectiveSide(corner)) continue;
+    if (!rayPassesThroughWindow(playerImage, corner, lastSurface)) continue;
 
-    const angle = Math.atan2(point.y - playerImage.y, point.x - playerImage.x);
-    rayData.push({ angle, point });
+    // Cast ray through the window to find where it actually hits (respecting obstacles)
+    const angle = Math.atan2(corner.y - playerImage.y, corner.x - playerImage.x);
+
+    // Use the window midpoint as the "through" point for this direction
+    const windowMid = {
+      x: (windowStart.x + windowEnd.x) / 2,
+      y: (windowStart.y + windowEnd.y) / 2,
+    };
+
+    // Cast ray through window and find first obstacle hit on the far side
+    const throughHit = castRayThroughWindow(playerImage, windowMid, obstacleSurfaces, screenBounds);
+    if (throughHit && isOnReflectiveSide(throughHit)) {
+      rayData.push({ angle, point: throughHit });
+    }
   }
 
   // Add obstacle endpoints that are visible through the window
