@@ -37,6 +37,7 @@ import {
   type ScreenBounds as RaySectorBounds,
   type ProjectionResult,
   createFullSector,
+  createSectorFromSurface,
   fullSectors,
   isFullSector,
   isPointInSector,
