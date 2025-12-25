@@ -888,7 +888,8 @@ export function projectSectorsThroughObstacles(
     }
 
     // Sort vertices for this sector's polygon
-    const sortedSectorVertices = sortPolygonVertices(sectorVertices, origin);
+    // Pass the sector's startLine so on-surface points are grouped at the end
+    const sortedSectorVertices = sortPolygonVertices(sectorVertices, origin, sector.startLine);
 
     if (sortedSectorVertices.length >= 3) {
       sectorPolygons.push(sortedSectorVertices);
@@ -1116,27 +1117,159 @@ function sortPolygonVertices(
     return dist < 2.0; // Slightly larger tolerance
   };
 
-  // Calculate angle for each vertex and classify
-  const offSurface: Array<{ point: Vector2; angle: number }> = [];
-  const onSurface: Array<{ point: Vector2; angle: number }> = [];
+  // Calculate angle and distance for each vertex and classify
+  const offSurface: Array<{ point: Vector2; angle: number; dist: number }> = [];
+  const onSurface: Array<{ point: Vector2; angle: number; dist: number }> = [];
 
   for (const point of vertices) {
-    const angle = Math.atan2(point.y - origin.y, point.x - origin.x);
+    const dx = point.x - origin.x;
+    const dy = point.y - origin.y;
+    const angle = Math.atan2(dy, dx);
+    const dist = Math.sqrt(dx * dx + dy * dy);
     if (startLine && isOnStartLine(point)) {
-      onSurface.push({ point, angle });
+      onSurface.push({ point, angle, dist });
     } else {
-      offSurface.push({ point, angle });
+      offSurface.push({ point, angle, dist });
     }
   }
 
-  // Sort off-surface by angle ascending (counter-clockwise)
-  offSurface.sort((a, b) => a.angle - b.angle);
+  // For full-sector visibility, just sort everything by angle
+  // The startLine only affects ray casting, not polygon construction
+  // For now, always use simple angular sorting - the complex on-surface handling
+  // causes issues with off-screen origins
+  const isEffectivelyFullSector = true; // Always use simple sorting
+  
+  if (isEffectivelyFullSector) {
+    const allPoints = [...offSurface, ...onSurface];
+    allPoints.sort((a, b) => {
+      const angleDiff = a.angle - b.angle;
+      if (Math.abs(angleDiff) < 0.0001) {
+        return a.dist - b.dist;
+      }
+      return angleDiff;
+    });
 
-  // Sort on-surface by angle DESCENDING (to close the polygon properly)
-  onSurface.sort((a, b) => b.angle - a.angle);
+    const result: Vector2[] = [];
+    const epsilon = 0.5;
+    for (const { point } of allPoints) {
+      const isDuplicate = result.some(
+        (p) => Math.abs(p.x - point.x) < epsilon && Math.abs(p.y - point.y) < epsilon
+      );
+      if (!isDuplicate) {
+        result.push(point);
+      }
+    }
+    return result;
+  }
 
-  // Concatenate: off-surface first, then on-surface in reverse order
-  const sorted = [...offSurface, ...onSurface];
+  // With a startLine (reflected sector):
+  // The polygon is a "funnel" shape where on-surface points form the narrow end.
+  // 
+  // Strategy:
+  // 1. Sort off-surface points by angle
+  // 2. Sort on-surface points by position along the surface line
+  // 3. Find the angular range where on-surface points belong
+  // 4. Insert on-surface points as a group at that position
+
+  // Sort off-surface by angle
+  offSurface.sort((a, b) => {
+    const angleDiff = a.angle - b.angle;
+    if (Math.abs(angleDiff) < 0.0001) {
+      return a.dist - b.dist;
+    }
+    return angleDiff;
+  });
+
+  // Sort on-surface by position along the line (using the t parameter)
+  const lineDir = {
+    x: startLine.end.x - startLine.start.x,
+    y: startLine.end.y - startLine.start.y,
+  };
+  const lineLen = Math.sqrt(lineDir.x * lineDir.x + lineDir.y * lineDir.y);
+  
+  onSurface.sort((a, b) => {
+    const tA = ((a.point.x - startLine.start.x) * lineDir.x + (a.point.y - startLine.start.y) * lineDir.y) / (lineLen * lineLen);
+    const tB = ((b.point.x - startLine.start.x) * lineDir.x + (b.point.y - startLine.start.y) * lineDir.y) / (lineLen * lineLen);
+    return tA - tB;
+  });
+
+  // Find where to insert on-surface points in the off-surface sequence.
+  // On-surface points should be inserted at the position corresponding to
+  // the angular range of the surface.
+  if (offSurface.length === 0) {
+    // Only on-surface points
+    const result: Vector2[] = [];
+    const epsilon = 0.5;
+    for (const { point } of onSurface) {
+      const isDuplicate = result.some(
+        (p) => Math.abs(p.x - point.x) < epsilon && Math.abs(p.y - point.y) < epsilon
+      );
+      if (!isDuplicate) {
+        result.push(point);
+      }
+    }
+    return result;
+  }
+
+  // Find the angular range of on-surface points
+  const minOnAngle = Math.min(...onSurface.map(p => p.angle));
+  const maxOnAngle = Math.max(...onSurface.map(p => p.angle));
+  
+  // Find where to insert on-surface points in the off-surface sequence.
+  // The on-surface points should be inserted where their angular range fits.
+  
+  // Find the index in offSurface where the on-surface range begins
+  let insertIndex = 0;
+  for (let i = 0; i < offSurface.length; i++) {
+    if (offSurface[i]!.angle > minOnAngle) {
+      insertIndex = i;
+      break;
+    }
+    insertIndex = i + 1;
+  }
+  
+  // Split off-surface into before and after the on-surface range
+  const beforeOn: typeof offSurface = [];
+  const afterOn: typeof offSurface = [];
+  
+  for (let i = 0; i < offSurface.length; i++) {
+    const p = offSurface[i]!;
+    if (p.angle < minOnAngle) {
+      beforeOn.push(p);
+    } else if (p.angle > maxOnAngle) {
+      afterOn.push(p);
+    }
+    // Points within the on-surface angular range are skipped
+    // (they would overlap with on-surface points)
+  }
+  
+  // Determine the order for on-surface points based on how they connect
+  // to the neighboring off-surface points
+  if (beforeOn.length > 0 && afterOn.length > 0) {
+    const lastBefore = beforeOn[beforeOn.length - 1]!;
+    const firstAfter = afterOn[0]!;
+    
+    const firstOnAngle = onSurface[0]?.angle ?? 0;
+    const lastOnAngle = onSurface[onSurface.length - 1]?.angle ?? 0;
+    
+    const angularDist = (a: number, b: number): number => {
+      let diff = Math.abs(a - b);
+      if (diff > Math.PI) diff = 2 * Math.PI - diff;
+      return diff;
+    };
+    
+    // Normal: lastBefore -> firstOn -> ... -> lastOn -> firstAfter
+    // Reversed: lastBefore -> lastOn -> ... -> firstOn -> firstAfter
+    const normalDist = angularDist(lastBefore.angle, firstOnAngle) + angularDist(lastOnAngle, firstAfter.angle);
+    const reversedDist = angularDist(lastBefore.angle, lastOnAngle) + angularDist(firstOnAngle, firstAfter.angle);
+    
+    if (reversedDist < normalDist) {
+      onSurface.reverse();
+    }
+  }
+
+  // Build the sorted array: beforeOn + onSurface + afterOn
+  const sorted = [...beforeOn, ...onSurface, ...afterOn];
 
   // Deduplicate
   const result: Vector2[] = [];
