@@ -965,36 +965,27 @@ function castRayToFirstObstacle(
     }
   }
 
-  // Check screen boundaries ONLY if origin is inside the screen
-  // When origin is off-screen, we want rays to hit real obstacles (walls), not screen boundaries
-  const isOriginInsideScreen =
-    origin.x >= bounds.minX &&
-    origin.x <= bounds.maxX &&
-    origin.y >= bounds.minY &&
-    origin.y <= bounds.maxY;
+  // Check screen boundaries
+  const screenEdges = [
+    { start: { x: bounds.minX, y: bounds.minY }, end: { x: bounds.maxX, y: bounds.minY } },
+    { start: { x: bounds.maxX, y: bounds.minY }, end: { x: bounds.maxX, y: bounds.maxY } },
+    { start: { x: bounds.maxX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.maxY } },
+    { start: { x: bounds.minX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.minY } },
+  ];
 
-  if (isOriginInsideScreen) {
-    const screenEdges = [
-      { start: { x: bounds.minX, y: bounds.minY }, end: { x: bounds.maxX, y: bounds.minY } },
-      { start: { x: bounds.maxX, y: bounds.minY }, end: { x: bounds.maxX, y: bounds.maxY } },
-      { start: { x: bounds.maxX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.maxY } },
-      { start: { x: bounds.minX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.minY } },
-    ];
+  for (const edge of screenEdges) {
+    const hit = raySegmentIntersection(
+      origin,
+      { x: origin.x + dx * rayScale, y: origin.y + dy * rayScale },
+      edge.start,
+      edge.end
+    );
 
-    for (const edge of screenEdges) {
-      const hit = raySegmentIntersection(
-        origin,
-        { x: origin.x + dx * rayScale, y: origin.y + dy * rayScale },
-        edge.start,
-        edge.end
-      );
-
-      if (hit && hit.t > minT && hit.t < closestT) {
-        closestT = hit.t;
-        closestPoint = hit.point;
-        closestObstacle = null;
-        isOnTarget = false;
-      }
+    if (hit && hit.t > minT && hit.t < closestT) {
+      closestT = hit.t;
+      closestPoint = hit.point;
+      closestObstacle = null;
+      isOnTarget = false;
     }
   }
 
@@ -1061,90 +1052,34 @@ function blockSectorsAtPoint(
 
 /**
  * Sort polygon vertices for proper polygon construction.
- *
- * For sectors with a startLine (reflected sectors):
- * 1. Separate points into "off-surface" and "on-surface"
- * 2. Sort off-surface points by angle ascending (counter-clockwise trace)
- * 3. Sort on-surface points in REVERSE angle order (to close the polygon)
- * 4. Concatenate: off-surface first, then on-surface
- *
- * This creates a polygon that traces the visible boundary, then returns
- * along the surface to close the loop.
+ * Always uses origin-based angular sorting with distance as tiebreaker.
  */
 function sortPolygonVertices(
   vertices: Vector2[],
   origin: Vector2,
-  startLine?: { start: Vector2; end: Vector2 }
+  _startLine?: { start: Vector2; end: Vector2 }
 ): Vector2[] {
   if (vertices.length === 0) return [];
 
-  // Helper to check if point is on startLine
-  const isOnStartLine = (point: Vector2): boolean => {
-    if (!startLine) return false;
-    const { start, end } = startLine;
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq < 1e-10) return false;
-
-    const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lenSq;
-    if (t < -0.01 || t > 1.01) return false;
-
-    const projX = start.x + t * dx;
-    const projY = start.y + t * dy;
-    const dist = Math.sqrt((point.x - projX) ** 2 + (point.y - projY) ** 2);
-    return dist < 2.0; // Slightly larger tolerance
-  };
-
-  // Calculate angle and distance for each vertex and classify
-  const offSurface: Array<{ point: Vector2; angle: number; dist: number }> = [];
-  const onSurface: Array<{ point: Vector2; angle: number; dist: number }> = [];
+  // Calculate angle and distance for each vertex
+  const allPoints: Array<{ point: Vector2; angle: number; dist: number }> = [];
 
   for (const point of vertices) {
     const dx = point.x - origin.x;
     const dy = point.y - origin.y;
     const angle = Math.atan2(dy, dx);
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (startLine && isOnStartLine(point)) {
-      onSurface.push({ point, angle, dist });
-    } else {
-      offSurface.push({ point, angle, dist });
-    }
+    allPoints.push({ point, angle, dist });
   }
 
-  // Merge all points
-  const allPoints = [...offSurface, ...onSurface];
-
-  // If we have a startLine (reflected sector with off-screen origin),
-  // use centroid-based sorting instead of origin-based sorting.
-  // This produces valid simple polygons for funnel-shaped visible regions.
-  if (startLine && allPoints.length >= 3) {
-    // Calculate centroid
-    let cx = 0,
-      cy = 0;
-    for (const p of allPoints) {
-      cx += p.point.x;
-      cy += p.point.y;
+  // Sort by angle from origin, with distance as tiebreaker
+  allPoints.sort((a, b) => {
+    const angleDiff = a.angle - b.angle;
+    if (Math.abs(angleDiff) < 0.0001) {
+      return a.dist - b.dist;
     }
-    cx /= allPoints.length;
-    cy /= allPoints.length;
-
-    // Sort by angle from centroid
-    allPoints.sort((a, b) => {
-      const angleA = Math.atan2(a.point.y - cy, a.point.x - cx);
-      const angleB = Math.atan2(b.point.y - cy, b.point.x - cx);
-      return angleA - angleB;
-    });
-  } else {
-    // For on-screen origins, use origin-based sorting
-    allPoints.sort((a, b) => {
-      const angleDiff = a.angle - b.angle;
-      if (Math.abs(angleDiff) < 0.0001) {
-        return a.dist - b.dist;
-      }
-      return angleDiff;
-    });
-  }
+    return angleDiff;
+  });
 
   const result: Vector2[] = [];
   const epsilon = 0.5;
