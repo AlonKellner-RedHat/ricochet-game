@@ -1082,9 +1082,14 @@ function blockSectorsAtPoint(
 /**
  * Sort polygon vertices for proper polygon construction.
  *
- * For sectors with a startLine (reflected sectors), the visible region
- * is a wedge/funnel shape. All points should be sorted purely by angle
- * since the polygon traces from one sector boundary to the other.
+ * For sectors with a startLine (reflected sectors):
+ * 1. Separate points into "off-surface" and "on-surface"
+ * 2. Sort off-surface points by angle ascending (counter-clockwise trace)
+ * 3. Sort on-surface points in REVERSE angle order (to close the polygon)
+ * 4. Concatenate: off-surface first, then on-surface
+ *
+ * This creates a polygon that traces the visible boundary, then returns
+ * along the surface to close the loop.
  */
 function sortPolygonVertices(
   vertices: Vector2[],
@@ -1093,21 +1098,51 @@ function sortPolygonVertices(
 ): Vector2[] {
   if (vertices.length === 0) return [];
 
-  // Calculate angle for each vertex
-  const withAngles = vertices.map((point) => ({
-    point,
-    angle: Math.atan2(point.y - origin.y, point.x - origin.x),
-  }));
+  // Helper to check if point is on startLine
+  const isOnStartLine = (point: Vector2): boolean => {
+    if (!startLine) return false;
+    const { start, end } = startLine;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-10) return false;
 
-  // For narrow sectors (like reflected sectors), use simple angular sort
-  // The polygon is a wedge shape where all points should be in angular order
-  withAngles.sort((a, b) => a.angle - b.angle);
+    const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lenSq;
+    if (t < -0.01 || t > 1.01) return false;
+
+    const projX = start.x + t * dx;
+    const projY = start.y + t * dy;
+    const dist = Math.sqrt((point.x - projX) ** 2 + (point.y - projY) ** 2);
+    return dist < 2.0; // Slightly larger tolerance
+  };
+
+  // Calculate angle for each vertex and classify
+  const offSurface: Array<{ point: Vector2; angle: number }> = [];
+  const onSurface: Array<{ point: Vector2; angle: number }> = [];
+
+  for (const point of vertices) {
+    const angle = Math.atan2(point.y - origin.y, point.x - origin.x);
+    if (startLine && isOnStartLine(point)) {
+      onSurface.push({ point, angle });
+    } else {
+      offSurface.push({ point, angle });
+    }
+  }
+
+  // Sort off-surface by angle ascending (counter-clockwise)
+  offSurface.sort((a, b) => a.angle - b.angle);
+
+  // Sort on-surface by angle DESCENDING (to close the polygon properly)
+  onSurface.sort((a, b) => b.angle - a.angle);
+
+  // Concatenate: off-surface first, then on-surface in reverse order
+  const sorted = [...offSurface, ...onSurface];
 
   // Deduplicate
   const result: Vector2[] = [];
   const epsilon = 0.5;
 
-  for (const { point } of withAngles) {
+  for (const { point } of sorted) {
     const isDuplicate = result.some(
       (p) => Math.abs(p.x - point.x) < epsilon && Math.abs(p.y - point.y) < epsilon
     );
