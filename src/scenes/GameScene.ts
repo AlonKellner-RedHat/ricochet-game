@@ -4,6 +4,7 @@ import { RicochetSurface, WallSurface } from "@/surfaces";
 import type { Surface } from "@/surfaces";
 import { GameAdapter } from "@/trajectory-v2/GameAdapter";
 import { TrajectoryDebugLogger } from "@/trajectory-v2/TrajectoryDebugLogger";
+import type { Segment } from "@/trajectory-v2/visibility/ConeProjection";
 import Phaser from "phaser";
 
 /**
@@ -31,6 +32,12 @@ export class GameScene extends Phaser.Scene {
   // Player (movement only)
   private player!: Player;
   private playerGraphics!: Phaser.GameObjects.Graphics;
+
+  // Umbrella mode - creates a "window" above player for testing cone projection
+  private umbrellaEnabled = false;
+  private umbrellaGraphics!: Phaser.GameObjects.Graphics;
+  private static readonly UMBRELLA_WIDTH = 150;
+  private static readonly UMBRELLA_HEIGHT = 100; // Distance above player
 
   constructor() {
     super({ key: "GameScene" });
@@ -76,6 +83,12 @@ export class GameScene extends Phaser.Scene {
       this.trajectoryAdapter.toggleValidRegion();
     });
 
+    // Toggle umbrella mode with 'U' key
+    this.inputManager.onKeyPress("KeyU", () => {
+      this.umbrellaEnabled = !this.umbrellaEnabled;
+      console.log(`Umbrella mode: ${this.umbrellaEnabled ? "ON" : "OFF"}`);
+    });
+
     // Initialize trajectory v2 system
     this.trajectoryAdapter = new GameAdapter(this, {
       arrowSpeed: 800,
@@ -98,6 +111,9 @@ export class GameScene extends Phaser.Scene {
     // Create graphics for surfaces
     this.surfaceGraphics = this.add.graphics();
     this.drawSurfaces();
+
+    // Create graphics for umbrella
+    this.umbrellaGraphics = this.add.graphics();
 
     // Add title and control hints
     this.add
@@ -125,7 +141,7 @@ export class GameScene extends Phaser.Scene {
       .text(
         this.cameras.main.centerX,
         70,
-        "Debug: L=toggle logging • D=dump logs • E=export test setup • V=toggle visibility",
+        "Debug: L=logging • D=dump • E=export • V=visibility • U=umbrella",
         {
           fontFamily: "JetBrains Mono, monospace",
           fontSize: "10px",
@@ -149,14 +165,21 @@ export class GameScene extends Phaser.Scene {
     // Update player movement
     this.player.update(deltaSeconds, movementInput, this.surfaces);
 
-    // Update trajectory system
+    // Get current umbrella segment (if enabled)
+    const umbrella = this.getUmbrellaSegment();
+
+    // Update trajectory system with umbrella
     this.trajectoryAdapter.update(
       deltaSeconds,
       this.player.bowPosition,
       pointer,
       this.trajectoryAdapter.getPlannedSurfaces(),
-      this.surfaces
+      this.surfaces,
+      umbrella
     );
+
+    // Draw umbrella if enabled
+    this.drawUmbrella();
 
     // Update cursor based on hover state and cursor reachability
     if (this.hoveredSurface?.isPlannable()) {
@@ -539,6 +562,62 @@ export class GameScene extends Phaser.Scene {
     const newB = Math.min(255, Math.floor(b + (255 - b) * amount));
 
     return (newR << 16) | (newG << 8) | newB;
+  }
+
+  /**
+   * Get the current umbrella segment based on player position.
+   * Returns null if umbrella mode is disabled.
+   */
+  private getUmbrellaSegment(): Segment | null {
+    if (!this.umbrellaEnabled) {
+      return null;
+    }
+
+    const playerX = this.player.bowPosition.x;
+    const playerY = this.player.bowPosition.y;
+    const halfWidth = GameScene.UMBRELLA_WIDTH / 2;
+    const umbrellaY = playerY - GameScene.UMBRELLA_HEIGHT;
+
+    return {
+      start: { x: playerX - halfWidth, y: umbrellaY },
+      end: { x: playerX + halfWidth, y: umbrellaY },
+    };
+  }
+
+  /**
+   * Draw the umbrella if enabled.
+   */
+  private drawUmbrella(): void {
+    this.umbrellaGraphics.clear();
+
+    const umbrella = this.getUmbrellaSegment();
+    if (!umbrella) return;
+
+    // Draw umbrella as a thick cyan line
+    this.umbrellaGraphics.lineStyle(4, 0x00ffff, 1);
+    this.umbrellaGraphics.lineBetween(
+      umbrella.start.x,
+      umbrella.start.y,
+      umbrella.end.x,
+      umbrella.end.y
+    );
+
+    // Add glow effect
+    this.umbrellaGraphics.lineStyle(10, 0x00ffff, 0.3);
+    this.umbrellaGraphics.lineBetween(
+      umbrella.start.x,
+      umbrella.start.y,
+      umbrella.end.x,
+      umbrella.end.y
+    );
+
+    // Draw "U" indicator
+    this.umbrellaGraphics.fillStyle(0x00ffff, 0.8);
+    const midX = (umbrella.start.x + umbrella.end.x) / 2;
+    const midY = umbrella.start.y - 15;
+    
+    // Simple text indicator would require Phaser text, so just draw a small circle
+    this.umbrellaGraphics.fillCircle(midX, midY, 6);
   }
 
   /**

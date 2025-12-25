@@ -24,6 +24,12 @@ import {
   type PlannedPolygonDebugInfo,
 } from "../TrajectoryDebugLogger";
 import { propagateWithIntermediates } from "./AnalyticalPropagation";
+import {
+  createFullCone,
+  createConeThroughWindow,
+  projectCone,
+  type Segment,
+} from "./ConeProjection";
 import type { ScreenBounds } from "./ConePropagator";
 import type { ValidRegionOutline } from "./OutlineBuilder";
 
@@ -146,8 +152,9 @@ export class ValidRegionRenderer {
   /**
    * Calculate and render the valid region for given player and surfaces.
    *
-   * Uses the new SimpleVisibilityCalculator for robust ray-casting based
-   * visibility polygon generation.
+   * Uses either:
+   * - ConeProjection (new algorithm) when umbrella is provided
+   * - Legacy visibility calculator when no umbrella
    *
    * For planned surfaces, visibility is constrained to the reflective side
    * of the last planned surface (V.5 first principle).
@@ -155,20 +162,37 @@ export class ValidRegionRenderer {
    * @param player Player position
    * @param plannedSurfaces Planned surfaces (windows)
    * @param allSurfaces All surfaces in the scene
+   * @param umbrella Optional umbrella segment for windowed cone projection
    */
   render(
     player: Vector2,
     plannedSurfaces: readonly Surface[],
-    allSurfaces: readonly Surface[]
+    allSurfaces: readonly Surface[],
+    umbrella: Segment | null = null
   ): void {
-    // Calculate valid region using the configured visibility calculator
-    // The calculator handles the complexity of planned surfaces and V.5 constraints
-    const visibilityResult = this.visibilityCalculator.calculate(
-      player,
-      allSurfaces,
-      this.screenBounds,
-      plannedSurfaces
-    );
+    // Use new ConeProjection algorithm when umbrella is provided
+    // This is the clean, simple algorithm that properly handles windowed cones
+    let visibilityResult: { polygon: readonly Vector2[]; origin: Vector2; isValid: boolean };
+
+    if (umbrella) {
+      // Create cone through umbrella window
+      const cone = createConeThroughWindow(player, umbrella.start, umbrella.end);
+      const polygon = projectCone(cone, allSurfaces, this.screenBounds);
+
+      visibilityResult = {
+        polygon,
+        origin: player,
+        isValid: polygon.length >= 3,
+      };
+    } else {
+      // Use legacy calculator for backward compatibility
+      visibilityResult = this.visibilityCalculator.calculate(
+        player,
+        allSurfaces,
+        this.screenBounds,
+        plannedSurfaces
+      );
+    }
 
     // Convert to ValidRegionOutline format for compatibility
     const outline: ValidRegionOutline = {
@@ -244,9 +268,10 @@ export class ValidRegionRenderer {
     }
 
     // Render the overlay with valid region cutout
-    // Pass whether we have planned surfaces to determine rendering strategy
-    const hasPlannedSurfaces = plannedSurfaces.length > 0;
-    this.renderOverlayWithCutout(outline, hasPlannedSurfaces);
+    // Use polygon drawing (not triangle fan) when we have a window (umbrella or planned surfaces)
+    // Triangle fan from player only works for 360° visibility
+    const hasWindow = umbrella !== null || plannedSurfaces.length > 0;
+    this.renderOverlayWithCutout(outline, hasWindow);
 
     // Debug: show outline
     if (this.config.showOutline) {
@@ -323,15 +348,15 @@ export class ValidRegionRenderer {
    * 2. Draw valid region with ERASE to cut out
    * 3. Draw valid region again with lit alpha (lighter tint)
    *
-   * For planned surfaces, the origin is the player IMAGE which is on the
-   * non-reflective side of the surface. Using a triangle fan from this origin
-   * would incorrectly include the area between the origin and the surface.
-   * Instead, we render the polygon directly for planned surfaces.
+   * When there's a window (umbrella or planned surfaces), the visibility
+   * polygon does NOT include the origin. Using a triangle fan from origin
+   * would incorrectly include the area between origin and the window.
+   * Instead, we render the polygon directly.
    *
-   * For no planned surfaces, we use triangle fan from origin (the player)
-   * which gives correct visibility filling.
+   * For full 360° visibility (no window), we use triangle fan from origin
+   * (the player) which gives correct visibility filling.
    */
-  private renderOverlayWithCutout(outline: ValidRegionOutline, hasPlannedSurfaces: boolean): void {
+  private renderOverlayWithCutout(outline: ValidRegionOutline, hasWindow: boolean): void {
     const { minX, minY, maxX, maxY } = this.screenBounds;
     const vertices = outline.vertices;
     const origin = outline.origin;
@@ -353,13 +378,12 @@ export class ValidRegionRenderer {
     this.graphics.setBlendMode(BlendModes.ERASE);
     this.graphics.fillStyle(0xffffff, 1.0);
 
-    if (hasPlannedSurfaces) {
-      // For planned surfaces, draw the polygon directly
-      // The origin (player image) is on the non-reflective side,
-      // so triangle fan would include the wrong area
+    if (hasWindow) {
+      // For windowed visibility (umbrella or planned surfaces),
+      // draw the polygon directly - origin is not part of the polygon
       this.drawPolygon(edgeVertices);
     } else {
-      // For no planned surfaces, use triangle fan from player
+      // For full 360° visibility, use triangle fan from player
       this.drawTriangleFan(origin, edgeVertices);
     }
 
@@ -367,7 +391,7 @@ export class ValidRegionRenderer {
     this.graphics.setBlendMode(BlendModes.NORMAL);
     this.graphics.fillStyle(this.config.overlayColor, this.config.litAlpha);
 
-    if (hasPlannedSurfaces) {
+    if (hasWindow) {
       this.drawPolygon(edgeVertices);
     } else {
       this.drawTriangleFan(origin, edgeVertices);

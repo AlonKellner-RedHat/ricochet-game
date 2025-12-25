@@ -18,6 +18,7 @@ import { TrajectoryEngine } from "./engine/TrajectoryEngine";
 import { AimingSystem } from "./systems/AimingSystem";
 import { ArrowSystem } from "./systems/ArrowSystem";
 import { type IGraphics, RenderSystem } from "./systems/RenderSystem";
+import type { Segment } from "./visibility/ConeProjection";
 import {
   type IValidRegionGraphics,
   type ScreenBounds,
@@ -180,13 +181,21 @@ export class GameAdapter {
 
   /**
    * Update the adapter each frame.
+   *
+   * @param deltaSeconds - Time since last frame in seconds
+   * @param player - Player position
+   * @param cursor - Cursor position
+   * @param plannedSurfaces - Surfaces in the plan
+   * @param allSurfaces - All surfaces in the scene
+   * @param umbrella - Optional umbrella segment for windowed cone projection
    */
   update(
     deltaSeconds: number,
     player: Vector2,
     cursor: Vector2,
     plannedSurfaces: readonly Surface[],
-    allSurfaces: readonly Surface[]
+    allSurfaces: readonly Surface[],
+    umbrella: Segment | null = null
   ): void {
     // Cache for visibility rendering
     this.lastPlayer = player;
@@ -206,7 +215,7 @@ export class GameAdapter {
 
     // Render valid region overlay
     if (this.validRegionRenderer && this.showValidRegion) {
-      this.validRegionRenderer.render(player, plannedSurfaces, allSurfaces);
+      this.validRegionRenderer.render(player, plannedSurfaces, allSurfaces, umbrella);
     }
   }
 
