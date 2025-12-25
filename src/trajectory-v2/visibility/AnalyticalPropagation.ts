@@ -676,9 +676,15 @@ export function propagateWithIntermediates(
       sectorsForValid = [createSectorFromSurface(currentOrigin, previousSurface)];
     }
 
+    // For valid[K>0], exclude the surface we just reflected off from obstacles
+    // so rays can pass through it and reach other obstacles/screen bounds
+    const obstaclesForValid = k === 0
+      ? allSurfaces
+      : allSurfaces.filter(s => s.id !== plannedSurfaces[k - 1]!.id);
+
     const validProjection = projectSectorsThroughObstacles(
       sectorsForValid,
-      allSurfaces,
+      obstaclesForValid,
       null, // No target surface - project to all obstacles and screen bounds
       projectionBoundsForValid
     );
