@@ -965,29 +965,9 @@ function castRayToFirstObstacle(
     }
   }
 
-  // Check screen boundaries
-  const screenEdges = [
-    { start: { x: bounds.minX, y: bounds.minY }, end: { x: bounds.maxX, y: bounds.minY } },
-    { start: { x: bounds.maxX, y: bounds.minY }, end: { x: bounds.maxX, y: bounds.maxY } },
-    { start: { x: bounds.maxX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.maxY } },
-    { start: { x: bounds.minX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.minY } },
-  ];
-
-  for (const edge of screenEdges) {
-    const hit = raySegmentIntersection(
-      origin,
-      { x: origin.x + dx * rayScale, y: origin.y + dy * rayScale },
-      edge.start,
-      edge.end
-    );
-
-    if (hit && hit.t > minT && hit.t < closestT) {
-      closestT = hit.t;
-      closestPoint = hit.point;
-      closestObstacle = null;
-      isOnTarget = false;
-    }
-  }
+  // NOTE: We intentionally do NOT check screen boundaries here.
+  // The walls/obstacles are what block rays, not the screen viewport.
+  // Screen bounds are only used for clipping the final polygon if needed.
 
   if (!closestPoint) return null;
 
