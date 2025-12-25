@@ -965,27 +965,36 @@ function castRayToFirstObstacle(
     }
   }
 
-  // Check screen boundaries
-  const screenEdges = [
-    { start: { x: bounds.minX, y: bounds.minY }, end: { x: bounds.maxX, y: bounds.minY } },
-    { start: { x: bounds.maxX, y: bounds.minY }, end: { x: bounds.maxX, y: bounds.maxY } },
-    { start: { x: bounds.maxX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.maxY } },
-    { start: { x: bounds.minX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.minY } },
-  ];
+  // Check screen boundaries ONLY if origin is inside the screen
+  // When origin is off-screen, we want rays to hit real obstacles (walls), not screen boundaries
+  const isOriginInsideScreen =
+    origin.x >= bounds.minX &&
+    origin.x <= bounds.maxX &&
+    origin.y >= bounds.minY &&
+    origin.y <= bounds.maxY;
 
-  for (const edge of screenEdges) {
-    const hit = raySegmentIntersection(
-      origin,
-      { x: origin.x + dx * rayScale, y: origin.y + dy * rayScale },
-      edge.start,
-      edge.end
-    );
+  if (isOriginInsideScreen) {
+    const screenEdges = [
+      { start: { x: bounds.minX, y: bounds.minY }, end: { x: bounds.maxX, y: bounds.minY } },
+      { start: { x: bounds.maxX, y: bounds.minY }, end: { x: bounds.maxX, y: bounds.maxY } },
+      { start: { x: bounds.maxX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.maxY } },
+      { start: { x: bounds.minX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.minY } },
+    ];
 
-    if (hit && hit.t > minT && hit.t < closestT) {
-      closestT = hit.t;
-      closestPoint = hit.point;
-      closestObstacle = null;
-      isOnTarget = false;
+    for (const edge of screenEdges) {
+      const hit = raySegmentIntersection(
+        origin,
+        { x: origin.x + dx * rayScale, y: origin.y + dy * rayScale },
+        edge.start,
+        edge.end
+      );
+
+      if (hit && hit.t > minT && hit.t < closestT) {
+        closestT = hit.t;
+        closestPoint = hit.point;
+        closestObstacle = null;
+        isOnTarget = false;
+      }
     }
   }
 
