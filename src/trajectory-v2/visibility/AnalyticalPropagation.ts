@@ -662,22 +662,9 @@ export function propagateWithIntermediates(
     // but the angular extent should be full 360° (not constrained by the narrow sector)
     const projectionBoundsForValid: RaySectorBounds = bounds;
 
-    // Create full sectors for valid polygon, but preserve startLine from currentSectors
-    // This ensures rays start on the surface but can go in all directions
-    let sectorsForValid: RaySectors;
-    if (k === 0) {
-      // First step: full 360° visibility from player
-      sectorsForValid = fullSectors(currentOrigin);
-    } else {
-      // Reflected steps: full visibility but rays start on surface
-      const startLine = currentSectors[0]?.startLine;
-      sectorsForValid = [
-        {
-          ...createFullSector(currentOrigin),
-          startLine,
-        },
-      ];
-    }
+    // UNIFIED: Both valid[0] and valid[K] use the exact same logic
+    // Full 360° visibility from currentOrigin, treating it as if it were the player
+    const sectorsForValid: RaySectors = fullSectors(currentOrigin);
 
     const validProjection = projectSectorsThroughObstacles(
       sectorsForValid,

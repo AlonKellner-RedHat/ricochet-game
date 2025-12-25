@@ -14,13 +14,13 @@
  * The rays are defined by the origin and boundary points (NOT angles).
  */
 
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
 import {
-  reflectPointThroughLine,
-  pointSideOfLine,
   lineLineIntersection,
+  pointSideOfLine,
+  reflectPointThroughLine,
 } from "@/trajectory-v2/geometry/GeometryOps";
+import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 // =============================================================================
 // Core Types
@@ -163,10 +163,7 @@ export function isFullSector(sector: RaySector): boolean {
  * The ordering is determined by which endpoint is "left" when looking
  * from the origin (using cross-product).
  */
-export function createSectorFromSurface(
-  origin: Vector2,
-  surface: Surface
-): RaySector {
+export function createSectorFromSurface(origin: Vector2, surface: Surface): RaySector {
   const start = surface.segment.start;
   const end = surface.segment.end;
 
@@ -235,11 +232,7 @@ export function crossProduct(origin: Vector2, a: Vector2, b: Vector2): number {
  *
  * Convention: Counter-clockwise from right to left defines the interior.
  */
-export function isPointInSector(
-  point: Vector2,
-  sector: RaySector,
-  checkDistance: boolean = false
-): boolean {
+export function isPointInSector(point: Vector2, sector: RaySector, checkDistance = false): boolean {
   // Special case: full sector
   if (isFullSector(sector)) {
     return true;
@@ -285,12 +278,9 @@ export function isPointInSector(
   // This is needed when the origin is off-screen to exclude points between
   // the origin and the sector boundaries
   if (checkDistance) {
-    const distToPoint =
-      (point.x - origin.x) ** 2 + (point.y - origin.y) ** 2;
-    const distToRight =
-      (right.x - origin.x) ** 2 + (right.y - origin.y) ** 2;
-    const distToLeft =
-      (left.x - origin.x) ** 2 + (left.y - origin.y) ** 2;
+    const distToPoint = (point.x - origin.x) ** 2 + (point.y - origin.y) ** 2;
+    const distToRight = (right.x - origin.x) ** 2 + (right.y - origin.y) ** 2;
+    const distToLeft = (left.x - origin.x) ** 2 + (left.y - origin.y) ** 2;
     const minBoundaryDist = Math.min(distToRight, distToLeft);
 
     // Allow a small tolerance (95% of boundary distance)
@@ -305,10 +295,7 @@ export function isPointInSector(
 /**
  * Check if a point is exactly on a sector boundary.
  */
-export function isPointOnSectorBoundary(
-  point: Vector2,
-  sector: RaySector
-): boolean {
+export function isPointOnSectorBoundary(point: Vector2, sector: RaySector): boolean {
   if (isFullSector(sector)) {
     return false;
   }
@@ -385,10 +372,7 @@ export function reflectSectors(sectors: RaySectors, surface: Surface): RaySector
  *
  * Uses cross-product comparisons to find the more restrictive boundaries.
  */
-export function trimSectorBySurface(
-  sector: RaySector,
-  surface: Surface
-): RaySector | null {
+export function trimSectorBySurface(sector: RaySector, surface: Surface): RaySector | null {
   // Create the sector that represents the surface's angular extent
   const surfaceSector = createSectorFromSurface(sector.origin, surface);
 
@@ -405,10 +389,7 @@ export function trimSectorBySurface(
  * Trim multiple sectors by a surface.
  * Returns only the non-null results.
  */
-export function trimSectorsBySurface(
-  sectors: RaySectors,
-  surface: Surface
-): RaySectors {
+export function trimSectorsBySurface(sectors: RaySectors, surface: Surface): RaySectors {
   const result: RaySectors = [];
   for (const sector of sectors) {
     const trimmed = trimSectorBySurface(sector, surface);
@@ -425,10 +406,7 @@ export function trimSectorsBySurface(
  * Uses cross-product comparisons to find the more restrictive boundaries.
  * Returns null if the sectors don't overlap.
  */
-export function intersectSectors(
-  a: RaySector,
-  b: RaySector
-): RaySector | null {
+export function intersectSectors(a: RaySector, b: RaySector): RaySector | null {
   // Sectors must have the same origin
   // (In practice, we ensure this by construction)
   const origin = a.origin;
@@ -441,15 +419,17 @@ export function intersectSectors(
   // A's right boundary must be "inside" B (or on boundary)
   // AND A's left boundary must be "inside" B (or on boundary)
   // OR B's boundaries must be inside A
-  
+
   // Check if any boundary of A is inside B
-  const aRightInB = isPointInSector(a.rightBoundary, b) || isPointOnSectorBoundary(a.rightBoundary, b);
+  const aRightInB =
+    isPointInSector(a.rightBoundary, b) || isPointOnSectorBoundary(a.rightBoundary, b);
   const aLeftInB = isPointInSector(a.leftBoundary, b) || isPointOnSectorBoundary(a.leftBoundary, b);
-  
+
   // Check if any boundary of B is inside A
-  const bRightInA = isPointInSector(b.rightBoundary, a) || isPointOnSectorBoundary(b.rightBoundary, a);
+  const bRightInA =
+    isPointInSector(b.rightBoundary, a) || isPointOnSectorBoundary(b.rightBoundary, a);
   const bLeftInA = isPointInSector(b.leftBoundary, a) || isPointOnSectorBoundary(b.leftBoundary, a);
-  
+
   // If no boundary of either sector is inside the other, they don't overlap
   if (!aRightInB && !aLeftInB && !bRightInA && !bLeftInA) {
     return null;
@@ -459,7 +439,7 @@ export function intersectSectors(
   // (the one that is more clockwise, i.e., more to the right when looking from origin)
   const leftA = a.leftBoundary;
   const leftB = b.leftBoundary;
-  
+
   // Check which left boundary is more restrictive
   // If leftB is inside sector A (on the clockwise side of A's left), use leftB
   const leftBInA = isPointInSector(leftB, a) || isPointOnSectorBoundary(leftB, a);
@@ -530,18 +510,8 @@ export function blockSectorByObstacle(
   if (!startInside && !endInside) {
     // Obstacle might not overlap, or might fully contain the sector
     // Check if sector boundaries intersect the obstacle
-    const leftIntersects = rayIntersectsSegment(
-      origin,
-      sector.leftBoundary,
-      obsStart,
-      obsEnd
-    );
-    const rightIntersects = rayIntersectsSegment(
-      origin,
-      sector.rightBoundary,
-      obsStart,
-      obsEnd
-    );
+    const leftIntersects = rayIntersectsSegment(origin, sector.leftBoundary, obsStart, obsEnd);
+    const rightIntersects = rayIntersectsSegment(origin, sector.rightBoundary, obsStart, obsEnd);
 
     if (!leftIntersects && !rightIntersects) {
       // No overlap - return original sector
@@ -1135,20 +1105,21 @@ function sortPolygonVertices(
 
   // Merge all points
   const allPoints = [...offSurface, ...onSurface];
-  
+
   // If we have a startLine (reflected sector with off-screen origin),
   // use centroid-based sorting instead of origin-based sorting.
   // This produces valid simple polygons for funnel-shaped visible regions.
   if (startLine && allPoints.length >= 3) {
     // Calculate centroid
-    let cx = 0, cy = 0;
+    let cx = 0,
+      cy = 0;
     for (const p of allPoints) {
       cx += p.point.x;
       cy += p.point.y;
     }
     cx /= allPoints.length;
     cy /= allPoints.length;
-    
+
     // Sort by angle from centroid
     allPoints.sort((a, b) => {
       const angleA = Math.atan2(a.point.y - cy, a.point.x - cx);
@@ -1178,4 +1149,3 @@ function sortPolygonVertices(
   }
   return result;
 }
-
