@@ -851,10 +851,33 @@ export function projectSectorsThroughObstacles(
       }
     }
 
-    // Add sector boundary points
+    // Cast rays to sector boundaries (don't add boundaries directly - they may be blocked)
     if (!isFullSector(sector)) {
-      sectorVertices.push({ ...sector.leftBoundary });
-      sectorVertices.push({ ...sector.rightBoundary });
+      const leftStartRatio = computeRayStartRatio(origin, sector.leftBoundary, sector);
+      const leftHit = castRayToFirstObstacle(
+        origin,
+        sector.leftBoundary,
+        obstacles,
+        targetSurface,
+        bounds,
+        leftStartRatio
+      );
+      if (leftHit) {
+        sectorVertices.push(leftHit.point);
+      }
+
+      const rightStartRatio = computeRayStartRatio(origin, sector.rightBoundary, sector);
+      const rightHit = castRayToFirstObstacle(
+        origin,
+        sector.rightBoundary,
+        obstacles,
+        targetSurface,
+        bounds,
+        rightStartRatio
+      );
+      if (rightHit) {
+        sectorVertices.push(rightHit.point);
+      }
     }
 
     // Sort vertices for this sector's polygon
