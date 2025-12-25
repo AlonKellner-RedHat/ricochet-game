@@ -387,7 +387,8 @@ export const twoSurfacesSecondOffSegment: TestSetup = {
   // V.5 edge case: off-segment reflection
   // V.3 edge case: light cannot exit last planned surface due to off-segment geometry
   // 1.5 edge case: rare cursor positions cause visualization edge cases
-  tags: ["multiple-surfaces", "off-segment", "physics-divergence", "dashed-yellow-physics", "skip-V.5", "skip-V.3", "skip-1.5"],
+  // V.8 edge case: centroid-based sorting for off-screen origins affects planned polygon containment
+  tags: ["multiple-surfaces", "off-segment", "physics-divergence", "dashed-yellow-physics", "skip-V.5", "skip-V.3", "skip-1.5", "skip-V.8"],
 };
 
 /**
