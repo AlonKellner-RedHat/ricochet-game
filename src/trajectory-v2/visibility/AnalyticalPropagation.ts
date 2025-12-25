@@ -15,37 +15,37 @@
  * 4. Deterministic results for identical inputs
  */
 
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
 import {
+  type Ray,
+  type Segment,
   createRay,
   createRayWithStart,
   intersectRaySegment,
-  type Ray,
-  type Segment,
 } from "@/trajectory-v2/geometry/RayCore";
+import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type {
-  PropagationStep,
-  PropagationResult,
-  VisibilityWindow,
-  ValidPolygonStep,
   PlannedPolygonStep,
+  PropagationResult,
+  PropagationStep,
+  ValidPolygonStep,
+  VisibilityWindow,
 } from "./PropagationTypes";
 import {
-  type RaySectors,
   type RaySector,
+  type RaySectors,
+  type ScreenBounds as RaySectorBounds,
+  type ProjectionResult,
+  createFullSector,
+  fullSectors,
+  isFullSector,
   isPointInSector,
   isSectorsEmpty,
-  isFullSector,
-  crossProduct,
-  fullSectors,
-  trimSectorsBySurface,
+  projectSectorsThroughObstacles,
   reflectSectors,
-  createSectorFromSurface,
-  blockSectorsByObstacle,
 } from "./RaySector";
 
-export { type ScreenBounds } from "./PropagationTypes";
+export type { ScreenBounds } from "./PropagationTypes";
 
 /**
  * Build visibility polygon from an origin point.
@@ -120,9 +120,7 @@ export function buildVisibilityPolygon(
     // If sector constraint, check if target is inside any sector and get startRatio
     let startRatio = 0;
     if (sectorConstraint) {
-      const containingSector = sectorConstraint.find((sector) =>
-        isPointInSector(target, sector)
-      );
+      const containingSector = sectorConstraint.find((sector) => isPointInSector(target, sector));
       if (!containingSector) continue;
 
       // Compute startRatio for this ray based on the sector's startRatios
@@ -151,7 +149,11 @@ export function buildVisibilityPolygon(
     // Only cast grazing rays if they're also in the sector
     if (!sectorConstraint || sectorConstraint.some((s) => isPointInSector(targetLeft, s))) {
       const leftStartRatio = sectorConstraint
-        ? computeStartRatioForTarget(origin, targetLeft, sectorConstraint.find(s => isPointInSector(targetLeft, s))!)
+        ? computeStartRatioForTarget(
+            origin,
+            targetLeft,
+            sectorConstraint.find((s) => isPointInSector(targetLeft, s))!
+          )
         : 0;
       const leftHit = castRayToFirstHit(origin, targetLeft, obstacles, bounds, leftStartRatio);
       if (leftHit) {
@@ -163,7 +165,11 @@ export function buildVisibilityPolygon(
 
     if (!sectorConstraint || sectorConstraint.some((s) => isPointInSector(targetRight, s))) {
       const rightStartRatio = sectorConstraint
-        ? computeStartRatioForTarget(origin, targetRight, sectorConstraint.find(s => isPointInSector(targetRight, s))!)
+        ? computeStartRatioForTarget(
+            origin,
+            targetRight,
+            sectorConstraint.find((s) => isPointInSector(targetRight, s))!
+          )
         : 0;
       const rightHit = castRayToFirstHit(origin, targetRight, obstacles, bounds, rightStartRatio);
       if (rightHit) {
@@ -188,27 +194,42 @@ export function buildVisibilityPolygon(
         // Cast extended rays along sector boundaries to find far edge
         const farLeftTarget = { x: origin.x + 10 * ldx, y: origin.y + 10 * ldy };
         const leftExtStartRatio = computeStartRatioForTarget(origin, farLeftTarget, sector);
-        const leftHit = castRayToFirstHit(origin, farLeftTarget, obstacles, bounds, leftExtStartRatio);
+        const leftHit = castRayToFirstHit(
+          origin,
+          farLeftTarget,
+          obstacles,
+          bounds,
+          leftExtStartRatio
+        );
         if (leftHit) {
           hits.push({ point: leftHit, angle: Math.atan2(ldy, ldx) });
         }
 
         const farRightTarget = { x: origin.x + 10 * rdx, y: origin.y + 10 * rdy };
         const rightExtStartRatio = computeStartRatioForTarget(origin, farRightTarget, sector);
-        const rightHit = castRayToFirstHit(origin, farRightTarget, obstacles, bounds, rightExtStartRatio);
+        const rightHit = castRayToFirstHit(
+          origin,
+          farRightTarget,
+          obstacles,
+          bounds,
+          rightExtStartRatio
+        );
         if (rightHit) {
           hits.push({ point: rightHit, angle: Math.atan2(rdy, rdx) });
         }
 
         // Add surface endpoints as on-surface points (near boundary)
         // These will be sorted separately and appended after off-surface points
-        hits.push({ 
-          point: { ...sector.startLine.start }, 
-          angle: Math.atan2(sector.startLine.start.y - origin.y, sector.startLine.start.x - origin.x) 
+        hits.push({
+          point: { ...sector.startLine.start },
+          angle: Math.atan2(
+            sector.startLine.start.y - origin.y,
+            sector.startLine.start.x - origin.x
+          ),
         });
-        hits.push({ 
-          point: { ...sector.startLine.end }, 
-          angle: Math.atan2(sector.startLine.end.y - origin.y, sector.startLine.end.x - origin.x) 
+        hits.push({
+          point: { ...sector.startLine.end },
+          angle: Math.atan2(sector.startLine.end.y - origin.y, sector.startLine.end.x - origin.x),
         });
       } else if (!isFullSector(sector)) {
         // No startLine - just add boundary points
@@ -226,7 +247,7 @@ export function buildVisibilityPolygon(
   // New sorting scheme: separate off-surface and on-surface points
   // This creates a proper closed polygon for both empty and reflected plans
   const startLine = sectorConstraint?.[0]?.startLine;
-  
+
   // Helper to check if a point is on the startLine
   const isOnStartLine = (point: Vector2): boolean => {
     if (!startLine) return false;
@@ -236,22 +257,22 @@ export function buildVisibilityPolygon(
     const dy = end.y - start.y;
     const lenSq = dx * dx + dy * dy;
     if (lenSq < 1e-10) return false;
-    
+
     // Project point onto line
     const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lenSq;
     if (t < -0.01 || t > 1.01) return false;
-    
+
     // Check distance to line
     const projX = start.x + t * dx;
     const projY = start.y + t * dy;
     const dist = Math.sqrt((point.x - projX) ** 2 + (point.y - projY) ** 2);
     return dist < 1.0; // Within 1 pixel of line
   };
-  
+
   // Separate hits into off-surface and on-surface
   const offSurfaceHits: Array<{ point: Vector2; angle: number }> = [];
   const onSurfaceHits: Array<{ point: Vector2; angle: number }> = [];
-  
+
   for (const hit of hits) {
     if (isOnStartLine(hit.point)) {
       onSurfaceHits.push(hit);
@@ -259,13 +280,13 @@ export function buildVisibilityPolygon(
       offSurfaceHits.push(hit);
     }
   }
-  
+
   // Sort off-surface by angle (ascending) - traces far boundary
   offSurfaceHits.sort((a, b) => a.angle - b.angle);
-  
+
   // Sort on-surface by angle (descending) - traces near boundary in reverse
   onSurfaceHits.sort((a, b) => b.angle - a.angle);
-  
+
   // Concatenate: off-surface first, then on-surface
   const sortedHits = [...offSurfaceHits, ...onSurfaceHits];
 
@@ -277,9 +298,7 @@ export function buildVisibilityPolygon(
   for (const hit of sortedHits) {
     // Check if this point is too close to ANY existing point
     const isDuplicate = polygon.some(
-      (p) =>
-        Math.abs(p.x - hit.point.x) < posEpsilon &&
-        Math.abs(p.y - hit.point.y) < posEpsilon
+      (p) => Math.abs(p.x - hit.point.x) < posEpsilon && Math.abs(p.y - hit.point.y) < posEpsilon
     );
 
     if (isDuplicate) continue;
@@ -287,9 +306,7 @@ export function buildVisibilityPolygon(
     // Check if this point is too close to the PREVIOUS point
     if (polygon.length > 0) {
       const prev = polygon[polygon.length - 1]!;
-      const dist = Math.sqrt(
-        (hit.point.x - prev.x) ** 2 + (hit.point.y - prev.y) ** 2
-      );
+      const dist = Math.sqrt((hit.point.x - prev.x) ** 2 + (hit.point.y - prev.y) ** 2);
       if (dist < consecutiveEpsilon) continue;
     }
 
@@ -333,11 +350,7 @@ export function buildVisibilityPolygon(
  *
  * @returns t-value where ray crosses startLine (0 = origin, values > 0 = on surface)
  */
-function computeStartRatioForTarget(
-  origin: Vector2,
-  target: Vector2,
-  sector: RaySector
-): number {
+function computeStartRatioForTarget(origin: Vector2, target: Vector2, sector: RaySector): number {
   // If no startLine, ray starts at origin (t=0)
   if (!sector.startLine) {
     return 0;
@@ -367,8 +380,7 @@ function computeStartRatioForTarget(
   // Line equation: Q = lineStart + s * (lineEnd - lineStart)
   // Solving P = Q for t:
   // t = ((lineStart - origin) × lineDir) / (rayDir × lineDir)
-  const t =
-    ((lineStart.x - origin.x) * ldy - (lineStart.y - origin.y) * ldx) / denom;
+  const t = ((lineStart.x - origin.x) * ldy - (lineStart.y - origin.y) * ldx) / denom;
 
   // The ray should start at the surface crossing
   // If t < 0, the surface is "behind" the origin (shouldn't happen for valid sectors)
@@ -393,14 +405,13 @@ function castRayToFirstHit(
   target: Vector2,
   obstacles: readonly Surface[],
   bounds: ScreenBounds,
-  startRatio: number = 0
+  startRatio = 0
 ): Vector2 | null {
   // Create ray with startRatio - intersectRaySegment will ignore hits before this
-  const ray = startRatio > 0
-    ? createRayWithStart(origin, target, startRatio)
-    : createRay(origin, target);
+  const ray =
+    startRatio > 0 ? createRayWithStart(origin, target, startRatio) : createRay(origin, target);
 
-  let closestT = Infinity;
+  let closestT = Number.POSITIVE_INFINITY;
   let closestPoint: Vector2 | null = null;
 
   // Check all obstacles
@@ -454,7 +465,7 @@ function findScreenBoundaryHit(ray: Ray, bounds: ScreenBounds): Vector2 | null {
     { start: { x: bounds.minX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.minY } }, // Left
   ];
 
-  let closestT = Infinity;
+  let closestT = Number.POSITIVE_INFINITY;
   let closestPoint: Vector2 | null = null;
 
   for (const edge of edges) {
@@ -536,12 +547,7 @@ function clipPolygonByEdge(
 
       if (!nextInside) {
         // Current inside, next outside: add intersection
-        const intersection = lineIntersection(
-          edgeStart,
-          edgeEnd,
-          current,
-          next
-        );
+        const intersection = lineIntersection(edgeStart, edgeEnd, current, next);
         if (intersection) {
           result.push(intersection);
         }
@@ -562,11 +568,7 @@ function clipPolygonByEdge(
  * Check if a point is on the right side of an edge (or on the edge).
  * "Right side" is determined by the cross product sign.
  */
-function isOnRightSide(
-  point: Vector2,
-  edgeStart: Vector2,
-  edgeEnd: Vector2
-): boolean {
+function isOnRightSide(point: Vector2, edgeStart: Vector2, edgeEnd: Vector2): boolean {
   // Cross product: (edge × point_relative)
   // Positive = right side, negative = left side
   const cross =
@@ -580,12 +582,7 @@ function isOnRightSide(
 /**
  * Find intersection of two line segments.
  */
-function lineIntersection(
-  p1: Vector2,
-  p2: Vector2,
-  p3: Vector2,
-  p4: Vector2
-): Vector2 | null {
+function lineIntersection(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2): Vector2 | null {
   const d1x = p2.x - p1.x;
   const d1y = p2.y - p1.y;
   const d2x = p4.x - p3.x;
@@ -660,14 +657,35 @@ export function propagateWithIntermediates(
   // - Step K>0: valid[K] from reflected origin with constrained sector
   // =========================================================================
   for (let k = 0; k <= plannedSurfaces.length; k++) {
-    // Build valid[K]: visibility from currentOrigin within currentSectors
-    // Uses allSurfaces as obstacles - startRatio handles surface pass-through
-    const validKPolygon = buildVisibilityPolygon(
-      currentOrigin,
+    // Build valid[K]: FULL visibility from currentOrigin
+    // For k > 0, rays should start on the previous surface (using startLine)
+    // but the angular extent should be full 360° (not constrained by the narrow sector)
+    const projectionBoundsForValid: RaySectorBounds = bounds;
+
+    // Create full sectors for valid polygon, but preserve startLine from currentSectors
+    // This ensures rays start on the surface but can go in all directions
+    let sectorsForValid: RaySectors;
+    if (k === 0) {
+      // First step: full 360° visibility from player
+      sectorsForValid = fullSectors(currentOrigin);
+    } else {
+      // Reflected steps: full visibility but rays start on surface
+      const startLine = currentSectors[0]?.startLine;
+      sectorsForValid = [
+        {
+          ...createFullSector(currentOrigin),
+          startLine,
+        },
+      ];
+    }
+
+    const validProjection = projectSectorsThroughObstacles(
+      sectorsForValid,
       allSurfaces,
-      bounds,
-      currentSectors
+      null, // No target surface - project to all obstacles and screen bounds
+      projectionBoundsForValid
     );
+    const validKPolygon = [...validProjection.polygonVertices];
 
     validPolygons.push({
       index: k,
@@ -709,40 +727,30 @@ export function propagateWithIntermediates(
       };
     }
 
-    // plannedSector[K]: currentSectors trimmed by surface K angular extent
-    let plannedSectors = trimSectorsBySurface(currentSectors, surface);
+    // =========================================================================
+    // UNIFIED PROJECTION: Projects sectors through obstacles toward surface K
+    // This single calculation produces BOTH:
+    // - plannedPolygon: vertices from ray hits
+    // - reachingSectors: sectors that reach the surface (for reflection)
+    // =========================================================================
+    const projectionBounds: RaySectorBounds = bounds;
+    const projection = projectSectorsThroughObstacles(
+      currentSectors,
+      allSurfaces,
+      surface,
+      projectionBounds
+    );
 
-    // Block sectors by obstacles between origin and target surface
-    // This ensures only light that actually reaches the surface is reflected
-    const distToSurface = distanceToSurface(currentOrigin, surface);
-    for (const obstacle of allSurfaces) {
-      if (obstacle.id === surface.id) continue;
-      const distToObstacle = distanceToSurface(currentOrigin, obstacle);
-      // Only block by obstacles closer than the target surface
-      if (distToObstacle < distToSurface) {
-        plannedSectors = blockSectorsByObstacle(plannedSectors, obstacle, distToObstacle);
-      }
-    }
+    const plannedPolygon = [...projection.polygonVertices];
+    const plannedSectors = projection.reachingSectors;
 
-    // Build window for cropping
+    // Build window for cropping (legacy compatibility)
     const window: VisibilityWindow = {
       leftRay: createRay(currentOrigin, surface.segment.start),
       rightRay: createRay(currentOrigin, surface.segment.end),
       surface,
       origin: { ...currentOrigin },
     };
-
-    // planned[K]: visibility within plannedSectors (constrained to surface angular extent)
-    // Uses allSurfaces as obstacles - the sector constraint naturally limits to the window
-    // The sector constraint already defines the angular bounds, so no additional cropping needed
-    // Exclude the planned surface from obstacles so rays can "see" the surface endpoints
-    const obstaclesForPlanned = allSurfaces.filter(s => s.id !== surface.id);
-    const plannedPolygon = buildVisibilityPolygon(
-      currentOrigin,
-      obstaclesForPlanned,
-      bounds,
-      plannedSectors
-    );
 
     plannedPolygons.push({
       index: k,
@@ -758,7 +766,7 @@ export function propagateWithIntermediates(
 
     // Reflect sectors - reflectSector now automatically sets startLine to the surface
     // This ensures rays start ON the surface, not from the (possibly off-screen) reflected origin
-    currentSectors = reflectSectors(plannedSectors, surface).map(sector => ({
+    currentSectors = reflectSectors(plannedSectors, surface).map((sector) => ({
       ...sector,
       origin: currentOrigin,
     }));
@@ -799,9 +807,7 @@ function isOnReflectiveSide(point: Vector2, surface: Surface): boolean {
 
   // Fallback: check using cross product
   const { start, end } = surface.segment;
-  const cross =
-    (end.x - start.x) * (point.y - start.y) -
-    (end.y - start.y) * (point.x - start.x);
+  const cross = (end.x - start.x) * (point.y - start.y) - (end.y - start.y) * (point.x - start.x);
 
   // Assume "reflective side" is the positive side (cross >= 0)
   return cross >= 0;
@@ -840,36 +846,4 @@ function reflectPoint(point: Vector2, surface: Surface): Vector2 {
   };
 }
 
-/**
- * Calculate approximate distance from a point to a surface's midpoint.
- * Used to determine if an obstacle is between the origin and target surface.
- */
-function distanceToSurface(point: Vector2, surface: Surface): number {
-  const { start, end } = surface.segment;
-  const midX = (start.x + end.x) / 2;
-  const midY = (start.y + end.y) / 2;
-  return Math.sqrt((point.x - midX) ** 2 + (point.y - midY) ** 2);
-}
-
-/**
- * Filter a polygon to only include points on the reflective side of all passed surfaces.
- * Uses polygon clipping (Sutherland-Hodgman) against each surface's half-plane.
- */
-function filterPolygonToReflectiveSide(
-  polygon: readonly Vector2[],
-  surfaces: readonly Surface[]
-): Vector2[] {
-  if (polygon.length < 3) return [];
-
-  let clipped: Vector2[] = [...polygon];
-
-  for (const surface of surfaces) {
-    const { start, end } = surface.segment;
-    // Clip by the surface line, keeping points on the reflective (positive) side
-    clipped = clipPolygonByEdge(clipped, start, end);
-    if (clipped.length < 3) return [];
-  }
-
-  return clipped;
-}
 

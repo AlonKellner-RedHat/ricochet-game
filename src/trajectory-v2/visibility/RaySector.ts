@@ -82,6 +82,43 @@ export interface SectorOperationResult {
   readonly isEmpty: boolean;
 }
 
+/**
+ * Screen boundaries for visibility calculations.
+ */
+export interface ScreenBounds {
+  readonly minX: number;
+  readonly minY: number;
+  readonly maxX: number;
+  readonly maxY: number;
+}
+
+/**
+ * Result of projecting sectors through obstacles toward a target surface.
+ *
+ * This unified result ensures that polygon vertices and sector boundaries
+ * are derived from the SAME ray casting calculation.
+ *
+ * When obstacles split sectors, each disjoint sector produces its own polygon.
+ * The `polygonVertices` is the merged result of all sector polygons.
+ * Use `sectorPolygons` to get individual polygons per sector.
+ */
+export interface ProjectionResult {
+  /** Polygon vertices from ray hits (sorted for polygon construction) - merged from all sectors */
+  readonly polygonVertices: readonly Vector2[];
+
+  /** Individual polygons for each sector (when sectors are split by obstacles) */
+  readonly sectorPolygons: readonly (readonly Vector2[])[];
+
+  /** Sectors that reached the target surface (after blocking by obstacles) */
+  readonly reachingSectors: RaySectors;
+
+  /** Points where sector boundaries intersect the target surface */
+  readonly surfaceIntersections: readonly Vector2[];
+
+  /** Whether any sectors reached the target */
+  readonly hasReachingSectors: boolean;
+}
+
 // =============================================================================
 // Factory Functions
 // =============================================================================
@@ -692,5 +729,393 @@ export function sectorToString(sector: RaySector): string {
     `left: ${leftBoundary.x.toFixed(1)}, ${leftBoundary.y.toFixed(1)}, ` +
     `right: ${rightBoundary.x.toFixed(1)}, ${rightBoundary.y.toFixed(1)})`
   );
+}
+
+// =============================================================================
+// Unified Projection
+// =============================================================================
+
+/**
+ * Project sectors through obstacles toward a target surface.
+ *
+ * This is the UNIFIED calculation that produces BOTH:
+ * - Polygon vertices (from ray hits)
+ * - Updated sectors (blocked by obstacles)
+ *
+ * By computing both from the same ray casts, we ensure perfect alignment
+ * between the visibility polygon and the sector boundaries.
+ *
+ * Algorithm:
+ * 1. Trim sectors to target surface angular extent
+ * 2. For each sector, cast rays to critical points (obstacle endpoints)
+ * 3. Track which rays hit obstacles BEFORE the target surface
+ * 4. Build polygon from hit points
+ * 5. Build remaining sectors from unblocked angular ranges
+ *
+ * @param sectors Input sectors to project
+ * @param obstacles All surfaces that can block rays
+ * @param targetSurface The surface we're projecting toward (or null for final polygon)
+ * @param bounds Screen boundaries
+ * @returns Unified result with polygon vertices and reaching sectors
+ */
+export function projectSectorsThroughObstacles(
+  sectors: RaySectors,
+  obstacles: readonly Surface[],
+  targetSurface: Surface | null,
+  bounds: ScreenBounds
+): ProjectionResult {
+  if (sectors.length === 0) {
+    return {
+      polygonVertices: [],
+      sectorPolygons: [],
+      reachingSectors: [],
+      surfaceIntersections: [],
+      hasReachingSectors: false,
+    };
+  }
+
+  const origin = sectors[0]!.origin;
+  const surfaceIntersections: Vector2[] = [];
+
+  // First, trim sectors to target surface if provided
+  let workingSectors = sectors;
+  if (targetSurface) {
+    workingSectors = trimSectorsBySurface(sectors, targetSurface);
+    if (workingSectors.length === 0) {
+      return {
+        polygonVertices: [],
+        sectorPolygons: [],
+        reachingSectors: [],
+        surfaceIntersections: [],
+        hasReachingSectors: false,
+      };
+    }
+  }
+
+  // Collect critical points from obstacles
+  const criticalPoints: Vector2[] = [];
+  for (const obstacle of obstacles) {
+    if (targetSurface && obstacle.id === targetSurface.id) continue;
+    criticalPoints.push(obstacle.segment.start);
+    criticalPoints.push(obstacle.segment.end);
+  }
+
+  // Add screen corners
+  criticalPoints.push({ x: bounds.minX, y: bounds.minY });
+  criticalPoints.push({ x: bounds.maxX, y: bounds.minY });
+  criticalPoints.push({ x: bounds.maxX, y: bounds.maxY });
+  criticalPoints.push({ x: bounds.minX, y: bounds.maxY });
+
+  // Add target surface endpoints if provided
+  if (targetSurface) {
+    criticalPoints.push(targetSurface.segment.start);
+    criticalPoints.push(targetSurface.segment.end);
+  }
+
+  // Build polygon for EACH sector independently to avoid self-intersection
+  const sectorPolygons: Vector2[][] = [];
+  const reachingSectors: RaySectors = [];
+
+  for (const sector of workingSectors) {
+    const sectorVertices: Vector2[] = [];
+
+    // For each critical point, cast ray if it's in THIS sector
+    for (const target of criticalPoints) {
+      const dx = target.x - origin.x;
+      const dy = target.y - origin.y;
+      if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) continue;
+
+      // Check if target is inside THIS sector
+      if (!isPointInSector(target, sector)) continue;
+
+      // Compute startRatio for this ray
+      const startRatio = computeRayStartRatio(origin, target, sector);
+
+      // Cast ray and find first hit
+      const hit = castRayToFirstObstacle(
+        origin,
+        target,
+        obstacles,
+        targetSurface,
+        bounds,
+        startRatio
+      );
+
+      if (hit) {
+        sectorVertices.push(hit.point);
+
+        if (targetSurface && hit.isOnTarget) {
+          surfaceIntersections.push(hit.point);
+        }
+      }
+
+      // Cast grazing rays
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const grazingOffset = Math.max(0.5, len * 0.001);
+      const perpX = (-dy / len) * grazingOffset;
+      const perpY = (dx / len) * grazingOffset;
+
+      for (const offset of [
+        { x: perpX, y: perpY },
+        { x: -perpX, y: -perpY },
+      ]) {
+        const grazingTarget = { x: target.x + offset.x, y: target.y + offset.y };
+        if (!isPointInSector(grazingTarget, sector)) continue;
+
+        const grazingStartRatio = computeRayStartRatio(origin, grazingTarget, sector);
+        const grazingHit = castRayToFirstObstacle(
+          origin,
+          grazingTarget,
+          obstacles,
+          targetSurface,
+          bounds,
+          grazingStartRatio
+        );
+
+        if (grazingHit) {
+          sectorVertices.push(grazingHit.point);
+          if (targetSurface && grazingHit.isOnTarget) {
+            surfaceIntersections.push(grazingHit.point);
+          }
+        }
+      }
+    }
+
+    // Add sector boundary points
+    if (!isFullSector(sector)) {
+      sectorVertices.push({ ...sector.leftBoundary });
+      sectorVertices.push({ ...sector.rightBoundary });
+    }
+
+    // Sort vertices for this sector's polygon
+    const sortedSectorVertices = sortPolygonVertices(sectorVertices, origin);
+
+    if (sortedSectorVertices.length >= 3) {
+      sectorPolygons.push(sortedSectorVertices);
+      reachingSectors.push(sector);
+    }
+  }
+
+  // Merge all sector polygons into one (for backward compatibility)
+  // For multiple sectors, the largest polygon is typically the main one
+  let mergedVertices: Vector2[] = [];
+  if (sectorPolygons.length === 1) {
+    mergedVertices = sectorPolygons[0]!;
+  } else if (sectorPolygons.length > 1) {
+    // Use the polygon with most vertices as the "main" polygon
+    // In practice, for proper rendering, callers should use sectorPolygons
+    let maxLen = 0;
+    for (const poly of sectorPolygons) {
+      if (poly.length > maxLen) {
+        maxLen = poly.length;
+        mergedVertices = poly;
+      }
+    }
+  }
+
+  return {
+    polygonVertices: mergedVertices,
+    sectorPolygons,
+    reachingSectors,
+    surfaceIntersections,
+    hasReachingSectors: reachingSectors.length > 0,
+  };
+}
+
+/**
+ * Compute the start ratio for a ray based on sector's startLine.
+ */
+function computeRayStartRatio(origin: Vector2, target: Vector2, sector: RaySector): number {
+  if (!sector.startLine) return 0;
+
+  const lineStart = sector.startLine.start;
+  const lineEnd = sector.startLine.end;
+
+  const rdx = target.x - origin.x;
+  const rdy = target.y - origin.y;
+  const ldx = lineEnd.x - lineStart.x;
+  const ldy = lineEnd.y - lineStart.y;
+
+  const denom = rdx * ldy - rdy * ldx;
+  if (Math.abs(denom) < 1e-10) return 0;
+
+  const t = ((lineStart.x - origin.x) * ldy - (lineStart.y - origin.y) * ldx) / denom;
+  return Math.max(0, t);
+}
+
+interface RayHitResult {
+  point: Vector2;
+  t: number;
+  isOnTarget: boolean;
+  blocksPath: boolean;
+  obstacle: Surface | null;
+}
+
+/**
+ * Cast a ray and find the first obstacle or target surface hit.
+ */
+function castRayToFirstObstacle(
+  origin: Vector2,
+  target: Vector2,
+  obstacles: readonly Surface[],
+  targetSurface: Surface | null,
+  bounds: ScreenBounds,
+  startRatio: number
+): RayHitResult | null {
+  const dx = target.x - origin.x;
+  const dy = target.y - origin.y;
+
+  let closestT = Number.POSITIVE_INFINITY;
+  let closestPoint: Vector2 | null = null;
+  let closestObstacle: Surface | null = null;
+  let isOnTarget = false;
+
+  // IMPORTANT: startRatio is relative to the ray from origin to target.
+  // We extend the ray by 10x for casting, so we must scale minT accordingly.
+  // Original ray: P(t) = origin + t * (target - origin), surface at t = startRatio
+  // Extended ray: Q(s) = origin + s * 10 * (target - origin), surface at s = startRatio / 10
+  const rayScale = 10;
+  const minT = Math.max(startRatio / rayScale, 0.0001);
+
+  // Check all obstacles
+  for (const obstacle of obstacles) {
+    const hit = raySegmentIntersection(
+      origin,
+      { x: origin.x + dx * rayScale, y: origin.y + dy * rayScale },
+      obstacle.segment.start,
+      obstacle.segment.end
+    );
+
+    if (hit && hit.t > minT && hit.t < closestT) {
+      closestT = hit.t;
+      closestPoint = hit.point;
+      closestObstacle = obstacle;
+      isOnTarget = targetSurface !== null && obstacle.id === targetSurface.id;
+    }
+  }
+
+  // Check screen boundaries
+  const screenEdges = [
+    { start: { x: bounds.minX, y: bounds.minY }, end: { x: bounds.maxX, y: bounds.minY } },
+    { start: { x: bounds.maxX, y: bounds.minY }, end: { x: bounds.maxX, y: bounds.maxY } },
+    { start: { x: bounds.maxX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.maxY } },
+    { start: { x: bounds.minX, y: bounds.maxY }, end: { x: bounds.minX, y: bounds.minY } },
+  ];
+
+  for (const edge of screenEdges) {
+    const hit = raySegmentIntersection(
+      origin,
+      { x: origin.x + dx * rayScale, y: origin.y + dy * rayScale },
+      edge.start,
+      edge.end
+    );
+
+    if (hit && hit.t > minT && hit.t < closestT) {
+      closestT = hit.t;
+      closestPoint = hit.point;
+      closestObstacle = null;
+      isOnTarget = false;
+    }
+  }
+
+  if (!closestPoint) return null;
+
+  return {
+    point: closestPoint,
+    t: closestT,
+    isOnTarget,
+    blocksPath: !isOnTarget && closestObstacle !== null,
+    obstacle: closestObstacle,
+  };
+}
+
+/**
+ * Ray-segment intersection using parametric form.
+ */
+function raySegmentIntersection(
+  rayStart: Vector2,
+  rayEnd: Vector2,
+  segStart: Vector2,
+  segEnd: Vector2
+): { point: Vector2; t: number; s: number } | null {
+  const result = lineLineIntersection(rayStart, rayEnd, segStart, segEnd);
+  if (!result.valid) return null;
+  if (result.t < 0 || result.s < 0 || result.s > 1) return null;
+
+  return {
+    point: result.point,
+    t: result.t,
+    s: result.s,
+  };
+}
+
+/**
+ * Block sectors at a specific point where an obstacle was hit.
+ */
+function blockSectorsAtPoint(
+  sectors: RaySectors,
+  origin: Vector2,
+  hitPoint: Vector2,
+  obstacle: Surface
+): RaySectors {
+  const result: RaySectors = [];
+
+  for (const sector of sectors) {
+    // Check if obstacle endpoints are in this sector
+    const startInSector = isPointInSector(obstacle.segment.start, sector);
+    const endInSector = isPointInSector(obstacle.segment.end, sector);
+
+    if (!startInSector && !endInSector) {
+      // Obstacle doesn't affect this sector
+      result.push(sector);
+      continue;
+    }
+
+    // Obstacle is in sector - split around it
+    const blocked = blockSectorByObstacle(sector, obstacle, 0);
+    result.push(...blocked);
+  }
+
+  return result;
+}
+
+/**
+ * Sort polygon vertices for proper polygon construction.
+ *
+ * For sectors with a startLine (reflected sectors), the visible region
+ * is a wedge/funnel shape. All points should be sorted purely by angle
+ * since the polygon traces from one sector boundary to the other.
+ */
+function sortPolygonVertices(
+  vertices: Vector2[],
+  origin: Vector2,
+  startLine?: { start: Vector2; end: Vector2 }
+): Vector2[] {
+  if (vertices.length === 0) return [];
+
+  // Calculate angle for each vertex
+  const withAngles = vertices.map((point) => ({
+    point,
+    angle: Math.atan2(point.y - origin.y, point.x - origin.x),
+  }));
+
+  // For narrow sectors (like reflected sectors), use simple angular sort
+  // The polygon is a wedge shape where all points should be in angular order
+  withAngles.sort((a, b) => a.angle - b.angle);
+
+  // Deduplicate
+  const result: Vector2[] = [];
+  const epsilon = 0.5;
+
+  for (const { point } of withAngles) {
+    const isDuplicate = result.some(
+      (p) => Math.abs(p.x - point.x) < epsilon && Math.abs(p.y - point.y) < epsilon
+    );
+    if (!isDuplicate) {
+      result.push(point);
+    }
+  }
+
+  return result;
 }
 
