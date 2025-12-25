@@ -662,9 +662,18 @@ export function propagateWithIntermediates(
     // but the angular extent should be full 360° (not constrained by the narrow sector)
     const projectionBoundsForValid: RaySectorBounds = bounds;
 
-    // UNIFIED: Both valid[0] and valid[K] use the exact same logic
-    // Full 360° visibility from currentOrigin, treating it as if it were the player
-    const sectorsForValid: RaySectors = fullSectors(currentOrigin);
+    // UNIFIED: Both valid[0] and valid[K] use the same logic
+    // The only difference is the sector constraint:
+    // - K=0: Full 360° sector (no planned surface yet)
+    // - K>0: Sector of the surface we just reflected off (surface K-1)
+    let sectorsForValid: RaySectors;
+    if (k === 0) {
+      sectorsForValid = fullSectors(currentOrigin);
+    } else {
+      // Use the sector of the previous planned surface
+      const previousSurface = plannedSurfaces[k - 1]!;
+      sectorsForValid = [createSectorFromSurface(currentOrigin, previousSurface)];
+    }
 
     const validProjection = projectSectorsThroughObstacles(
       sectorsForValid,
