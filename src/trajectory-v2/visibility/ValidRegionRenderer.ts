@@ -156,6 +156,10 @@ export class ValidRegionRenderer {
       let origin = player;
       let window: Segment;
 
+      // ID of the window surface to exclude from obstacles
+      // This prevents floating-point issues where the window blocks itself
+      let excludeSurfaceId: string | undefined;
+
       if (plannedSurfaces.length > 0) {
         // Reflect player through all planned surfaces to get player image
         for (const surface of plannedSurfaces) {
@@ -164,14 +168,16 @@ export class ValidRegionRenderer {
         // Last planned surface is the window
         const lastSurface = plannedSurfaces[plannedSurfaces.length - 1]!;
         window = { start: lastSurface.segment.start, end: lastSurface.segment.end };
+        excludeSurfaceId = lastSurface.id;
       } else {
-        // Umbrella mode
+        // Umbrella mode - no surface to exclude (umbrella is not in allSurfaces)
         window = umbrella!;
       }
 
       // Create and project cone through window
+      // Exclude the window surface from obstacles to prevent self-blocking
       const cone = createConeThroughWindow(origin, window.start, window.end);
-      const polygon = projectCone(cone, allSurfaces, this.screenBounds);
+      const polygon = projectCone(cone, allSurfaces, this.screenBounds, excludeSurfaceId);
 
       visibilityResult = { polygon, origin, isValid: polygon.length >= 3 };
     } else {

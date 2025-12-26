@@ -7,11 +7,11 @@
 
 import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
-import type { BypassResult } from "./engine/BypassEvaluator";
-import type { PlannedPath } from "./engine/PlannedPathCalculator";
 import type { ActualPath } from "./engine/ActualPathCalculator";
+import type { BypassResult } from "./engine/BypassEvaluator";
 import type { DivergenceInfo } from "./engine/DivergenceDetector";
 import type { RenderSegment } from "./engine/DualPathRenderer";
+import type { PlannedPath } from "./engine/PlannedPathCalculator";
 
 /**
  * Debug log entry for a single trajectory calculation.
@@ -344,10 +344,7 @@ class TrajectoryDebugLoggerImpl {
    * Dump all logs to console.
    */
   dump(): void {
-    console.log(
-      "%c[TRAJECTORY DEBUG] Dumping logs...",
-      "color: #00ff00; font-weight: bold"
-    );
+    console.log("%c[TRAJECTORY DEBUG] Dumping logs...", "color: #00ff00; font-weight: bold");
     console.log("Total logs:", this.logs.length);
 
     for (const log of this.logs) {
@@ -402,106 +399,74 @@ class TrajectoryDebugLoggerImpl {
   }
 
   /**
-   * Export last log as a test setup (for creating test cases).
+   * Export last log as a JSON object (for creating test cases).
+   * Returns full precision values for exact reproduction.
    */
   exportAsTestSetup(): string {
     if (!this.lastLog) {
-      return "// No log available";
+      return JSON.stringify({ error: "No log available" });
     }
 
     const log = this.lastLog;
-    const surfaceCode = log.plannedSurfaces
-      .map(
-        (s) =>
-          `    createTestSurface({
-      id: "${s.id}",
-      start: { x: ${s.start.x}, y: ${s.start.y} },
-      end: { x: ${s.end.x}, y: ${s.end.y} },
-      canReflect: ${s.canReflect},
-    })`
-      )
-      .join(",\n");
 
-    const allSurfaceCode = log.allSurfaces
-      .map(
-        (s) =>
-          `    createTestSurface({
-      id: "${s.id}",
-      start: { x: ${s.start.x}, y: ${s.start.y} },
-      end: { x: ${s.end.x}, y: ${s.end.y} },
-      canReflect: ${s.canReflect},
-    })`
-      )
-      .join(",\n");
+    const exportData = {
+      name: `generated-setup-${log.timestamp}`,
+      timestamp: new Date(log.timestamp).toISOString(),
+      player: { x: log.player.x, y: log.player.y },
+      cursor: { x: log.cursor.x, y: log.cursor.y },
+      plannedSurfaces: log.plannedSurfaces.map((s) => ({
+        id: s.id,
+        start: { x: s.start.x, y: s.start.y },
+        end: { x: s.end.x, y: s.end.y },
+        canReflect: s.canReflect,
+      })),
+      allSurfaces: log.allSurfaces.map((s) => ({
+        id: s.id,
+        start: { x: s.start.x, y: s.start.y },
+        end: { x: s.end.x, y: s.end.y },
+        canReflect: s.canReflect,
+      })),
+      visibility: log.visibility
+        ? {
+            origin: { x: log.visibility.origin.x, y: log.visibility.origin.y },
+            coneSpanDegrees: (log.visibility.coneSpan * 180) / Math.PI,
+            coneSections: log.visibility.coneSections.map((s) => ({
+              startAngleDegrees: (s.startAngle * 180) / Math.PI,
+              endAngleDegrees: (s.endAngle * 180) / Math.PI,
+            })),
+            outlineVertices: log.visibility.outlineVertices.map((v) => ({
+              x: v.position.x,
+              y: v.position.y,
+              type: v.type,
+            })),
+            isValid: log.visibility.isValid,
+            validPolygons: log.visibility.validPolygons?.map((p) => ({
+              stepIndex: p.stepIndex,
+              origin: { x: p.origin.x, y: p.origin.y },
+              vertexCount: p.vertexCount,
+              vertices: p.vertices.map((v) => ({ x: v.x, y: v.y })),
+              isValid: p.isValid,
+            })),
+            plannedPolygons: log.visibility.plannedPolygons?.map((p) => ({
+              stepIndex: p.stepIndex,
+              origin: { x: p.origin.x, y: p.origin.y },
+              vertexCount: p.vertexCount,
+              vertices: p.vertices.map((v) => ({ x: v.x, y: v.y })),
+              isValid: p.isValid,
+              targetSurfaceId: p.targetSurfaceId,
+            })),
+          }
+        : null,
+    };
 
-    let visibilityComment = "";
-    if (log.visibility) {
-      const v = log.visibility;
-
-      // New format: Valid and Planned polygons
-      let polygonSection = "";
-      if (v.validPolygons && v.validPolygons.length > 0) {
-        polygonSection += `
- * - Valid Polygons: ${v.validPolygons.length} (N+1 for N surfaces)
-${v.validPolygons.map((p) => ` *   valid[${p.stepIndex}]: ${p.vertexCount} vertices, origin=(${p.origin.x.toFixed(1)}, ${p.origin.y.toFixed(1)})`).join('\n')}`;
-      }
-      if (v.plannedPolygons && v.plannedPolygons.length > 0) {
-        polygonSection += `
- * - Planned Polygons: ${v.plannedPolygons.length} (N for N surfaces)
-${v.plannedPolygons.map((p) => ` *   planned[${p.stepIndex}]: ${p.vertexCount} vertices, target=${p.targetSurfaceId}`).join('\n')}`;
-      }
-
-      // Legacy format (for backwards compatibility)
-      let intermediateSection = "";
-      if (!v.validPolygons && v.intermediatePolygons && v.intermediatePolygons.length > 0) {
-        intermediateSection = `
- * - Intermediate Polygons (legacy): ${v.intermediatePolygons.length}
-${v.intermediatePolygons.map((p, i) => ` *   Step ${p.stepIndex}: ${p.vertexCount} vertices, origin=(${p.origin.x.toFixed(1)}, ${p.origin.y.toFixed(1)})${p.windowSurfaceId ? `, window=${p.windowSurfaceId}` : ''}`).join('\n')}`;
-      }
-
-      visibilityComment = `
-/**
- * Visibility Debug Info:
- * - Origin: (${v.origin.x.toFixed(1)}, ${v.origin.y.toFixed(1)})
- * - Cone Span: ${(v.coneSpan * 180 / Math.PI).toFixed(1)}°
- * - Cone Sections: ${v.coneSections.length}
-${v.coneSections.map((s, i) => ` *   [${i}] ${(s.startAngle * 180 / Math.PI).toFixed(1)}° to ${(s.endAngle * 180 / Math.PI).toFixed(1)}°`).join('\n')}
- * - Outline Vertices: ${v.outlineVertices.length}
-${v.outlineVertices.slice(0, 20).map((v, i) => ` *   [${i}] (${v.position.x.toFixed(1)}, ${v.position.y.toFixed(1)}) - ${v.type}`).join('\n')}${v.outlineVertices.length > 20 ? `\n *   ... and ${v.outlineVertices.length - 20} more` : ''}
- * - Is Valid: ${v.isValid}${polygonSection}${intermediateSection}
- */`;
-    }
-
-    return `/**
- * Auto-generated test setup from debug log
- * Timestamp: ${new Date(log.timestamp).toISOString()}
- */${visibilityComment}
-export const generatedSetup: TestSetup = {
-  name: "generated-setup-${log.timestamp}",
-  description: "Auto-generated from debug log",
-  player: { x: ${log.player.x}, y: ${log.player.y} },
-  cursor: { x: ${log.cursor.x}, y: ${log.cursor.y} },
-  plannedSurfaces: [
-${surfaceCode}
-  ],
-  allSurfaces: [
-${allSurfaceCode}
-  ],
-  expected: {
-    // Fill in expected values based on the issue
-  },
-  tags: ["generated", "debug"],
-};`;
+    return JSON.stringify(exportData, null, 2);
   }
 
   /**
    * Print last log as test setup to console.
    */
   exportToConsole(): void {
-    console.log(
-      "%c[TRAJECTORY DEBUG] Test Setup Export:",
-      "color: #00ff00; font-weight: bold"
-    );
+    console.log("%c[TRAJECTORY DEBUG] Test Setup Export:", "color: #00ff00; font-weight: bold");
     console.log(this.exportAsTestSetup());
   }
 }
@@ -513,7 +478,7 @@ export const TrajectoryDebugLogger = new TrajectoryDebugLoggerImpl();
 
 // Expose to window for easy access from browser console
 if (typeof window !== "undefined") {
-  (window as unknown as { TrajectoryDebugLogger: TrajectoryDebugLoggerImpl }).TrajectoryDebugLogger =
-    TrajectoryDebugLogger;
+  (
+    window as unknown as { TrajectoryDebugLogger: TrajectoryDebugLoggerImpl }
+  ).TrajectoryDebugLogger = TrajectoryDebugLogger;
 }
-
