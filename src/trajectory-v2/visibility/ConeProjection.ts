@@ -11,8 +11,8 @@
  */
 
 import type { Surface } from "@/surfaces/Surface";
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { lineLineIntersection } from "@/trajectory-v2/geometry/GeometryOps";
+import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 // =============================================================================
 // TYPES
@@ -213,17 +213,12 @@ function castRay(
     }
   }
 
-  let closestT = Infinity;
+  let closestT = Number.POSITIVE_INFINITY;
   let closestPoint: Vector2 | null = null;
 
   // Check obstacles
   for (const obstacle of obstacles) {
-    const hit = lineLineIntersection(
-      origin,
-      rayEnd,
-      obstacle.segment.start,
-      obstacle.segment.end
-    );
+    const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
 
     if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
       closestT = hit.t;
@@ -258,15 +253,13 @@ function castRay(
 /**
  * Project a cone through obstacles to create a visibility polygon.
  *
- * Algorithm for FULL cone (360°):
+ * Algorithm:
  * 1. Collect all critical points (obstacle endpoints, screen corners)
- * 2. Cast rays to each critical point and find first hit
- * 3. Sort by angle from origin
+ * 2. Cast rays to each critical point + grazing rays
+ * 3. Collect all hit points
+ * 4. Sort by angle from origin
  *
- * Algorithm for WINDOWED cone (umbrella/reflection):
- * 1. Add window endpoints directly to polygon (they bound the region)
- * 2. Cast rays from origin THROUGH the window to obstacles
- * 3. Sort by angle, but keep window endpoints at boundaries
+ * For windowed cones, the polygon is bounded by window edges.
  */
 export function projectCone(
   source: ConeSource,
@@ -321,7 +314,10 @@ export function projectCone(
     const perpX = (-dy / len) * offset;
     const perpY = (dx / len) * offset;
 
-    for (const off of [{ x: perpX, y: perpY }, { x: -perpX, y: -perpY }]) {
+    for (const off of [
+      { x: perpX, y: perpY },
+      { x: -perpX, y: -perpY },
+    ]) {
       const grazingTarget = { x: target.x + off.x, y: target.y + off.y };
       if (!isPointInCone(grazingTarget, source)) continue;
 
@@ -418,8 +414,10 @@ function sortPolygonVertices(
 
   for (const p of points) {
     // Skip if this is an edge point (exact match)
-    if ((p.x === leftEdge.x && p.y === leftEdge.y) ||
-        (p.x === rightEdge.x && p.y === rightEdge.y)) {
+    if (
+      (p.x === leftEdge.x && p.y === leftEdge.y) ||
+      (p.x === rightEdge.x && p.y === rightEdge.y)
+    ) {
       continue;
     }
 
@@ -450,4 +448,3 @@ function sortPolygonVertices(
 
   return result;
 }
-

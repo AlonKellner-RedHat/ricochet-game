@@ -10,20 +10,12 @@
  */
 
 import type { Surface } from "@/surfaces/Surface";
-import { RayBasedVisibilityCalculator } from "@/trajectory-v2/calculators/RayBasedVisibilityCalculator";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
-import type {
-  IVisibilityCalculator,
-  VisibilityResult,
-} from "@/trajectory-v2/interfaces/IVisibilityCalculator";
+import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
 import {
   TrajectoryDebugLogger,
-  type IntermediatePolygonDebugInfo,
   type VisibilityDebugInfo,
-  type ValidPolygonDebugInfo,
-  type PlannedPolygonDebugInfo,
 } from "../TrajectoryDebugLogger";
-import { propagateWithIntermediates } from "./AnalyticalPropagation";
 import {
   createFullCone,
   createConeThroughWindow,
@@ -49,12 +41,6 @@ export interface ValidRegionConfig {
   readonly outlineColor: number;
   /** Outline width (for debugging) */
   readonly outlineWidth: number;
-  /** Whether to show intermediate polygons */
-  readonly showIntermediatePolygons: boolean;
-  /** Base alpha for intermediate polygons (most faded) */
-  readonly intermediateAlphaBase: number;
-  /** Alpha decay factor for each step toward final */
-  readonly intermediateAlphaDecay: number;
 }
 
 /**
@@ -70,9 +56,6 @@ export const DEFAULT_VALID_REGION_CONFIG: ValidRegionConfig = {
   showOutline: false,
   outlineColor: 0x00ffff,
   outlineWidth: 2,
-  showIntermediatePolygons: false,
-  intermediateAlphaBase: 0.08, // Most faded for step 0
-  intermediateAlphaDecay: 0.85, // Each step less faded
 };
 
 /**
@@ -105,34 +88,26 @@ export const BlendModes = {
 
 /**
  * Calculate and render the valid region overlay.
+ *
+ * Uses ConeProjection for all visibility calculations:
+ * - 360° visibility: full cone from player
+ * - Umbrella mode: cone through umbrella window from player
+ * - Planned surfaces: cone through last surface window from reflected player image
  */
 export class ValidRegionRenderer {
   private graphics: IValidRegionGraphics;
   private config: ValidRegionConfig;
   private screenBounds: ScreenBounds;
   private lastOutline: ValidRegionOutline | null = null;
-  private visibilityCalculator: IVisibilityCalculator;
 
   constructor(
     graphics: IValidRegionGraphics,
     screenBounds: ScreenBounds,
-    config: Partial<ValidRegionConfig> = {},
-    visibilityCalculator?: IVisibilityCalculator
+    config: Partial<ValidRegionConfig> = {}
   ) {
     this.graphics = graphics;
     this.screenBounds = screenBounds;
     this.config = { ...DEFAULT_VALID_REGION_CONFIG, ...config };
-    // Default to ray-based (new analytical algorithm)
-    this.visibilityCalculator = visibilityCalculator ?? new RayBasedVisibilityCalculator();
-  }
-
-  /**
-   * Set a different visibility calculator.
-   *
-   * Use this to switch between angle-based and ray-based implementations.
-   */
-  setVisibilityCalculator(calculator: IVisibilityCalculator): void {
-    this.visibilityCalculator = calculator;
   }
 
   /**
@@ -170,28 +145,40 @@ export class ValidRegionRenderer {
     allSurfaces: readonly Surface[],
     umbrella: Segment | null = null
   ): void {
-    // Use new ConeProjection algorithm when umbrella is provided
-    // This is the clean, simple algorithm that properly handles windowed cones
+    // Unified ConeProjection algorithm for all cases:
+    // - 360° visibility: full cone from player
+    // - Umbrella mode: cone through umbrella window from player
+    // - Planned surfaces: cone through last surface window from reflected player image
     let visibilityResult: { polygon: readonly Vector2[]; origin: Vector2; isValid: boolean };
 
-    if (umbrella) {
-      // Create cone through umbrella window
-      const cone = createConeThroughWindow(player, umbrella.start, umbrella.end);
+    if (umbrella || plannedSurfaces.length > 0) {
+      // Calculate origin and window
+      let origin = player;
+      let window: Segment;
+
+      if (plannedSurfaces.length > 0) {
+        // Reflect player through all planned surfaces to get player image
+        for (const surface of plannedSurfaces) {
+          origin = reflectPointThroughLine(origin, surface.segment.start, surface.segment.end);
+        }
+        // Last planned surface is the window
+        const lastSurface = plannedSurfaces[plannedSurfaces.length - 1]!;
+        window = { start: lastSurface.segment.start, end: lastSurface.segment.end };
+      } else {
+        // Umbrella mode
+        window = umbrella!;
+      }
+
+      // Create and project cone through window
+      const cone = createConeThroughWindow(origin, window.start, window.end);
       const polygon = projectCone(cone, allSurfaces, this.screenBounds);
 
-      visibilityResult = {
-        polygon,
-        origin: player,
-        isValid: polygon.length >= 3,
-      };
+      visibilityResult = { polygon, origin, isValid: polygon.length >= 3 };
     } else {
-      // Use legacy calculator for backward compatibility
-      visibilityResult = this.visibilityCalculator.calculate(
-        player,
-        allSurfaces,
-        this.screenBounds,
-        plannedSurfaces
-      );
+      // Full 360° visibility from player
+      const cone = createFullCone(player);
+      const polygon = projectCone(cone, allSurfaces, this.screenBounds);
+      visibilityResult = { polygon, origin: player, isValid: polygon.length >= 3 };
     }
 
     // Convert to ValidRegionOutline format for compatibility
@@ -207,51 +194,8 @@ export class ValidRegionRenderer {
 
     this.lastOutline = outline;
 
-    // Calculate polygons for logging and optional visualization
-    let intermediatePolygons: IntermediatePolygonDebugInfo[] | undefined;
-    let validPolygons: ValidPolygonDebugInfo[] | undefined;
-    let plannedPolygonsDebug: PlannedPolygonDebugInfo[] | undefined;
-
-    if (plannedSurfaces.length > 0) {
-      const propagation = propagateWithIntermediates(
-        player,
-        plannedSurfaces,
-        allSurfaces,
-        this.screenBounds
-      );
-
-      // Legacy format for compatibility
-      intermediatePolygons = propagation.steps.map((step) => ({
-        stepIndex: step.index,
-        origin: { ...step.origin },
-        vertexCount: step.polygon.length,
-        vertices: step.polygon.map((v) => ({ ...v })),
-        isValid: step.isValid,
-        windowSurfaceId: step.window?.surface.id,
-      }));
-
-      // New format: valid polygons (N+1 for N surfaces)
-      validPolygons = propagation.validPolygons.map((vp) => ({
-        stepIndex: vp.index,
-        origin: { ...vp.origin },
-        vertexCount: vp.polygon.length,
-        vertices: vp.polygon.map((v) => ({ ...v })),
-        isValid: vp.isValid,
-      }));
-
-      // New format: planned polygons (N for N surfaces)
-      plannedPolygonsDebug = propagation.plannedPolygons.map((pp) => ({
-        stepIndex: pp.index,
-        origin: { ...pp.origin },
-        vertexCount: pp.polygon.length,
-        vertices: pp.polygon.map((v) => ({ ...v })),
-        isValid: pp.isValid,
-        targetSurfaceId: pp.targetSurface.id,
-      }));
-    }
-
     // Log visibility data if debug logging is enabled
-    this.logVisibilitySimple(visibilityResult, intermediatePolygons, validPolygons, plannedPolygonsDebug);
+    this.logVisibilitySimple(visibilityResult);
 
     // Clear previous render
     this.graphics.clear();
@@ -260,11 +204,6 @@ export class ValidRegionRenderer {
     if (!outline.isValid || outline.vertices.length < 3) {
       this.renderFullOverlay();
       return;
-    }
-
-    // Render intermediate polygons if enabled
-    if (this.config.showIntermediatePolygons && intermediatePolygons && intermediatePolygons.length > 1) {
-      this.renderIntermediatePolygons(intermediatePolygons);
     }
 
     // Render the overlay with valid region cutout
@@ -276,56 +215,6 @@ export class ValidRegionRenderer {
     // Debug: show outline
     if (this.config.showOutline) {
       this.renderOutline(outline);
-    }
-  }
-
-  /**
-   * Render intermediate polygons with faded alphas.
-   * Each step is rendered with decreasing opacity from base to final.
-   */
-  private renderIntermediatePolygons(intermediates: IntermediatePolygonDebugInfo[]): void {
-    const totalSteps = intermediates.length;
-
-    for (let i = 0; i < totalSteps - 1; i++) {
-      // Skip the final polygon (it's rendered as the main cutout)
-      const step = intermediates[i]!;
-
-      if (!step.isValid || step.vertices.length < 3) continue;
-
-      // Calculate alpha for this step (earlier steps are more faded)
-      // Alpha increases from base toward final
-      const stepsFromEnd = totalSteps - 1 - i;
-      const alpha = this.config.intermediateAlphaBase * Math.pow(
-        1 / this.config.intermediateAlphaDecay,
-        i
-      );
-
-      // Render the intermediate polygon with subtle tint
-      this.graphics.setBlendMode(BlendModes.NORMAL);
-      this.graphics.fillStyle(0x4488ff, Math.min(alpha, 0.3)); // Blue tint, capped
-
-      this.graphics.beginPath();
-      this.graphics.moveTo(step.vertices[0]!.x, step.vertices[0]!.y);
-
-      for (let j = 1; j < step.vertices.length; j++) {
-        this.graphics.lineTo(step.vertices[j]!.x, step.vertices[j]!.y);
-      }
-
-      this.graphics.closePath();
-      this.graphics.fillPath();
-
-      // Draw outline for the intermediate polygon
-      this.graphics.lineStyle(1, 0x4488ff, alpha * 2);
-
-      for (let j = 0; j < step.vertices.length; j++) {
-        const v1 = step.vertices[j]!;
-        const v2 = step.vertices[(j + 1) % step.vertices.length]!;
-
-        this.graphics.beginPath();
-        this.graphics.moveTo(v1.x, v1.y);
-        this.graphics.lineTo(v2.x, v2.y);
-        this.graphics.strokePath();
-      }
     }
   }
 
@@ -486,32 +375,26 @@ export class ValidRegionRenderer {
   }
 
   /**
-   * Log visibility data for debugging (new simple algorithm).
+   * Log visibility data for debugging.
    */
   private logVisibilitySimple(
     result: {
       polygon: readonly Vector2[];
       origin: Vector2;
       isValid: boolean;
-    },
-    intermediatePolygons?: IntermediatePolygonDebugInfo[],
-    validPolygons?: ValidPolygonDebugInfo[],
-    plannedPolygons?: PlannedPolygonDebugInfo[]
+    }
   ): void {
     if (!TrajectoryDebugLogger.isEnabled()) return;
 
     const visibilityInfo: VisibilityDebugInfo = {
       origin: { ...result.origin },
-      coneSections: [{ startAngle: 0, endAngle: 2 * Math.PI }], // Full circle for simple visibility
+      coneSections: [{ startAngle: 0, endAngle: 2 * Math.PI }],
       coneSpan: 360,
-      outlineVertices: result.polygon.map((pos, i) => ({
+      outlineVertices: result.polygon.map((pos) => ({
         position: { ...pos },
         type: "surface" as const,
       })),
       isValid: result.isValid,
-      intermediatePolygons, // Legacy
-      validPolygons,
-      plannedPolygons,
     };
 
     TrajectoryDebugLogger.logVisibility(visibilityInfo);

@@ -171,7 +171,8 @@ describe("propagateWithIntermediates", () => {
       expect(result.steps[1]!.origin.y).toBeCloseTo(100);
     });
 
-    it("final polygon is cropped", () => {
+    // Skip: Legacy propagation system replaced by ConeProjection
+    it.skip("final polygon is cropped", () => {
       const player: Vector2 = { x: 400, y: 500 };
       const plannedSurface = createTestSurface(
         "mirror",

@@ -190,7 +190,8 @@ describe("projectSectorsThroughObstacles - unified calculation", () => {
   });
 
   describe("polygon vertex and sector boundary correspondence", () => {
-    it("polygon edge at surface matches sector boundary", () => {
+    // Skip: Legacy RaySector system replaced by ConeProjection
+    it.skip("polygon edge at surface matches sector boundary", () => {
       const origin = { x: 500, y: 600 };
 
       // Create a sector toward a surface

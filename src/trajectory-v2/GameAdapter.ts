@@ -10,8 +10,6 @@ import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { AlignmentResult, DualTrajectoryResult } from "@/types";
 import type Phaser from "phaser";
-import { AngleBasedVisibilityCalculator } from "./calculators/AngleBasedVisibilityCalculator";
-import { RayBasedVisibilityCalculator } from "./calculators/RayBasedVisibilityCalculator";
 import { SystemCoordinator } from "./coordinator/SystemCoordinator";
 import type { ITrajectoryEngine } from "./engine/ITrajectoryEngine";
 import { TrajectoryEngine } from "./engine/TrajectoryEngine";
@@ -41,16 +39,6 @@ export interface GameAdapterConfig {
   validRegionShadowAlpha?: number;
   /** Opacity of dark overlay for lit areas (0-1) */
   validRegionLitAlpha?: number;
-  /**
-   * Use ray-based visibility calculation (default: true).
-   *
-   * When true (default), uses the new RayBasedVisibilityCalculator which
-   * derives visibility from ImageChain rays, ensuring V.5 correlation:
-   * Light reaches cursor ↔ (plan valid AND aligned)
-   *
-   * When false, uses the legacy AngleBasedVisibilityCalculator.
-   */
-  useRayBasedVisibility?: boolean;
 }
 
 /**
@@ -93,12 +81,6 @@ export class GameAdapter {
         this.validRegionGraphics
       );
 
-      // Choose visibility calculator based on config (ray-based by default)
-      const visibilityCalculator =
-        (config.useRayBasedVisibility ?? true)
-          ? new RayBasedVisibilityCalculator()
-          : new AngleBasedVisibilityCalculator();
-
       this.validRegionRenderer = new ValidRegionRenderer(
         visibilityGraphicsWrapper,
         this.screenBounds,
@@ -106,8 +88,7 @@ export class GameAdapter {
           shadowAlpha: config.validRegionShadowAlpha ?? 0.7,
           litAlpha: config.validRegionLitAlpha ?? 0.5,
           showOutline: config.debug ?? false,
-        },
-        visibilityCalculator
+        }
       );
     }
 

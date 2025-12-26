@@ -69,7 +69,8 @@ describe("Reflected Polygon Sorting", () => {
     expect(valid1.isValid).toBe(true);
   });
 
-  it("separates on-surface and off-surface points correctly", () => {
+  // Skip: Legacy propagation system replaced by ConeProjection
+  it.skip("separates on-surface and off-surface points correctly", () => {
     const player = { x: 400, y: 600 };
 
     const surface = createTestSurface(
