@@ -19,10 +19,12 @@ import {
 import {
   createFullCone,
   createConeThroughWindow,
-  projectCone,
+  projectConeV2,
+  toVector2Array,
   type Segment,
-} from "./ConeProjection";
+} from "./ConeProjectionV2";
 import type { ScreenBounds } from "./ConePropagator";
+import { preparePolygonForRendering } from "./RenderingDedup";
 import type { ValidRegionOutline } from "./OutlineBuilder";
 
 /**
@@ -174,16 +176,22 @@ export class ValidRegionRenderer {
         window = umbrella!;
       }
 
-      // Create and project cone through window
+      // Create and project cone through window using epsilon-free ConeProjectionV2
       // Exclude the window surface from obstacles to prevent self-blocking
       const cone = createConeThroughWindow(origin, window.start, window.end);
-      const polygon = projectCone(cone, allSurfaces, this.screenBounds, excludeSurfaceId);
+      const sourcePoints = projectConeV2(cone, allSurfaces, this.screenBounds, excludeSurfaceId);
+      // Convert SourcePoints to Vector2 and apply visual deduplication
+      const rawPolygon = toVector2Array(sourcePoints);
+      const polygon = preparePolygonForRendering(rawPolygon);
 
       visibilityResult = { polygon, origin, isValid: polygon.length >= 3 };
     } else {
-      // Full 360° visibility from player
+      // Full 360° visibility from player using epsilon-free ConeProjectionV2
       const cone = createFullCone(player);
-      const polygon = projectCone(cone, allSurfaces, this.screenBounds);
+      const sourcePoints = projectConeV2(cone, allSurfaces, this.screenBounds);
+      // Convert SourcePoints to Vector2 and apply visual deduplication
+      const rawPolygon = toVector2Array(sourcePoints);
+      const polygon = preparePolygonForRendering(rawPolygon);
       visibilityResult = { polygon, origin: player, isValid: polygon.length >= 3 };
     }
 

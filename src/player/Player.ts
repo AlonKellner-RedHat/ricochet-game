@@ -137,6 +137,15 @@ export class Player {
   }
 
   /**
+   * Set player position directly (for god mode)
+   * Bypasses physics and collision detection
+   */
+  setPosition(position: Vector2): void {
+    this.movementSystem.setPosition(position);
+    this.movementSystem.resetVelocity();
+  }
+
+  /**
    * Get player bounds for rendering/collision
    */
   getBounds(): { left: number; right: number; top: number; bottom: number } {

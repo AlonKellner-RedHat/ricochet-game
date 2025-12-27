@@ -39,6 +39,12 @@ export class GameScene extends Phaser.Scene {
   private static readonly UMBRELLA_WIDTH = 150;
   private static readonly UMBRELLA_HEIGHT = 100; // Distance above player
 
+  // Debug modes
+  private slowMode = false; // Movement slowed to 1 pixel per second
+  private godMode = false; // Direct position control, bypass physics and collisions
+  private static readonly SLOW_MODE_SPEED = 1; // pixels per second
+  private static readonly GOD_MODE_SPEED = 200; // pixels per second in god mode (before slow mode)
+
   constructor() {
     super({ key: "GameScene" });
   }
@@ -87,6 +93,18 @@ export class GameScene extends Phaser.Scene {
     this.inputManager.onKeyPress("KeyU", () => {
       this.umbrellaEnabled = !this.umbrellaEnabled;
       console.log(`Umbrella mode: ${this.umbrellaEnabled ? "ON" : "OFF"}`);
+    });
+
+    // Toggle slow mode with 'P' key (1 pixel per second movement)
+    this.inputManager.onKeyPress("KeyP", () => {
+      this.slowMode = !this.slowMode;
+      console.log(`Slow mode: ${this.slowMode ? "ON (1 px/s)" : "OFF"}`);
+    });
+
+    // Toggle god mode with 'G' key (bypass physics and collisions)
+    this.inputManager.onKeyPress("KeyG", () => {
+      this.godMode = !this.godMode;
+      console.log(`God mode: ${this.godMode ? "ON (arrow keys, no physics)" : "OFF"}`);
     });
 
     // Initialize trajectory v2 system
@@ -162,8 +180,8 @@ export class GameScene extends Phaser.Scene {
     // Update hover state
     this.hoveredSurface = this.inputManager.findClickedSurface(pointer, this.surfaces, true);
 
-    // Update player movement
-    this.player.update(deltaSeconds, movementInput, this.surfaces);
+    // Update player movement (with slow mode and god mode support)
+    this.updatePlayerMovement(deltaSeconds, movementInput);
 
     // Get current umbrella segment (if enabled)
     const umbrella = this.getUmbrellaSegment();
@@ -222,11 +240,67 @@ export class GameScene extends Phaser.Scene {
     this.debugView.setInfo("aligned", alignment.isFullyAligned);
     this.debugView.setInfo("planned", this.trajectoryAdapter.getPlannedSurfaces().length);
     this.debugView.setInfo("arrows", this.trajectoryAdapter.getArrowsForRendering().length);
+    this.debugView.setInfo("slowMode", this.slowMode);
+    this.debugView.setInfo("godMode", this.godMode);
 
     this.debugView.update();
 
     // Clear single-frame input events at end of frame
     this.inputManager.clearFrameEvents();
+  }
+
+  /**
+   * Update player movement with slow mode and god mode support.
+   *
+   * - Normal mode: Physics-based platformer movement with collisions
+   * - Slow mode: Same as normal but movement is 1 pixel per second
+   * - God mode: Direct arrow key control, bypass physics and collisions
+   * - Slow + God mode: Direct control at 1 pixel per second
+   */
+  private updatePlayerMovement(deltaSeconds: number, input: { left: boolean; right: boolean; jump: boolean; jumpHeld: boolean }): void {
+    if (this.godMode) {
+      // God mode: Direct position control with arrow keys
+      // Determine speed (can be compounded with slow mode)
+      const speed = this.slowMode ? GameScene.SLOW_MODE_SPEED : GameScene.GOD_MODE_SPEED;
+
+      // Calculate movement direction
+      let dx = 0;
+      let dy = 0;
+
+      if (input.left) dx -= 1;
+      if (input.right) dx += 1;
+      if (input.jump || input.jumpHeld) dy -= 1; // Up
+      if (this.inputManager.isKeyDown("KeyS") || this.inputManager.isKeyDown("ArrowDown")) dy += 1; // Down
+
+      // Apply movement directly to position (no physics, no collisions)
+      if (dx !== 0 || dy !== 0) {
+        // Normalize for diagonal movement
+        const length = Math.sqrt(dx * dx + dy * dy);
+        dx = dx / length;
+        dy = dy / length;
+
+        const newPos = {
+          x: this.player.position.x + dx * speed * deltaSeconds,
+          y: this.player.position.y + dy * speed * deltaSeconds,
+        };
+
+        this.player.setPosition(newPos);
+      }
+    } else {
+      // Normal mode (with optional slow mode)
+      let effectiveDelta = deltaSeconds;
+
+      if (this.slowMode) {
+        // Calculate effective delta to achieve 1 pixel per second
+        // Normal max speed is ~300-400 px/s, so we need to reduce delta significantly
+        // At 1 px/s with typical max speed of 300 px/s, we need delta * 300 = 1
+        // So effective delta = 1 / 300 per frame at full speed
+        // But we want any movement to be 1 px/s, so we scale based on actual movement
+        effectiveDelta = deltaSeconds * (GameScene.SLOW_MODE_SPEED / 300);
+      }
+
+      this.player.update(effectiveDelta, input, this.surfaces);
+    }
   }
 
   /**
