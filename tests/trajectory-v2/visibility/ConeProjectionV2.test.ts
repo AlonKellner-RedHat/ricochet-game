@@ -1283,3 +1283,119 @@ describe("ConeProjectionV2 - Out-of-Bounds Origin Spike", () => {
     expect(rightSideVertices.length).toBe(0);
   });
 });
+
+// =============================================================================
+// UMBRELLA MODE REFERENCE RAY ALIGNMENT TESTS
+// =============================================================================
+describe("ConeProjectionV2 - Umbrella Reference Ray Alignment", () => {
+  const bounds: ScreenBoundsConfig = { minX: 0, maxX: 1280, minY: 0, maxY: 720 };
+
+  const allSurfaces = [
+    createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }),
+    createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 }),
+    createTestSurface("left-wall", { x: 20, y: 80 }, { x: 20, y: 700 }),
+    createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 }),
+    createTestSurface("platform-1", { x: 300, y: 450 }, { x: 500, y: 450 }),
+    createTestSurface("platform-2", { x: 550, y: 350 }, { x: 750, y: 350 }),
+    createTestSurface("ricochet-1", { x: 800, y: 150 }, { x: 900, y: 250 }),
+    createTestSurface("ricochet-2", { x: 400, y: 250 }, { x: 550, y: 250 }),
+    createTestSurface("ricochet-3", { x: 100, y: 200 }, { x: 200, y: 300 }),
+    createTestSurface("ricochet-4", { x: 850, y: 350 }, { x: 850, y: 500 }),
+  ];
+
+  // Umbrella constants (same as GameScene)
+  const UMBRELLA_WIDTH = 150;
+  const UMBRELLA_HEIGHT = 100;
+
+  function getUmbrellaSegment(player: Vector2): { start: Vector2; end: Vector2 } {
+    const halfWidth = UMBRELLA_WIDTH / 2;
+    const umbrellaY = player.y - UMBRELLA_HEIGHT;
+    return {
+      start: { x: player.x - halfWidth, y: umbrellaY },
+      end: { x: player.x + halfWidth, y: umbrellaY },
+    };
+  }
+
+  it("INVALID case: vertex on reference ray should still sort correctly", () => {
+    // This player position produces a ceiling vertex exactly on the reference ray
+    const player = { x: 796.6096212600031, y: 666 };
+    const umbrella = getUmbrellaSegment(player);
+
+    const cone = createConeThroughWindow(player, umbrella.start, umbrella.end);
+    const points = projectConeV2(cone, allSurfaces, bounds);
+    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+
+    // The problematic ceiling vertex around x=1236 should NOT appear early in the polygon
+    // In the bug, it appeared at position 2 instead of near the end
+    const ceilingVertexNear1236 = renderedVertices.findIndex(
+      (v) => Math.abs(v.x - 1236) < 2 && Math.abs(v.y - 80) < 2
+    );
+
+    // If this vertex exists, it should be near the end (after position 8)
+    // Not at position 2 as in the bug
+    if (ceilingVertexNear1236 !== -1) {
+      expect(ceilingVertexNear1236).toBeGreaterThan(8);
+    }
+
+    // The polygon should be in proper angular order
+    // Check that vertices are monotonically ordered by angle (with one wrap-around)
+    const angles = renderedVertices.map((v) =>
+      Math.atan2(v.y - player.y, v.x - player.x)
+    );
+
+    // Count direction reversals (should be at most 1 for proper ordering)
+    let reversals = 0;
+    for (let i = 0; i < angles.length - 1; i++) {
+      let diff = angles[i + 1] - angles[i];
+      if (diff > Math.PI) diff -= 2 * Math.PI;
+      if (diff < -Math.PI) diff += 2 * Math.PI;
+      if (diff < -0.1) reversals++;
+    }
+
+    expect(reversals).toBeLessThanOrEqual(1);
+  });
+
+  it("VALID case: sub-pixel shift should also sort correctly", () => {
+    // This player position is sub-pixel different - vertex NOT on reference ray
+    const player = { x: 796.6097575998065, y: 666 };
+    const umbrella = getUmbrellaSegment(player);
+
+    const cone = createConeThroughWindow(player, umbrella.start, umbrella.end);
+    const points = projectConeV2(cone, allSurfaces, bounds);
+    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+
+    // Same angular order check
+    const angles = renderedVertices.map((v) =>
+      Math.atan2(v.y - player.y, v.x - player.x)
+    );
+
+    let reversals = 0;
+    for (let i = 0; i < angles.length - 1; i++) {
+      let diff = angles[i + 1] - angles[i];
+      if (diff > Math.PI) diff -= 2 * Math.PI;
+      if (diff < -Math.PI) diff += 2 * Math.PI;
+      if (diff < -0.1) reversals++;
+    }
+
+    expect(reversals).toBeLessThanOrEqual(1);
+  });
+
+  it("both cases should produce similar vertex counts", () => {
+    const player1 = { x: 796.6096212600031, y: 666 };
+    const umbrella1 = getUmbrellaSegment(player1);
+    const cone1 = createConeThroughWindow(player1, umbrella1.start, umbrella1.end);
+    const vertices1 = preparePolygonForRendering(
+      toVector2Array(projectConeV2(cone1, allSurfaces, bounds))
+    );
+
+    const player2 = { x: 796.6097575998065, y: 666 };
+    const umbrella2 = getUmbrellaSegment(player2);
+    const cone2 = createConeThroughWindow(player2, umbrella2.start, umbrella2.end);
+    const vertices2 = preparePolygonForRendering(
+      toVector2Array(projectConeV2(cone2, allSurfaces, bounds))
+    );
+
+    // Sub-pixel player change should not significantly affect vertex count
+    expect(Math.abs(vertices1.length - vertices2.length)).toBeLessThanOrEqual(1);
+  });
+});

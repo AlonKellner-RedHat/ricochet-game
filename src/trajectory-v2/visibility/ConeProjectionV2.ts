@@ -220,6 +220,41 @@ function comparePointsCCW(
   const aRef = refDirection.x * aVec.y - refDirection.y * aVec.x;
   const bRef = refDirection.x * bVec.y - refDirection.y * bVec.x;
 
+  // Handle points on or very close to the reference ray.
+  // Due to floating-point precision, mathematically collinear points may have
+  // a tiny non-zero cross product. We use a RELATIVE tolerance check:
+  // if |aRef| is negligible compared to the product of vector magnitudes,
+  // the point is effectively on the reference ray.
+  //
+  // This is "epsilon-free" in the sense that the tolerance scales with the
+  // actual magnitudes involved, not a fixed epsilon constant.
+  const refMagSq = refDirection.x * refDirection.x + refDirection.y * refDirection.y;
+  const aMagSq = aVec.x * aVec.x + aVec.y * aVec.y;
+  const bMagSq = bVec.x * bVec.x + bVec.y * bVec.y;
+
+  // Relative threshold: cross product should be < sqrt(refMagSq * vecMagSq) * 1e-10
+  // This means the sine of the angle between vectors is < 1e-10
+  const aOnRay = Math.abs(aRef) * Math.abs(aRef) < refMagSq * aMagSq * 1e-20;
+  const bOnRay = Math.abs(bRef) * Math.abs(bRef) < refMagSq * bMagSq * 1e-20;
+
+  if (aOnRay && !bOnRay) {
+    // A is on reference ray, B is not
+    // A comes AFTER all other points → return 1
+    return 1;
+  }
+  if (bOnRay && !aOnRay) {
+    // B is on reference ray, A is not
+    // A comes before B → return -1
+    return -1;
+  }
+  if (aOnRay && bOnRay) {
+    // Both on reference ray - use distance tiebreaker (closer points first)
+    if (aMagSq !== bMagSq) {
+      return aMagSq - bMagSq;
+    }
+    // Fall through to collinear handling if distances are equal
+  }
+
   // Check if points are on opposite sides of the reference ray
   // (one positive, one negative - excluding zero for exact ray alignment)
   const oppositeSides = (aRef > 0 && bRef < 0) || (aRef < 0 && bRef > 0);
@@ -232,7 +267,7 @@ function comparePointsCCW(
     return aRef > 0 ? -1 : 1;
   }
 
-  // Same side (or one/both on the ray): cross-product is transitive
+  // Same side: cross-product is transitive
   const cross = aVec.x * bVec.y - aVec.y * bVec.x;
 
   if (cross > 0) {
