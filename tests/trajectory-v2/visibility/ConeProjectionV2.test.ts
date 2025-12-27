@@ -756,3 +756,300 @@ describe("Regression: player near ricochet-4 at (849.9997, 517.82)", () => {
     expect(continuations.length).toBe(2);
   });
 });
+
+// =============================================================================
+// REFLECTION INSTABILITY: Sub-pixel player movement causes vertex to disappear
+// =============================================================================
+
+describe("Reflection visibility instability", () => {
+  const bounds: ScreenBoundsConfig = { minX: 0, maxX: 1280, minY: 80, maxY: 700 };
+
+  // All surfaces from the reported state
+  const allSurfaces = [
+    createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }),
+    createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 }),
+    createTestSurface("left-wall", { x: 20, y: 80 }, { x: 20, y: 700 }),
+    createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 }),
+    createTestSurface("platform-1", { x: 300, y: 450 }, { x: 500, y: 450 }),
+    createTestSurface("platform-2", { x: 550, y: 350 }, { x: 750, y: 350 }),
+    createTestSurface("ricochet-1", { x: 800, y: 150 }, { x: 900, y: 250 }),
+    createTestSurface("ricochet-2", { x: 400, y: 250 }, { x: 550, y: 250 }),
+    createTestSurface("ricochet-3", { x: 100, y: 200 }, { x: 200, y: 300 }),
+    createTestSurface("ricochet-4", { x: 850, y: 350 }, { x: 850, y: 500 }),
+  ];
+
+  // ricochet-4 is the planned surface (window for reflection)
+  const ricochet4 = { start: { x: 850, y: 350 }, end: { x: 850, y: 500 } };
+
+  // Helper to reflect a point through a line
+  function reflectPoint(point: Vector2, lineStart: Vector2, lineEnd: Vector2): Vector2 {
+    const dx = lineEnd.x - lineStart.x;
+    const dy = lineEnd.y - lineStart.y;
+    const lineLengthSq = dx * dx + dy * dy;
+    if (lineLengthSq < 1e-10) return point;
+
+    const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lineLengthSq;
+    const closestX = lineStart.x + t * dx;
+    const closestY = lineStart.y + t * dy;
+
+    return {
+      x: 2 * closestX - point.x,
+      y: 2 * closestY - point.y,
+    };
+  }
+
+  it("reproduces instability: INVALID case (player x=657.2217077999474)", () => {
+    const player = { x: 657.2217077999474, y: 666 };
+
+    // Reflect player through ricochet-4 to get player image
+    const reflectedOrigin = reflectPoint(player, ricochet4.start, ricochet4.end);
+
+    // Create windowed cone through ricochet-4 from reflected origin
+    const cone = createConeThroughWindow(reflectedOrigin, ricochet4.start, ricochet4.end);
+    const points = projectConeV2(cone, allSurfaces, bounds, "ricochet-4");
+    const rawVertices = toVector2Array(points);
+    const renderedVertices = preparePolygonForRendering(rawVertices);
+
+    // Check that we have the expected number of vertices
+    const platform2Hit = renderedVertices.filter(
+      (v) => Math.abs(v.y - 350) < 1 && v.x > 550 && v.x < 750
+    );
+
+    // With provenance-based fix: platform-2 hit is now present consistently.
+    // Window endpoint rays pass through by identity check, not floating-point intersection.
+    expect(platform2Hit.length).toBe(1);
+  });
+
+  it("reproduces instability: VALID case (player x=657.221482690353)", () => {
+    const player = { x: 657.221482690353, y: 666 };
+
+    // Reflect player through ricochet-4 to get player image
+    const reflectedOrigin = reflectPoint(player, ricochet4.start, ricochet4.end);
+
+    // Create windowed cone through ricochet-4 from reflected origin
+    const cone = createConeThroughWindow(reflectedOrigin, ricochet4.start, ricochet4.end);
+    const points = projectConeV2(cone, allSurfaces, bounds, "ricochet-4");
+    const rawVertices = toVector2Array(points);
+    const renderedVertices = preparePolygonForRendering(rawVertices);
+
+    // Check for the platform-2 vertex near (675.8, 350)
+    const platform2Hit = renderedVertices.filter(
+      (v) => Math.abs(v.y - 350) < 1 && v.x > 550 && v.x < 750
+    );
+
+    // Valid case: platform-2 hit is present because s = 0.9999999999999998 <= 1
+    expect(platform2Hit.length).toBe(1);
+  });
+
+  it("HYPOTHESIS: s > 1 floating point error causes window endpoint to be rejected", () => {
+    // This test confirms the root cause: when ray targets window endpoint,
+    // intersection s-value floats around 1.0 due to floating point error.
+    // When s > 1 (by epsilon), the ray is rejected and the endpoint is not visible.
+
+    // Use exact player positions and calculate reflected origins precisely
+    const invalidPlayer = { x: 657.2217077999474, y: 666 };
+    const validPlayer = { x: 657.221482690353, y: 666 };
+
+    // Reflect through ricochet-4 at x=850 (vertical line)
+    const invalidOrigin = { x: 2 * 850 - invalidPlayer.x, y: invalidPlayer.y };
+    const validOrigin = { x: 2 * 850 - validPlayer.x, y: validPlayer.y };
+
+    const windowStart = { x: 850, y: 350 };
+    const windowEnd = { x: 850, y: 500 };
+    const target = windowEnd;
+    const scale = 10;
+
+    // Calculate s for invalid case (line-line intersection formula from GeometryOps)
+    const rayEndInvalid = {
+      x: invalidOrigin.x + (target.x - invalidOrigin.x) * scale,
+      y: invalidOrigin.y + (target.y - invalidOrigin.y) * scale,
+    };
+    const denomInvalid =
+      (invalidOrigin.x - rayEndInvalid.x) * (windowStart.y - windowEnd.y) -
+      (invalidOrigin.y - rayEndInvalid.y) * (windowStart.x - windowEnd.x);
+    const sInvalid =
+      -(
+        (invalidOrigin.x - rayEndInvalid.x) * (invalidOrigin.y - windowStart.y) -
+        (invalidOrigin.y - rayEndInvalid.y) * (invalidOrigin.x - windowStart.x)
+      ) / denomInvalid;
+
+    // Calculate s for valid case
+    const rayEndValid = {
+      x: validOrigin.x + (target.x - validOrigin.x) * scale,
+      y: validOrigin.y + (target.y - validOrigin.y) * scale,
+    };
+    const denomValid =
+      (validOrigin.x - rayEndValid.x) * (windowStart.y - windowEnd.y) -
+      (validOrigin.y - rayEndValid.y) * (windowStart.x - windowEnd.x);
+    const sValid =
+      -(
+        (validOrigin.x - rayEndValid.x) * (validOrigin.y - windowStart.y) -
+        (validOrigin.y - rayEndValid.y) * (validOrigin.x - windowStart.x)
+      ) / denomValid;
+
+    // HYPOTHESIS: floating point errors cause s to deviate from 1.0
+    // One case has s > 1 (rejection), the other has s <= 1 (acceptance)
+    const invalidRejected = sInvalid > 1;
+    const validRejected = sValid > 1;
+
+    // Exactly one should be rejected due to floating point error
+    expect(invalidRejected !== validRejected).toBe(true);
+
+    // Both should be essentially equal to 1.0 (difference is ~2e-16)
+    expect(Math.abs(sInvalid - 1)).toBeLessThan(1e-10);
+    expect(Math.abs(sValid - 1)).toBeLessThan(1e-10);
+  });
+
+  it("should have consistent vertex count for sub-pixel player movement", () => {
+    // This test verifies stable behavior: sub-pixel player movement should NOT cause flickering.
+    // Fixed by provenance-based window endpoint recognition (no floating-point intersection check).
+
+    const positions = [
+      657.221482690353, // Valid (s <= 1)
+      657.2215, // Invalid (s > 1 due to FP error)
+      657.2216,
+      657.2217,
+      657.2217077999474, // Invalid (s > 1)
+      657.2218,
+    ];
+
+    const results: { x: number; vertexCount: number; platform2Hits: number }[] = [];
+
+    for (const x of positions) {
+      const player = { x, y: 666 };
+      const reflectedOrigin = reflectPoint(player, ricochet4.start, ricochet4.end);
+      const cone = createConeThroughWindow(reflectedOrigin, ricochet4.start, ricochet4.end);
+      const points = projectConeV2(cone, allSurfaces, bounds, "ricochet-4");
+      const rawVertices = toVector2Array(points);
+      const renderedVertices = preparePolygonForRendering(rawVertices);
+
+      const platform2Hits = renderedVertices.filter(
+        (v) => Math.abs(v.y - 350) < 1 && v.x > 550 && v.x < 750
+      ).length;
+
+      results.push({ x, vertexCount: renderedVertices.length, platform2Hits });
+    }
+
+    // All positions should have the same number of platform-2 hits
+    // When fixed, all should have 1 hit (consistent behavior)
+    const hitCounts = new Set(results.map((r) => r.platform2Hits));
+    expect(hitCounts.size).toBe(1);
+  });
+});
+
+// =============================================================================
+// OFF-SCREEN ORIGIN: Origin outside screen bounds causes missing vertices
+// =============================================================================
+
+describe("Off-screen origin visibility", () => {
+  const bounds: ScreenBoundsConfig = { minX: 0, maxX: 1280, minY: 80, maxY: 700 };
+
+  // All surfaces from the reported state
+  const allSurfaces = [
+    createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }),
+    createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 }),
+    createTestSurface("left-wall", { x: 20, y: 80 }, { x: 20, y: 700 }),
+    createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 }),
+    createTestSurface("platform-1", { x: 300, y: 450 }, { x: 500, y: 450 }),
+    createTestSurface("platform-2", { x: 550, y: 350 }, { x: 750, y: 350 }),
+    createTestSurface("ricochet-1", { x: 800, y: 150 }, { x: 900, y: 250 }),
+    createTestSurface("ricochet-2", { x: 400, y: 250 }, { x: 550, y: 250 }),
+    createTestSurface("ricochet-3", { x: 100, y: 200 }, { x: 200, y: 300 }),
+    createTestSurface("ricochet-4", { x: 850, y: 350 }, { x: 850, y: 500 }),
+  ];
+
+  const ricochet4 = { start: { x: 850, y: 350 }, end: { x: 850, y: 500 } };
+
+  function reflectPoint(point: Vector2, lineStart: Vector2, lineEnd: Vector2): Vector2 {
+    const dx = lineEnd.x - lineStart.x;
+    const dy = lineEnd.y - lineStart.y;
+    const lineLengthSq = dx * dx + dy * dy;
+    if (lineLengthSq < 1e-10) return point;
+
+    const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lineLengthSq;
+    const closestX = lineStart.x + t * dx;
+    const closestY = lineStart.y + t * dy;
+
+    return {
+      x: 2 * closestX - point.x,
+      y: 2 * closestY - point.y,
+    };
+  }
+
+  it("origin outside screen - should still produce window endpoints", () => {
+    // When origin is at x=1503 (outside right-wall at x=1260), rays to window
+    // endpoints should still work. This tests the provenance-based bypass for
+    // blocking checks when targeting window endpoints.
+    const player = { x: 196.70562671109835, y: 666 };
+    const reflectedOrigin = reflectPoint(player, ricochet4.start, ricochet4.end);
+
+    // Verify origin is outside screen
+    expect(reflectedOrigin.x).toBeGreaterThan(1260);
+
+    const cone = createConeThroughWindow(reflectedOrigin, ricochet4.start, ricochet4.end);
+    const points = projectConeV2(cone, allSurfaces, bounds, "ricochet-4");
+    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+
+    // Check for left-wall vertex around y=289 (continuation through window endpoint)
+    const leftWallHits = renderedVertices.filter(
+      (v) => Math.abs(v.x - 20) < 1 && v.y > 280 && v.y < 300
+    );
+    expect(leftWallHits.length).toBe(1);
+
+    // Check ricochet-4 endpoints are in source points (not blocked by screen)
+    const ricochet4Endpoints = points.filter((p) => {
+      if (!("surface" in p)) return false;
+      return (p as any).surface?.id === "ricochet-4";
+    });
+    expect(ricochet4Endpoints.length).toBe(2);
+  });
+
+  it("sub-pixel player movement with off-screen origin produces same vertex", () => {
+    // Verifies that sub-pixel player changes don't affect visibility when origin is off-screen
+    const player = { x: 196.70556931776727, y: 666 };
+    const reflectedOrigin = reflectPoint(player, ricochet4.start, ricochet4.end);
+
+    const cone = createConeThroughWindow(reflectedOrigin, ricochet4.start, ricochet4.end);
+    const points = projectConeV2(cone, allSurfaces, bounds, "ricochet-4");
+    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+
+    // Check for left-wall vertex around y=289
+    const leftWallHits = renderedVertices.filter(
+      (v) => Math.abs(v.x - 20) < 1 && v.y > 280 && v.y < 300
+    );
+    expect(leftWallHits.length).toBe(1);
+  });
+
+  it("should have consistent vertices for off-screen origin", () => {
+    // Test both positions and compare
+    const positions = [
+      { x: 196.70556931776727, y: 666, label: "valid" },
+      { x: 196.70562671109835, y: 666, label: "invalid1" },
+      { x: 196.05861040000116, y: 666, label: "invalid2" },
+    ];
+
+    const results = positions.map(({ x, y, label }) => {
+      const player = { x, y };
+      const reflectedOrigin = reflectPoint(player, ricochet4.start, ricochet4.end);
+      const cone = createConeThroughWindow(reflectedOrigin, ricochet4.start, ricochet4.end);
+      const points = projectConeV2(cone, allSurfaces, bounds, "ricochet-4");
+      const rawVertices = toVector2Array(points);
+      const renderedVertices = preparePolygonForRendering(rawVertices);
+
+      const leftWallHits = renderedVertices.filter(
+        (v) => Math.abs(v.x - 20) < 1 && v.y > 280 && v.y < 300
+      ).length;
+
+      return { label, vertexCount: renderedVertices.length, leftWallHits };
+    });
+
+    console.log("\n=== CONSISTENCY TEST ===");
+    results.forEach((r) =>
+      console.log(`${r.label}: vertices=${r.vertexCount}, leftWallHits=${r.leftWallHits}`)
+    );
+
+    // All cases should have the same number of left-wall hits near y=289
+    const hitCounts = new Set(results.map((r) => r.leftWallHits));
+    expect(hitCounts.size).toBe(1);
+  });
+});

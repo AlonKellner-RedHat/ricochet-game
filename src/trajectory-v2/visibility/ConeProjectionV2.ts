@@ -576,7 +576,8 @@ function castRayToEndpoint(
   targetEndpoint: Endpoint,
   obstacles: readonly Surface[],
   screenBoundaries: ScreenBoundaries,
-  startLine: Segment | null
+  startLine: Segment | null,
+  windowSurfaceId?: string
 ): SourcePoint | null {
   const target = targetEndpoint.computeXY();
   const dx = target.x - origin.x;
@@ -595,11 +596,20 @@ function castRayToEndpoint(
   let minT = 0;
 
   if (startLine) {
-    const lineHit = lineLineIntersection(origin, rayEnd, startLine.start, startLine.end);
-    if (lineHit.valid && lineHit.s >= 0 && lineHit.s <= 1 && lineHit.t > 0) {
-      minT = lineHit.t;
+    // PROVENANCE CHECK: If target IS a window endpoint, it definitionally passes through
+    // the window. This is an epsilon-free, exact identity check - no floating-point
+    // intersection calculation needed.
+    if (windowSurfaceId && targetEndpoint.surface.id === windowSurfaceId) {
+      // Window endpoint - ray passes through window by definition
+      // minT stays 0 - start checking for obstacles from origin
     } else {
-      return null;
+      // Standard case: compute intersection with startLine
+      const lineHit = lineLineIntersection(origin, rayEnd, startLine.start, startLine.end);
+      if (lineHit.valid && lineHit.s >= 0 && lineHit.s <= 1 && lineHit.t > 0) {
+        minT = lineHit.t;
+      } else {
+        return null;
+      }
     }
   }
 
@@ -612,25 +622,33 @@ function castRayToEndpoint(
   let closestS = 0;
 
   // Check game obstacles
-  for (const obstacle of obstacles) {
-    // Skip the surface that the endpoint belongs to
-    if (targetEndpoint.surface.id === obstacle.id) continue;
+  // SKIP ALL blocking checks for window endpoints - the ray to a window endpoint
+  // is definitionally valid (we're going TO the window, it can't be blocked)
+  if (!windowSurfaceId || targetEndpoint.surface.id !== windowSurfaceId) {
+    for (const obstacle of obstacles) {
+      // Skip the surface that the endpoint belongs to
+      if (targetEndpoint.surface.id === obstacle.id) continue;
 
-    const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
-    if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
-      closestT = hit.t;
-      closestSurface = obstacle;
-      closestS = hit.s;
+      const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
+      if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
+        closestT = hit.t;
+        closestSurface = obstacle;
+        closestS = hit.s;
+      }
     }
   }
 
   // Check screen boundaries
-  for (const boundary of screenBoundaries.all) {
-    const hit = lineLineIntersection(origin, rayEnd, boundary.segment.start, boundary.segment.end);
-    if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
-      closestT = hit.t;
-      closestSurface = boundary;
-      closestS = hit.s;
+  // SKIP for window endpoints when origin is outside screen - the ray to a window
+  // endpoint is definitionally valid (going TO the window, not blocked BY screen)
+  if (!windowSurfaceId || targetEndpoint.surface.id !== windowSurfaceId) {
+    for (const boundary of screenBoundaries.all) {
+      const hit = lineLineIntersection(origin, rayEnd, boundary.segment.start, boundary.segment.end);
+      if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
+        closestT = hit.t;
+        closestSurface = boundary;
+        closestS = hit.s;
+      }
     }
   }
 
@@ -721,7 +739,8 @@ function castContinuationRay(
   throughEndpoint: Endpoint,
   allObstacles: readonly Surface[],
   _screenBoundaries: ScreenBoundaries,
-  startLine: Segment | null
+  startLine: Segment | null,
+  windowSurfaceId?: string
 ): SourcePoint | null {
   const target = throughEndpoint.computeXY();
   const dx = target.x - origin.x;
@@ -742,11 +761,18 @@ function castContinuationRay(
   let minT = endpointT;
 
   if (startLine) {
-    const lineHit = lineLineIntersection(origin, rayEnd, startLine.start, startLine.end);
-    if (lineHit.valid && lineHit.s >= 0 && lineHit.s <= 1 && lineHit.t > 0) {
-      minT = Math.max(lineHit.t, endpointT);
+    // PROVENANCE CHECK: If throughEndpoint IS a window endpoint, it definitionally
+    // passes through the window. Skip floating-point intersection calculation.
+    if (windowSurfaceId && throughEndpoint.surface.id === windowSurfaceId) {
+      // Window endpoint - continuation ray passes through window by definition
+      // minT is already set to endpointT - start looking past the endpoint
     } else {
-      return null;
+      const lineHit = lineLineIntersection(origin, rayEnd, startLine.start, startLine.end);
+      if (lineHit.valid && lineHit.s >= 0 && lineHit.s <= 1 && lineHit.t > 0) {
+        minT = Math.max(lineHit.t, endpointT);
+      } else {
+        return null;
+      }
     }
   }
 
@@ -841,8 +867,12 @@ export function projectConeV2(
     // Skip if target is at origin
     if (targetXY.x === origin.x && targetXY.y === origin.y) continue;
 
-    // Check if target is in cone
-    if (!isPointInCone(targetXY, source)) continue;
+    // PROVENANCE CHECK: Window endpoints are IN the cone by definition - they ARE the cone boundaries.
+    // Skip the floating-point isPointInCone check for window endpoints.
+    const isWindowEndpoint = isEndpoint(target) && excludeSurfaceId && target.surface.id === excludeSurfaceId;
+    
+    // Check if target is in cone (skip for window endpoints - they're definitionally in cone)
+    if (!isWindowEndpoint && !isPointInCone(targetXY, source)) continue;
 
     // Handle JunctionPoints (corners) - never cast continuation rays
     if (isJunctionPoint(target)) {
@@ -867,7 +897,8 @@ export function projectConeV2(
       targetEndpoint,
       effectiveObstacles,
       screenBoundaries,
-      startLine
+      startLine,
+      excludeSurfaceId
     );
 
     if (hit) {
@@ -890,7 +921,8 @@ export function projectConeV2(
             targetEndpoint,
             [...effectiveObstacles, ...screenBoundaries.all],
             screenBoundaries,
-            startLine
+            startLine,
+            excludeSurfaceId
           );
           if (continuation) {
             vertices.push(continuation);
