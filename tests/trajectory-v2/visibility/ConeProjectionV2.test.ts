@@ -1053,3 +1053,233 @@ describe("Off-screen origin visibility", () => {
     expect(hitCounts.size).toBe(1);
   });
 });
+
+// =============================================================================
+// DIAGONAL WINDOW SORTING TESTS
+// =============================================================================
+describe("ConeProjectionV2 - Diagonal Window Sorting", () => {
+  const bounds: ScreenBoundsConfig = { minX: 0, maxX: 1280, minY: 0, maxY: 720 };
+
+  const allSurfaces = [
+    createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }),
+    createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 }),
+    createTestSurface("left-wall", { x: 20, y: 80 }, { x: 20, y: 700 }),
+    createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 }),
+    createTestSurface("platform-1", { x: 300, y: 450 }, { x: 500, y: 450 }),
+    createTestSurface("platform-2", { x: 550, y: 350 }, { x: 750, y: 350 }),
+    createTestSurface("ricochet-1", { x: 800, y: 150 }, { x: 900, y: 250 }),
+    createTestSurface("ricochet-2", { x: 400, y: 250 }, { x: 550, y: 250 }),
+    createTestSurface("ricochet-3", { x: 100, y: 200 }, { x: 200, y: 300 }),
+    createTestSurface("ricochet-4", { x: 850, y: 350 }, { x: 850, y: 500 }),
+  ];
+
+  const ricochet1 = { start: { x: 800, y: 150 }, end: { x: 900, y: 250 } };
+
+  function reflectPoint(point: Vector2, lineStart: Vector2, lineEnd: Vector2): Vector2 {
+    const dx = lineEnd.x - lineStart.x;
+    const dy = lineEnd.y - lineStart.y;
+    const lineLengthSq = dx * dx + dy * dy;
+    if (lineLengthSq < 1e-10) return point;
+
+    const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lineLengthSq;
+    const closestX = lineStart.x + t * dx;
+    const closestY = lineStart.y + t * dy;
+
+    return {
+      x: 2 * closestX - point.x,
+      y: 2 * closestY - point.y,
+    };
+  }
+
+  /**
+   * Check if the polygon vertices are in proper CCW angular order.
+   * For windowed cones, vertices should monotonically increase in angle
+   * (with at most one wrap-around at the ±π boundary).
+   *
+   * A correctly ordered polygon: angles go 170° → 175° → 179° → -177°
+   * An incorrectly ordered polygon: angles go -177° → 170° → 175° → ... → -177° → 170°
+   */
+  function isProperAngularOrder(vertices: Vector2[], origin: Vector2): boolean {
+    if (vertices.length < 3) return true;
+
+    const angles = vertices.map((v) => Math.atan2(v.y - origin.y, v.x - origin.x));
+
+    // Count "backwards" jumps - large negative angle changes
+    // In proper CCW order, angles should mostly increase (or wrap from +π to -π)
+    let backwardJumps = 0;
+    for (let i = 0; i < angles.length - 1; i++) {
+      const diff = angles[i + 1] - angles[i];
+      // Normalize diff to [-π, π]
+      let normalizedDiff = diff;
+      if (normalizedDiff > Math.PI) normalizedDiff -= 2 * Math.PI;
+      if (normalizedDiff < -Math.PI) normalizedDiff += 2 * Math.PI;
+
+      // A significant backward jump (decreasing angle in CCW order)
+      if (normalizedDiff < -0.1) {
+        // Allow small negative diffs due to floating point
+        backwardJumps++;
+      }
+    }
+
+    // For a windowed cone, we expect at most one wrap-around point
+    // (where angle jumps from ~+π to ~-π)
+    // The bug causes multiple wrap-arounds due to incorrect ordering
+    return backwardJumps <= 1;
+  }
+
+  it("INVALID case: origin.y between window endpoints - should NOT self-intersect", () => {
+    // Player at y=666, origin.y = 175.76 (BETWEEN window y=150 and y=250)
+    const player = { x: 825.7573029149972, y: 666 };
+    const reflectedOrigin = reflectPoint(player, ricochet1.start, ricochet1.end);
+
+    // Verify origin.y is between window endpoints
+    expect(reflectedOrigin.y).toBeGreaterThan(150);
+    expect(reflectedOrigin.y).toBeLessThan(250);
+
+    const cone = createConeThroughWindow(reflectedOrigin, ricochet1.start, ricochet1.end);
+    const points = projectConeV2(cone, allSurfaces, bounds, "ricochet-1");
+    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+
+    // The polygon vertices should be in proper CCW angular order
+    expect(isProperAngularOrder(renderedVertices, reflectedOrigin)).toBe(true);
+  });
+
+  it("VALID case: origin.y above window - should NOT self-intersect", () => {
+    // Player at y=666, origin.y = 141.76 (ABOVE window y=150)
+    const player = { x: 791.7565544150048, y: 666 };
+    const reflectedOrigin = reflectPoint(player, ricochet1.start, ricochet1.end);
+
+    // Verify origin.y is above window
+    expect(reflectedOrigin.y).toBeLessThan(150);
+
+    const cone = createConeThroughWindow(reflectedOrigin, ricochet1.start, ricochet1.end);
+    const points = projectConeV2(cone, allSurfaces, bounds, "ricochet-1");
+    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+
+    // The polygon vertices should be in proper CCW angular order
+    expect(isProperAngularOrder(renderedVertices, reflectedOrigin)).toBe(true);
+  });
+
+  it("both cases should produce similar vertex counts", () => {
+    // Invalid case
+    const player1 = { x: 825.7573029149972, y: 666 };
+    const origin1 = reflectPoint(player1, ricochet1.start, ricochet1.end);
+    const cone1 = createConeThroughWindow(origin1, ricochet1.start, ricochet1.end);
+    const vertices1 = preparePolygonForRendering(
+      toVector2Array(projectConeV2(cone1, allSurfaces, bounds, "ricochet-1"))
+    );
+
+    // Valid case
+    const player2 = { x: 791.7565544150048, y: 666 };
+    const origin2 = reflectPoint(player2, ricochet1.start, ricochet1.end);
+    const cone2 = createConeThroughWindow(origin2, ricochet1.start, ricochet1.end);
+    const vertices2 = preparePolygonForRendering(
+      toVector2Array(projectConeV2(cone2, allSurfaces, bounds, "ricochet-1"))
+    );
+
+    // Both should have similar vertex counts (within 2)
+    expect(Math.abs(vertices1.length - vertices2.length)).toBeLessThanOrEqual(2);
+  });
+});
+
+// =============================================================================
+// OUT-OF-BOUNDS ORIGIN SPIKE TESTS
+// =============================================================================
+describe("ConeProjectionV2 - Out-of-Bounds Origin Spike", () => {
+  const bounds: ScreenBoundsConfig = { minX: 0, maxX: 1280, minY: 0, maxY: 720 };
+
+  const allSurfaces = [
+    createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }),
+    createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 }),
+    createTestSurface("left-wall", { x: 20, y: 80 }, { x: 20, y: 700 }),
+    createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 }),
+    createTestSurface("platform-1", { x: 300, y: 450 }, { x: 500, y: 450 }),
+    createTestSurface("platform-2", { x: 550, y: 350 }, { x: 750, y: 350 }),
+    createTestSurface("ricochet-1", { x: 800, y: 150 }, { x: 900, y: 250 }),
+    createTestSurface("ricochet-2", { x: 400, y: 250 }, { x: 550, y: 250 }),
+    createTestSurface("ricochet-3", { x: 100, y: 200 }, { x: 200, y: 300 }),
+    createTestSurface("ricochet-4", { x: 850, y: 350 }, { x: 850, y: 500 }),
+  ];
+
+  const ricochet1 = { start: { x: 800, y: 150 }, end: { x: 900, y: 250 } };
+
+  function reflectPoint(point: Vector2, lineStart: Vector2, lineEnd: Vector2): Vector2 {
+    const dx = lineEnd.x - lineStart.x;
+    const dy = lineEnd.y - lineStart.y;
+    const lineLengthSq = dx * dx + dy * dy;
+    if (lineLengthSq < 1e-10) return point;
+
+    const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lineLengthSq;
+    const closestX = lineStart.x + t * dx;
+    const closestY = lineStart.y + t * dy;
+
+    return {
+      x: 2 * closestX - point.x,
+      y: 2 * closestY - point.y,
+    };
+  }
+
+  it("INVALID case: origin above ceiling - should NOT include right-wall corner spike", () => {
+    // Player position that produces origin.y < ceiling.y (above ceiling)
+    const player = { x: 712.7428406502456, y: 666 };
+    const reflectedOrigin = reflectPoint(player, ricochet1.start, ricochet1.end);
+
+    // Verify origin is above ceiling (y < 80)
+    expect(reflectedOrigin.y).toBeLessThan(80);
+
+    const cone = createConeThroughWindow(reflectedOrigin, ricochet1.start, ricochet1.end);
+    const points = projectConeV2(cone, allSurfaces, bounds, "ricochet-1");
+    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+
+    // The polygon should NOT contain the right-wall corner (1260, 80)
+    // because it's between the origin and window, not past the window
+    const rightWallCorner = renderedVertices.find(
+      (v) => Math.abs(v.x - 1260) < 1 && Math.abs(v.y - 80) < 1
+    );
+    expect(rightWallCorner).toBeUndefined();
+  });
+
+  it("VALID case: origin below ceiling - normal polygon", () => {
+    // Player position that produces origin.y > ceiling.y (normal case)
+    const player = { x: 763.1890310502434, y: 666 };
+    const reflectedOrigin = reflectPoint(player, ricochet1.start, ricochet1.end);
+
+    // Verify origin is below ceiling (y > 80)
+    expect(reflectedOrigin.y).toBeGreaterThan(80);
+
+    const cone = createConeThroughWindow(reflectedOrigin, ricochet1.start, ricochet1.end);
+    const points = projectConeV2(cone, allSurfaces, bounds, "ricochet-1");
+    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+
+    // This case should also NOT have the right-wall corner
+    const rightWallCorner = renderedVertices.find(
+      (v) => Math.abs(v.x - 1260) < 1 && Math.abs(v.y - 80) < 1
+    );
+    expect(rightWallCorner).toBeUndefined();
+  });
+
+  it("should not have spikes crossing the visible region", () => {
+    // The invalid case should not have edges crossing from left to right wall
+    const player = { x: 712.7428406502456, y: 666 };
+    const reflectedOrigin = reflectPoint(player, ricochet1.start, ricochet1.end);
+
+    const cone = createConeThroughWindow(reflectedOrigin, ricochet1.start, ricochet1.end);
+    const points = projectConeV2(cone, allSurfaces, bounds, "ricochet-1");
+    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+
+    // Check for any vertices on the right wall (x > 1200) that aren't window endpoints
+    const windowEndpoints = [
+      { x: 800, y: 150 },
+      { x: 900, y: 250 },
+    ];
+    const rightSideVertices = renderedVertices.filter((v) => {
+      const isWindowEndpoint = windowEndpoints.some(
+        (w) => Math.abs(v.x - w.x) < 1 && Math.abs(v.y - w.y) < 1
+      );
+      return v.x > 1200 && !isWindowEndpoint;
+    });
+
+    // There should be no vertices on the right side (except window endpoints)
+    expect(rightSideVertices.length).toBe(0);
+  });
+});

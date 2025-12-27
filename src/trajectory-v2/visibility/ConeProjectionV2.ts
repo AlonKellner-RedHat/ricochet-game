@@ -428,6 +428,47 @@ export function isPointInCone(point: Vector2, cone: ConeSource): boolean {
   return rightCross >= 0 || leftCross <= 0;
 }
 
+/**
+ * Check if a point is on the far side of the window from the origin.
+ *
+ * For windowed cones, a point should only be included if it's "past" the window
+ * (on the opposite side from the origin). Points between the origin and window
+ * that happen to be in the angular range should be excluded.
+ *
+ * Uses cross-product to determine which side of the window line the point is on.
+ * The origin defines one side; points on the opposite side are "past" the window.
+ *
+ * @param origin The cone origin (player or reflected position)
+ * @param point The point to check
+ * @param window The window segment (startLine)
+ * @returns true if point is on the far side of the window from origin
+ */
+function isPointPastWindow(origin: Vector2, point: Vector2, window: Segment): boolean {
+  // Cross product of (window direction) × (origin relative to window start)
+  // This tells us which side of the window line the origin is on
+  const windowDx = window.end.x - window.start.x;
+  const windowDy = window.end.y - window.start.y;
+
+  const originRelX = origin.x - window.start.x;
+  const originRelY = origin.y - window.start.y;
+  const originCross = windowDx * originRelY - windowDy * originRelX;
+
+  const pointRelX = point.x - window.start.x;
+  const pointRelY = point.y - window.start.y;
+  const pointCross = windowDx * pointRelY - windowDy * pointRelX;
+
+  // Point is "past" the window if it's on the opposite side from origin
+  // Same sign = same side, opposite sign = opposite sides
+  // If either is zero, the point is exactly on the window line
+  if (originCross === 0 || pointCross === 0) {
+    // Origin or point is on the window line - treat as "past"
+    return true;
+  }
+
+  // Opposite signs = opposite sides = point is past window
+  return (originCross > 0 && pointCross < 0) || (originCross < 0 && pointCross > 0);
+}
+
 // =============================================================================
 // SURFACE ALIGNMENT DETECTION (EPSILON-FREE)
 // =============================================================================
@@ -874,6 +915,13 @@ export function projectConeV2(
     // Check if target is in cone (skip for window endpoints - they're definitionally in cone)
     if (!isWindowEndpoint && !isPointInCone(targetXY, source)) continue;
 
+    // For windowed cones, verify target is PAST the window (not between origin and window).
+    // Points that are angularly within the cone but geometrically between origin and window
+    // should be excluded - they create invalid "spikes" in the polygon.
+    if (isWindowed && startLine && !isWindowEndpoint) {
+      if (!isPointPastWindow(origin, targetXY, startLine)) continue;
+    }
+
     // Handle JunctionPoints (corners) - never cast continuation rays
     if (isJunctionPoint(target)) {
       // Cast ray to junction point (treated as a regular target, no continuation)
@@ -1072,10 +1120,27 @@ function sortPolygonVerticesSourcePoint(
   }
 
   // Reference direction for half-plane split.
-  // For full cone: use positive X direction (1, 0)
-  // For windowed cone: could use cone boundary
   // This splits the 360° into two ≤180° half-planes where cross-product is transitive.
-  const refDirection: Vector2 = { x: 1, y: 0 };
+  let refDirection: Vector2;
+  if (startLine !== null) {
+    // Windowed cone: use first clockwise boundary ray as reference.
+    // First CW = endpoint with LARGER angle (encountered first when traversing CW from +X)
+    // This ensures all visible points (inside the cone) are on the same side of the reference,
+    // preventing the ±180° discontinuity from splitting the visible region incorrectly.
+    const startAngle = Math.atan2(
+      startLine.start.y - origin.y,
+      startLine.start.x - origin.x
+    );
+    const endAngle = Math.atan2(
+      startLine.end.y - origin.y,
+      startLine.end.x - origin.x
+    );
+    const firstCW = startAngle > endAngle ? startLine.start : startLine.end;
+    refDirection = { x: firstCW.x - origin.x, y: firstCW.y - origin.y };
+  } else {
+    // Full cone: use positive X direction (1, 0)
+    refDirection = { x: 1, y: 0 };
+  }
 
   // Sort using reference-ray based cross-product comparison.
   // This is epsilon-free and guarantees transitivity.
@@ -1289,6 +1354,9 @@ function getShadowBoundaryOrder(endpoint: Endpoint, origin: Vector2): number {
 /**
  * Arrange points for windowed cone, ensuring edge points are at ends.
  * Uses exact coordinate matching for window endpoints.
+ *
+ * Handles the ±180° discontinuity: when window endpoints span this boundary,
+ * we determine left/right based on the CCW angular direction of the visible cone.
  */
 function arrangeWindowedCone(
   sortedPoints: Array<{
@@ -1307,8 +1375,29 @@ function arrangeWindowedCone(
   const startAngle = Math.atan2(startLine.start.y - origin.y, startLine.start.x - origin.x);
   const endAngle = Math.atan2(startLine.end.y - origin.y, startLine.end.x - origin.x);
 
-  const leftXY = startAngle < endAngle ? startLine.start : startLine.end;
-  const rightXY = startAngle < endAngle ? startLine.end : startLine.start;
+  // Calculate the CCW angular distance from start to end
+  // This handles the ±180° wrap-around correctly
+  let ccwDistance = endAngle - startAngle;
+  if (ccwDistance < 0) {
+    ccwDistance += 2 * Math.PI; // Normalize to [0, 2π)
+  }
+
+  // If CCW distance < π, going from start to end is the shorter CCW arc
+  // Otherwise, going from end to start is the shorter CCW arc
+  // For a windowed cone, visible points are in the shorter arc,
+  // so "left" is the CCW start of the visible region.
+  let leftXY: Vector2;
+  let rightXY: Vector2;
+
+  if (ccwDistance <= Math.PI) {
+    // Visible region goes CCW from start to end
+    leftXY = startLine.start;
+    rightXY = startLine.end;
+  } else {
+    // Visible region goes CCW from end to start (the other way around)
+    leftXY = startLine.end;
+    rightXY = startLine.start;
+  }
 
   for (const item of sortedPoints) {
     // Exact coordinate match for window edges
