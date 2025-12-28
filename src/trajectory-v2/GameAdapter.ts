@@ -39,6 +39,8 @@ export interface GameAdapterConfig {
   validRegionShadowAlpha?: number;
   /** Opacity of dark overlay for lit areas (0-1) */
   validRegionLitAlpha?: number;
+  /** Use multi-stage propagation with progressive opacity for planned surfaces */
+  useMultiStagePropagation?: boolean;
 }
 
 /**
@@ -56,6 +58,7 @@ export class GameAdapter {
   private validRegionGraphics: Phaser.GameObjects.Graphics | null = null;
   private validRegionRenderer: ValidRegionRenderer | null = null;
   private showValidRegion = false;
+  private useMultiStagePropagation = false;
   private screenBounds: ScreenBounds;
 
   // Cached state for visibility rendering
@@ -73,6 +76,7 @@ export class GameAdapter {
 
     // Create visibility overlay graphics (rendered below trajectory)
     this.showValidRegion = config.showValidRegion ?? false;
+    this.useMultiStagePropagation = config.useMultiStagePropagation ?? false;
     if (this.showValidRegion) {
       this.validRegionGraphics = scene.add.graphics();
       this.validRegionGraphics.setDepth(-1); // Below other graphics
@@ -196,7 +200,13 @@ export class GameAdapter {
 
     // Render valid region overlay
     if (this.validRegionRenderer && this.showValidRegion) {
-      this.validRegionRenderer.render(player, plannedSurfaces, allSurfaces, umbrella);
+      this.validRegionRenderer.render(
+        player,
+        plannedSurfaces,
+        allSurfaces,
+        umbrella,
+        this.useMultiStagePropagation
+      );
     }
   }
 
@@ -404,6 +414,27 @@ export class GameAdapter {
     if (!this.showValidRegion && this.validRegionRenderer) {
       this.validRegionRenderer.clear();
     }
+  }
+
+  /**
+   * Toggle multi-stage propagation with progressive opacity.
+   *
+   * When enabled, each intermediate polygon (one per planned surface)
+   * is rendered with progressive opacity - earlier stages are more
+   * transparent, making the final visibility most prominent.
+   */
+  toggleMultiStagePropagation(): void {
+    this.useMultiStagePropagation = !this.useMultiStagePropagation;
+    console.log(
+      `Multi-stage propagation: ${this.useMultiStagePropagation ? "ON" : "OFF"}`
+    );
+  }
+
+  /**
+   * Check if multi-stage propagation is enabled.
+   */
+  isMultiStagePropagationEnabled(): boolean {
+    return this.useMultiStagePropagation;
   }
 
   /**

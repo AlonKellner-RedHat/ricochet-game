@@ -26,6 +26,11 @@ import {
 import type { ScreenBounds } from "./ConePropagator";
 import { preparePolygonForRendering } from "./RenderingDedup";
 import type { ValidRegionOutline } from "./OutlineBuilder";
+import {
+  propagateThroughSurfaces,
+  type PropagationResult,
+  type PropagationStage,
+} from "./SectorPropagation";
 
 /**
  * Configuration for the valid region overlay.
@@ -140,13 +145,21 @@ export class ValidRegionRenderer {
    * @param plannedSurfaces Planned surfaces (windows)
    * @param allSurfaces All surfaces in the scene
    * @param umbrella Optional umbrella segment for windowed cone projection
+   * @param useMultiStagePropagation If true, uses new multi-stage propagation with progressive opacity
    */
   render(
     player: Vector2,
     plannedSurfaces: readonly Surface[],
     allSurfaces: readonly Surface[],
-    umbrella: Segment | null = null
+    umbrella: Segment | null = null,
+    useMultiStagePropagation = false
   ): void {
+    // Use multi-stage propagation for planned surfaces when enabled
+    if (useMultiStagePropagation && plannedSurfaces.length > 0) {
+      this.renderMultiStage(player, plannedSurfaces, allSurfaces);
+      return;
+    }
+
     // Unified ConeProjection algorithm for all cases:
     // - 360° visibility: full cone from player
     // - Umbrella mode: cone through umbrella window from player
@@ -229,6 +242,109 @@ export class ValidRegionRenderer {
     // Debug: show outline
     if (this.config.showOutline) {
       this.renderOutline(outline);
+    }
+  }
+
+  /**
+   * Render multi-stage visibility with progressive opacity.
+   *
+   * This implements the first principle:
+   * **Light that is reflected through a surface must have first reached that surface.**
+   *
+   * Each stage's opacity increases progressively:
+   * - Stage 0 (initial): Most transparent (20% with 5 surfaces)
+   * - Final stage: Fully visible (100%)
+   *
+   * Earlier polygons are more transparent because they represent "earlier"
+   * light in the chain, making the final destination most prominent.
+   */
+  private renderMultiStage(
+    player: Vector2,
+    plannedSurfaces: readonly Surface[],
+    allSurfaces: readonly Surface[]
+  ): void {
+    // Calculate propagation through all surfaces
+    const result = propagateThroughSurfaces(
+      player,
+      plannedSurfaces,
+      allSurfaces,
+      this.screenBounds
+    );
+
+    // Clear previous render
+    this.graphics.clear();
+
+    // If no valid stages, darken entire screen
+    if (!result.isValid) {
+      this.renderFullOverlay();
+      return;
+    }
+
+    // Step 1: Draw full screen with shadow alpha
+    const { minX, minY, maxX, maxY } = this.screenBounds;
+    this.graphics.setBlendMode(BlendModes.NORMAL);
+    this.graphics.fillStyle(this.config.overlayColor, this.config.shadowAlpha);
+    this.graphics.fillRect(minX, minY, maxX - minX, maxY - minY);
+
+    // Step 2: Render each stage with its specific opacity
+    // Later stages are rendered on top with higher opacity
+    for (const stage of result.stages) {
+      this.renderStage(stage, player);
+    }
+
+    // Update lastOutline with final stage for compatibility
+    const finalStage = result.stages[result.stages.length - 1];
+    if (finalStage && finalStage.polygons.length > 0) {
+      const mainPolygon = finalStage.polygons[0]!;
+      this.lastOutline = {
+        vertices: mainPolygon.map((pos, i) => ({
+          position: pos,
+          type: "surface" as const,
+          sourceId: `vertex-${i}`,
+        })),
+        origin: finalStage.origin,
+        isValid: mainPolygon.length >= 3,
+      };
+    }
+  }
+
+  /**
+   * Render a single propagation stage with its specific opacity.
+   */
+  private renderStage(stage: PropagationStage, player: Vector2): void {
+    for (const polygon of stage.polygons) {
+      if (polygon.length < 3) continue;
+
+      // Prepare polygon for rendering
+      const preparedPolygon = preparePolygonForRendering([...polygon]);
+      if (preparedPolygon.length < 3) continue;
+
+      const vertices = preparedPolygon.map((pos) => ({ position: pos }));
+
+      // Erase this region from the shadow
+      this.graphics.setBlendMode(BlendModes.ERASE);
+      this.graphics.fillStyle(0xffffff, 1.0);
+
+      // For initial stage (no window), use triangle fan from player
+      // For windowed stages, use polygon drawing
+      const hasWindow = stage.surfaceIndex >= 0;
+      if (hasWindow) {
+        this.drawPolygon(vertices);
+      } else {
+        this.drawTriangleFan(player, vertices);
+      }
+
+      // Draw lit region with stage-specific opacity
+      // litAlpha is the base, modulated by stage opacity
+      const stageAlpha = this.config.litAlpha * stage.opacity;
+      this.graphics.setBlendMode(BlendModes.NORMAL);
+      this.graphics.fillStyle(this.config.overlayColor, stageAlpha);
+
+      if (hasWindow) {
+        this.drawPolygon(vertices);
+      } else {
+        this.drawTriangleFan(player, vertices);
+      }
     }
   }
 

@@ -113,6 +113,12 @@ export class GameScene extends Phaser.Scene {
       shootCooldown: 0.3,
       showValidRegion: true, // Enable visibility overlay
       validRegionOverlayAlpha: 0.4,
+      useMultiStagePropagation: true, // Enable progressive opacity for planned surfaces
+    });
+
+    // Toggle multi-stage propagation with 'M' key
+    this.inputManager.onKeyPress("KeyM", () => {
+      this.trajectoryAdapter.toggleMultiStagePropagation();
     });
 
     // Create arrow graphics
