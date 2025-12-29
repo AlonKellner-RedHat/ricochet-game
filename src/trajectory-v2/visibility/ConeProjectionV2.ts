@@ -738,6 +738,14 @@ function castRayToEndpoint(
 }
 
 /**
+ * Check if two points are exactly equal (same coordinates).
+ * Uses exact comparison - no epsilon needed.
+ */
+function pointsEqual(a: Vector2, b: Vector2): boolean {
+  return a.x === b.x && a.y === b.y;
+}
+
+/**
  * Cast a ray to an arbitrary target (not necessarily an endpoint).
  * Used for cone boundary rays.
  */
@@ -762,11 +770,22 @@ function castRayToTarget(
   let minT = 0;
 
   if (startLine) {
-    const lineHit = lineLineIntersection(origin, rayEnd, startLine.start, startLine.end);
-    if (lineHit.valid && lineHit.s >= 0 && lineHit.s <= 1 && lineHit.t > 0) {
-      minT = lineHit.t;
+    // PROVENANCE CHECK: If target IS an endpoint of startLine, the ray
+    // definitionally passes through the startLine. Skip floating-point
+    // intersection calculation to avoid precision issues (s = 1.0000000000000002).
+    const targetIsStartLineEndpoint =
+      pointsEqual(target, startLine.start) || pointsEqual(target, startLine.end);
+
+    if (targetIsStartLineEndpoint) {
+      // Ray passes through startLine endpoint - use t = 1/scale (target position)
+      minT = 1 / scale;
     } else {
-      return null;
+      const lineHit = lineLineIntersection(origin, rayEnd, startLine.start, startLine.end);
+      if (lineHit.valid && lineHit.s >= 0 && lineHit.s <= 1 && lineHit.t > 0) {
+        minT = lineHit.t;
+      } else {
+        return null;
+      }
     }
   }
 

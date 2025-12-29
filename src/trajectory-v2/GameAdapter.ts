@@ -16,12 +16,12 @@ import { TrajectoryEngine } from "./engine/TrajectoryEngine";
 import { AimingSystem } from "./systems/AimingSystem";
 import { ArrowSystem } from "./systems/ArrowSystem";
 import { type IGraphics, RenderSystem } from "./systems/RenderSystem";
-import type { Segment } from "./visibility/ConeProjection";
 import {
   type IValidRegionGraphics,
-  type ScreenBounds,
   ValidRegionRenderer,
 } from "./visibility/ValidRegionRenderer";
+import type { WindowConfig } from "./visibility/WindowConfig";
+import type { ScreenBounds } from "./visibility/ConePropagator";
 
 /**
  * Configuration for the game adapter.
@@ -168,7 +168,7 @@ export class GameAdapter {
    * @param cursor - Cursor position
    * @param plannedSurfaces - Surfaces in the plan
    * @param allSurfaces - All surfaces in the scene
-   * @param umbrella - Optional umbrella segment for windowed cone projection
+   * @param windowConfig - Optional window configuration for cone projection (single or multi-window)
    */
   update(
     deltaSeconds: number,
@@ -176,7 +176,7 @@ export class GameAdapter {
     cursor: Vector2,
     plannedSurfaces: readonly Surface[],
     allSurfaces: readonly Surface[],
-    umbrella: Segment | null = null
+    windowConfig: WindowConfig | null = null
   ): void {
     // Cache for visibility rendering
     this.lastPlayer = player;
@@ -196,7 +196,7 @@ export class GameAdapter {
 
     // Render valid region overlay
     if (this.validRegionRenderer && this.showValidRegion) {
-      this.validRegionRenderer.render(player, plannedSurfaces, allSurfaces, umbrella);
+      this.validRegionRenderer.render(player, plannedSurfaces, allSurfaces, windowConfig);
     }
   }
 

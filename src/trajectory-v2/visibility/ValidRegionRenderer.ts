@@ -21,8 +21,13 @@ import {
   createConeThroughWindow,
   projectConeV2,
   toVector2Array,
-  type Segment,
 } from "./ConeProjectionV2";
+import {
+  type Segment,
+  type WindowConfig,
+  getWindowSegments,
+  isMultiWindow,
+} from "./WindowConfig";
 import type { ScreenBounds } from "./ConePropagator";
 import { preparePolygonForRendering } from "./RenderingDedup";
 import type { ValidRegionOutline } from "./OutlineBuilder";
@@ -130,7 +135,7 @@ export class ValidRegionRenderer {
    * Calculate and render the valid region for given player and surfaces.
    *
    * Uses either:
-   * - ConeProjection (new algorithm) when umbrella is provided
+   * - ConeProjection (new algorithm) when umbrella/window config is provided
    * - Legacy visibility calculator when no umbrella
    *
    * For planned surfaces, visibility is constrained to the reflective side
@@ -139,24 +144,25 @@ export class ValidRegionRenderer {
    * @param player Player position
    * @param plannedSurfaces Planned surfaces (windows)
    * @param allSurfaces All surfaces in the scene
-   * @param umbrella Optional umbrella segment for windowed cone projection
+   * @param windowConfig Optional window configuration for cone projection (single or multi-window)
    */
   render(
     player: Vector2,
     plannedSurfaces: readonly Surface[],
     allSurfaces: readonly Surface[],
-    umbrella: Segment | null = null
+    windowConfig: WindowConfig | null = null
   ): void {
     // Unified ConeProjection algorithm for all cases:
     // - 360° visibility: full cone from player
     // - Umbrella mode: cone through umbrella window from player
+    // - Umbrella hole mode: multiple cones through multiple windows
     // - Planned surfaces: cone through last surface window from reflected player image
-    let visibilityResult: { polygon: readonly Vector2[]; origin: Vector2; isValid: boolean };
+    let visibilityResult: { polygons: readonly (readonly Vector2[])[]; origin: Vector2; isValid: boolean };
 
-    if (umbrella || plannedSurfaces.length > 0) {
-      // Calculate origin and window
+    if (windowConfig || plannedSurfaces.length > 0) {
+      // Calculate origin and windows
       let origin = player;
-      let window: Segment;
+      let windows: readonly Segment[];
 
       // ID of the window surface to exclude from obstacles
       // This prevents floating-point issues where the window blocks itself
@@ -169,22 +175,31 @@ export class ValidRegionRenderer {
         }
         // Last planned surface is the window
         const lastSurface = plannedSurfaces[plannedSurfaces.length - 1]!;
-        window = { start: lastSurface.segment.start, end: lastSurface.segment.end };
+        windows = [{ start: lastSurface.segment.start, end: lastSurface.segment.end }];
         excludeSurfaceId = lastSurface.id;
       } else {
-        // Umbrella mode - no surface to exclude (umbrella is not in allSurfaces)
-        window = umbrella!;
+        // Umbrella mode - get all window segments from config
+        // (single window for full umbrella, multiple for umbrella hole)
+        windows = getWindowSegments(windowConfig!);
       }
 
-      // Create and project cone through window using epsilon-free ConeProjectionV2
-      // Exclude the window surface from obstacles to prevent self-blocking
-      const cone = createConeThroughWindow(origin, window.start, window.end);
-      const sourcePoints = projectConeV2(cone, allSurfaces, this.screenBounds, excludeSurfaceId);
-      // Convert SourcePoints to Vector2 and apply visual deduplication
-      const rawPolygon = toVector2Array(sourcePoints);
-      const polygon = preparePolygonForRendering(rawPolygon);
+      // Project cone(s) through each window - supports multi-window (umbrella hole)
+      const allPolygons: (readonly Vector2[])[] = [];
+      for (const window of windows) {
+        const cone = createConeThroughWindow(origin, window.start, window.end);
+        const sourcePoints = projectConeV2(cone, allSurfaces, this.screenBounds, excludeSurfaceId);
+        const rawPolygon = toVector2Array(sourcePoints);
+        const polygon = preparePolygonForRendering(rawPolygon);
+        if (polygon.length >= 3) {
+          allPolygons.push(polygon);
+        }
+      }
 
-      visibilityResult = { polygon, origin, isValid: polygon.length >= 3 };
+      visibilityResult = {
+        polygons: allPolygons,
+        origin,
+        isValid: allPolygons.length > 0 && allPolygons.some((p) => p.length >= 3),
+      };
     } else {
       // Full 360° visibility from player using epsilon-free ConeProjectionV2
       const cone = createFullCone(player);
@@ -192,12 +207,17 @@ export class ValidRegionRenderer {
       // Convert SourcePoints to Vector2 and apply visual deduplication
       const rawPolygon = toVector2Array(sourcePoints);
       const polygon = preparePolygonForRendering(rawPolygon);
-      visibilityResult = { polygon, origin: player, isValid: polygon.length >= 3 };
+      visibilityResult = {
+        polygons: polygon.length >= 3 ? [polygon] : [],
+        origin: player,
+        isValid: polygon.length >= 3,
+      };
     }
 
-    // Convert to ValidRegionOutline format for compatibility
+    // Convert to ValidRegionOutline format for compatibility (uses first polygon for legacy)
+    const firstPolygon = visibilityResult.polygons[0] ?? [];
     const outline: ValidRegionOutline = {
-      vertices: visibilityResult.polygon.map((pos, i) => ({
+      vertices: firstPolygon.map((pos, i) => ({
         position: pos,
         type: "surface" as const,
         sourceId: `vertex-${i}`,
@@ -209,13 +229,17 @@ export class ValidRegionRenderer {
     this.lastOutline = outline;
 
     // Log visibility data if debug logging is enabled
-    this.logVisibilitySimple(visibilityResult);
+    this.logVisibilitySimple({
+      polygon: firstPolygon,
+      origin: visibilityResult.origin,
+      isValid: visibilityResult.isValid,
+    });
 
     // Clear previous render
     this.graphics.clear();
 
     // If no valid region, darken entire screen
-    if (!outline.isValid || outline.vertices.length < 3) {
+    if (!visibilityResult.isValid || visibilityResult.polygons.length === 0) {
       this.renderFullOverlay();
       return;
     }
@@ -223,10 +247,10 @@ export class ValidRegionRenderer {
     // Render the overlay with valid region cutout
     // Use polygon drawing (not triangle fan) when we have a window (umbrella or planned surfaces)
     // Triangle fan from player only works for 360° visibility
-    const hasWindow = umbrella !== null || plannedSurfaces.length > 0;
-    this.renderOverlayWithCutout(outline, hasWindow);
+    const hasWindow = windowConfig !== null || plannedSurfaces.length > 0;
+    this.renderOverlayWithCutoutMulti(visibilityResult.polygons, visibilityResult.origin, hasWindow);
 
-    // Debug: show outline
+    // Debug: show outline (for first polygon only)
     if (this.config.showOutline) {
       this.renderOutline(outline);
     }
@@ -244,6 +268,59 @@ export class ValidRegionRenderer {
   }
 
   /**
+   * Render overlay with multiple valid regions (for umbrella hole mode).
+   *
+   * Strategy:
+   * 1. Draw full screen with shadow alpha
+   * 2. For each polygon, erase and draw with lit alpha
+   *
+   * @param polygons Array of visibility polygons
+   * @param origin The visibility origin (player or reflected image)
+   * @param hasWindow Whether visibility is through a window (umbrella or planned surfaces)
+   */
+  private renderOverlayWithCutoutMulti(
+    polygons: readonly (readonly Vector2[])[],
+    origin: Vector2,
+    hasWindow: boolean
+  ): void {
+    const { minX, minY, maxX, maxY } = this.screenBounds;
+
+    this.graphics.setBlendMode(BlendModes.NORMAL);
+
+    // Step 1: Draw full screen with shadow alpha
+    this.graphics.fillStyle(this.config.overlayColor, this.config.shadowAlpha);
+    this.graphics.fillRect(minX, minY, maxX - minX, maxY - minY);
+
+    // Step 2 & 3: For each polygon, erase and draw with lit alpha
+    for (const polygon of polygons) {
+      if (polygon.length < 3) continue;
+
+      // Convert to vertex format for drawing
+      const vertices = polygon.map((pos) => ({ position: pos }));
+
+      // Erase this polygon area
+      this.graphics.setBlendMode(BlendModes.ERASE);
+      this.graphics.fillStyle(0xffffff, 1.0);
+
+      if (hasWindow) {
+        this.drawPolygon(vertices);
+      } else {
+        this.drawTriangleFan(origin, vertices);
+      }
+
+      // Draw with lit alpha
+      this.graphics.setBlendMode(BlendModes.NORMAL);
+      this.graphics.fillStyle(this.config.overlayColor, this.config.litAlpha);
+
+      if (hasWindow) {
+        this.drawPolygon(vertices);
+      } else {
+        this.drawTriangleFan(origin, vertices);
+      }
+    }
+  }
+
+  /**
    * Render overlay with valid region having a subtle brightness difference.
    *
    * Strategy:
@@ -258,6 +335,8 @@ export class ValidRegionRenderer {
    *
    * For full 360° visibility (no window), we use triangle fan from origin
    * (the player) which gives correct visibility filling.
+   *
+   * @deprecated Use renderOverlayWithCutoutMulti for multi-polygon support
    */
   private renderOverlayWithCutout(outline: ValidRegionOutline, hasWindow: boolean): void {
     const { minX, minY, maxX, maxY } = this.screenBounds;

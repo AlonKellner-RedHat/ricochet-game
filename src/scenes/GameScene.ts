@@ -4,8 +4,23 @@ import { RicochetSurface, WallSurface } from "@/surfaces";
 import type { Surface } from "@/surfaces";
 import { GameAdapter } from "@/trajectory-v2/GameAdapter";
 import { TrajectoryDebugLogger } from "@/trajectory-v2/TrajectoryDebugLogger";
-import type { Segment } from "@/trajectory-v2/visibility/ConeProjection";
+import {
+  type Segment,
+  type WindowConfig,
+  createSingleWindow,
+  createMultiWindow,
+  splitWindow,
+} from "@/trajectory-v2/visibility/WindowConfig";
 import Phaser from "phaser";
+
+/**
+ * Umbrella mode enum - cycles through OFF -> FULL -> HOLE -> OFF
+ */
+enum UmbrellaMode {
+  OFF = "off",
+  FULL = "full",
+  HOLE = "hole",
+}
 
 /**
  * Main game scene for the Ricochet game
@@ -34,10 +49,13 @@ export class GameScene extends Phaser.Scene {
   private playerGraphics!: Phaser.GameObjects.Graphics;
 
   // Umbrella mode - creates a "window" above player for testing cone projection
-  private umbrellaEnabled = false;
+  // Cycles: OFF -> FULL -> HOLE -> OFF
+  private umbrellaMode: UmbrellaMode = UmbrellaMode.OFF;
   private umbrellaGraphics!: Phaser.GameObjects.Graphics;
   private static readonly UMBRELLA_WIDTH = 150;
   private static readonly UMBRELLA_HEIGHT = 100; // Distance above player
+  private static readonly UMBRELLA_GAP_START = 0.48; // Gap starts at 48% of umbrella width
+  private static readonly UMBRELLA_GAP_END = 0.52; // Gap ends at 52% of umbrella width
 
   // Debug modes
   private slowMode = false; // Movement slowed to 1 pixel per second
@@ -89,10 +107,20 @@ export class GameScene extends Phaser.Scene {
       this.trajectoryAdapter.toggleValidRegion();
     });
 
-    // Toggle umbrella mode with 'U' key
+    // Cycle umbrella mode with 'U' key: OFF -> FULL -> HOLE -> OFF
     this.inputManager.onKeyPress("KeyU", () => {
-      this.umbrellaEnabled = !this.umbrellaEnabled;
-      console.log(`Umbrella mode: ${this.umbrellaEnabled ? "ON" : "OFF"}`);
+      switch (this.umbrellaMode) {
+        case UmbrellaMode.OFF:
+          this.umbrellaMode = UmbrellaMode.FULL;
+          break;
+        case UmbrellaMode.FULL:
+          this.umbrellaMode = UmbrellaMode.HOLE;
+          break;
+        case UmbrellaMode.HOLE:
+          this.umbrellaMode = UmbrellaMode.OFF;
+          break;
+      }
+      console.log(`Umbrella mode: ${this.umbrellaMode.toUpperCase()}`);
     });
 
     // Toggle slow mode with 'P' key (1 pixel per second movement)
@@ -183,17 +211,17 @@ export class GameScene extends Phaser.Scene {
     // Update player movement (with slow mode and god mode support)
     this.updatePlayerMovement(deltaSeconds, movementInput);
 
-    // Get current umbrella segment (if enabled)
-    const umbrella = this.getUmbrellaSegment();
+    // Get current window configuration (umbrella/umbrella hole mode)
+    const windowConfig = this.getUmbrellaWindowConfig();
 
-    // Update trajectory system with umbrella
+    // Update trajectory system with window configuration
     this.trajectoryAdapter.update(
       deltaSeconds,
       this.player.bowPosition,
       pointer,
       this.trajectoryAdapter.getPlannedSurfaces(),
       this.surfaces,
-      umbrella
+      windowConfig
     );
 
     // Draw umbrella if enabled
@@ -639,11 +667,49 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Get the current umbrella segment based on player position.
-   * Returns null if umbrella mode is disabled.
+   * Get the current window configuration based on umbrella mode and player position.
+   * Returns null if umbrella mode is OFF.
+   *
+   * - OFF: returns null (360° visibility)
+   * - FULL: returns single window (full umbrella)
+   * - HOLE: returns multi window (umbrella with gap in center)
+   */
+  private getUmbrellaWindowConfig(): WindowConfig | null {
+    if (this.umbrellaMode === UmbrellaMode.OFF) {
+      return null;
+    }
+
+    const playerX = this.player.bowPosition.x;
+    const playerY = this.player.bowPosition.y;
+    const halfWidth = GameScene.UMBRELLA_WIDTH / 2;
+    const umbrellaY = playerY - GameScene.UMBRELLA_HEIGHT;
+
+    // Base umbrella segment
+    const umbrella: Segment = {
+      start: { x: playerX - halfWidth, y: umbrellaY },
+      end: { x: playerX + halfWidth, y: umbrellaY },
+    };
+
+    if (this.umbrellaMode === UmbrellaMode.FULL) {
+      // Full umbrella - single window
+      return createSingleWindow(umbrella);
+    }
+
+    // Hole mode - split umbrella into two windows with gap
+    const [leftWindow, rightWindow] = splitWindow(
+      umbrella,
+      GameScene.UMBRELLA_GAP_START,
+      GameScene.UMBRELLA_GAP_END
+    );
+    return createMultiWindow([leftWindow, rightWindow]);
+  }
+
+  /**
+   * Get the current umbrella segment for drawing.
+   * Returns null if umbrella mode is OFF.
    */
   private getUmbrellaSegment(): Segment | null {
-    if (!this.umbrellaEnabled) {
+    if (this.umbrellaMode === UmbrellaMode.OFF) {
       return null;
     }
 
@@ -660,38 +726,73 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * Draw the umbrella if enabled.
+   * In HOLE mode, draws two segments with a visible gap.
    */
   private drawUmbrella(): void {
     this.umbrellaGraphics.clear();
 
+    if (this.umbrellaMode === UmbrellaMode.OFF) return;
+
     const umbrella = this.getUmbrellaSegment();
     if (!umbrella) return;
 
-    // Draw umbrella as a thick cyan line
+    if (this.umbrellaMode === UmbrellaMode.FULL) {
+      // Full umbrella - draw as single segment
+      this.drawUmbrellaSegment(umbrella);
+    } else {
+      // Hole mode - draw two segments with gap
+      const [leftWindow, rightWindow] = splitWindow(
+        umbrella,
+        GameScene.UMBRELLA_GAP_START,
+        GameScene.UMBRELLA_GAP_END
+      );
+      this.drawUmbrellaSegment(leftWindow);
+      this.drawUmbrellaSegment(rightWindow);
+
+      // Draw gap indicator (small marks showing the gap)
+      this.umbrellaGraphics.lineStyle(2, 0xff6b6b, 0.6);
+      const gapMidX = (leftWindow.end.x + rightWindow.start.x) / 2;
+      const gapMidY = umbrella.start.y;
+      this.umbrellaGraphics.lineBetween(gapMidX, gapMidY - 8, gapMidX, gapMidY + 8);
+    }
+
+    // Draw mode indicator
+    const midX = (umbrella.start.x + umbrella.end.x) / 2;
+    const midY = umbrella.start.y - 15;
+    
+    if (this.umbrellaMode === UmbrellaMode.FULL) {
+      // Single circle for full mode
+      this.umbrellaGraphics.fillStyle(0x00ffff, 0.8);
+      this.umbrellaGraphics.fillCircle(midX, midY, 6);
+    } else {
+      // Two small circles for hole mode
+      this.umbrellaGraphics.fillStyle(0x00ffff, 0.8);
+      this.umbrellaGraphics.fillCircle(midX - 8, midY, 4);
+      this.umbrellaGraphics.fillCircle(midX + 8, midY, 4);
+    }
+  }
+
+  /**
+   * Draw a single umbrella segment with glow effect.
+   */
+  private drawUmbrellaSegment(segment: Segment): void {
+    // Draw segment as a thick cyan line
     this.umbrellaGraphics.lineStyle(4, 0x00ffff, 1);
     this.umbrellaGraphics.lineBetween(
-      umbrella.start.x,
-      umbrella.start.y,
-      umbrella.end.x,
-      umbrella.end.y
+      segment.start.x,
+      segment.start.y,
+      segment.end.x,
+      segment.end.y
     );
 
     // Add glow effect
     this.umbrellaGraphics.lineStyle(10, 0x00ffff, 0.3);
     this.umbrellaGraphics.lineBetween(
-      umbrella.start.x,
-      umbrella.start.y,
-      umbrella.end.x,
-      umbrella.end.y
+      segment.start.x,
+      segment.start.y,
+      segment.end.x,
+      segment.end.y
     );
-
-    // Draw "U" indicator
-    this.umbrellaGraphics.fillStyle(0x00ffff, 0.8);
-    const midX = (umbrella.start.x + umbrella.end.x) / 2;
-    const midY = umbrella.start.y - 15;
-    
-    // Simple text indicator would require Phaser text, so just draw a small circle
-    this.umbrellaGraphics.fillCircle(midX, midY, 6);
   }
 
   /**
