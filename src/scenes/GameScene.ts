@@ -38,6 +38,7 @@ export class GameScene extends Phaser.Scene {
   private umbrellaGraphics!: Phaser.GameObjects.Graphics;
   private static readonly UMBRELLA_WIDTH = 150;
   private static readonly UMBRELLA_HEIGHT = 100; // Distance above player
+  private static readonly UMBRELLA_GAP_WIDTH = 40; // Gap in the middle of umbrella
 
   // Debug modes
   private slowMode = false; // Movement slowed to 1 pixel per second
@@ -112,8 +113,9 @@ export class GameScene extends Phaser.Scene {
       arrowSpeed: 800,
       shootCooldown: 0.3,
       showValidRegion: true, // Enable visibility overlay
-      validRegionOverlayAlpha: 0.4,
-      useMultiStagePropagation: true, // Enable progressive opacity for planned surfaces
+      validRegionShadowAlpha: 0.7,
+      validRegionLitAlpha: 0.4,
+      useMultiStagePropagation: true, // Multi-stage propagation with progressive opacity
     });
 
     // Toggle multi-stage propagation with 'M' key
@@ -189,17 +191,17 @@ export class GameScene extends Phaser.Scene {
     // Update player movement (with slow mode and god mode support)
     this.updatePlayerMovement(deltaSeconds, movementInput);
 
-    // Get current umbrella segment (if enabled)
-    const umbrella = this.getUmbrellaSegment();
+    // Get current umbrella segments (if enabled)
+    const umbrellaSegments = this.getUmbrellaSegments();
 
-    // Update trajectory system with umbrella
+    // Update trajectory system with umbrella segments
     this.trajectoryAdapter.update(
       deltaSeconds,
       this.player.bowPosition,
       pointer,
       this.trajectoryAdapter.getPlannedSurfaces(),
       this.surfaces,
-      umbrella
+      umbrellaSegments
     );
 
     // Draw umbrella if enabled
@@ -645,10 +647,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Get the current umbrella segment based on player position.
+   * Get the current umbrella segments based on player position.
+   * Returns an array with two segments (left and right, with gap in middle).
    * Returns null if umbrella mode is disabled.
    */
-  private getUmbrellaSegment(): Segment | null {
+  private getUmbrellaSegments(): Segment[] | null {
     if (!this.umbrellaEnabled) {
       return null;
     }
@@ -656,48 +659,64 @@ export class GameScene extends Phaser.Scene {
     const playerX = this.player.bowPosition.x;
     const playerY = this.player.bowPosition.y;
     const halfWidth = GameScene.UMBRELLA_WIDTH / 2;
+    const halfGap = GameScene.UMBRELLA_GAP_WIDTH / 2;
     const umbrellaY = playerY - GameScene.UMBRELLA_HEIGHT;
 
-    return {
+    // Two segments with gap in the middle
+    const leftSegment: Segment = {
       start: { x: playerX - halfWidth, y: umbrellaY },
+      end: { x: playerX - halfGap, y: umbrellaY },
+    };
+    const rightSegment: Segment = {
+      start: { x: playerX + halfGap, y: umbrellaY },
       end: { x: playerX + halfWidth, y: umbrellaY },
     };
+
+    return [leftSegment, rightSegment];
   }
 
   /**
    * Draw the umbrella if enabled.
+   * Now draws two segments with a gap in the middle.
    */
   private drawUmbrella(): void {
     this.umbrellaGraphics.clear();
 
-    const umbrella = this.getUmbrellaSegment();
-    if (!umbrella) return;
+    const umbrellaSegments = this.getUmbrellaSegments();
+    if (!umbrellaSegments) return;
 
-    // Draw umbrella as a thick cyan line
-    this.umbrellaGraphics.lineStyle(4, 0x00ffff, 1);
-    this.umbrellaGraphics.lineBetween(
-      umbrella.start.x,
-      umbrella.start.y,
-      umbrella.end.x,
-      umbrella.end.y
-    );
+    // Draw each umbrella segment
+    for (const segment of umbrellaSegments) {
+      // Draw umbrella as a thick cyan line
+      this.umbrellaGraphics.lineStyle(4, 0x00ffff, 1);
+      this.umbrellaGraphics.lineBetween(
+        segment.start.x,
+        segment.start.y,
+        segment.end.x,
+        segment.end.y
+      );
 
-    // Add glow effect
-    this.umbrellaGraphics.lineStyle(10, 0x00ffff, 0.3);
-    this.umbrellaGraphics.lineBetween(
-      umbrella.start.x,
-      umbrella.start.y,
-      umbrella.end.x,
-      umbrella.end.y
-    );
+      // Add glow effect
+      this.umbrellaGraphics.lineStyle(10, 0x00ffff, 0.3);
+      this.umbrellaGraphics.lineBetween(
+        segment.start.x,
+        segment.start.y,
+        segment.end.x,
+        segment.end.y
+      );
+    }
 
-    // Draw "U" indicator
-    this.umbrellaGraphics.fillStyle(0x00ffff, 0.8);
-    const midX = (umbrella.start.x + umbrella.end.x) / 2;
-    const midY = umbrella.start.y - 15;
-    
-    // Simple text indicator would require Phaser text, so just draw a small circle
-    this.umbrellaGraphics.fillCircle(midX, midY, 6);
+    // Draw "U" indicator - use the center of the gap
+    if (umbrellaSegments.length >= 2) {
+      const leftSegment = umbrellaSegments[0]!;
+      const rightSegment = umbrellaSegments[1]!;
+      const midX = (leftSegment.end.x + rightSegment.start.x) / 2;
+      const midY = leftSegment.start.y - 15;
+
+      this.umbrellaGraphics.fillStyle(0x00ffff, 0.8);
+      // Simple text indicator would require Phaser text, so just draw a small circle
+      this.umbrellaGraphics.fillCircle(midX, midY, 6);
+    }
   }
 
   /**

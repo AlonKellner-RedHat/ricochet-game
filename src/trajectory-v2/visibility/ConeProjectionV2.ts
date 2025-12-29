@@ -32,6 +32,7 @@ import {
   endOf,
   isEndpoint,
   isHitPoint,
+  isOriginPoint,
   startOf,
 } from "@/trajectory-v2/geometry/SourcePoint";
 import { type JunctionPoint, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
@@ -238,13 +239,13 @@ function comparePointsCCW(
   const bOnRay = Math.abs(bRef) * Math.abs(bRef) < refMagSq * bMagSq * 1e-20;
 
   if (aOnRay && !bOnRay) {
-    // A is on reference ray, B is not
-    // A comes AFTER all other points → return 1
+    // A is on reference ray (rightBoundary), B is not
+    // Reference ray points come LAST in polygon traversal → return 1
     return 1;
   }
   if (bOnRay && !aOnRay) {
-    // B is on reference ray, A is not
-    // A comes before B → return -1
+    // B is on reference ray (rightBoundary), A is not
+    // A comes first → return -1
     return -1;
   }
   if (aOnRay && bOnRay) {
@@ -255,30 +256,57 @@ function comparePointsCCW(
     // Fall through to collinear handling if distances are equal
   }
 
-  // Check if points are on opposite sides of the reference ray
-  // (one positive, one negative - excluding zero for exact ray alignment)
-  const oppositeSides = (aRef > 0 && bRef < 0) || (aRef < 0 && bRef > 0);
-
-  if (oppositeSides) {
-    // Points on opposite sides: use reference position to determine order
-    // In CCW order starting from reference ray:
-    // - Points CCW from reference (aRef > 0) come FIRST (0° to 180°)
-    // - Points CW from reference (aRef < 0) come SECOND (180° to 360°)
-    return aRef > 0 ? -1 : 1;
-  }
-
-  // Same side: cross-product is transitive
+  // Cross-product comparison between the two points
   const cross = aVec.x * bVec.y - aVec.y * bVec.x;
 
-  if (cross > 0) {
-    // A is CCW from B → A comes first
-    return -1;
+  // Check if points are on opposite sides of the reference ray
+  const oppositeSides = (aRef > 0 && bRef < 0) || (aRef < 0 && bRef > 0);
+
+  // USER-SPECIFIED ALGORITHM:
+  // "Comparisons are based on cross products, but when the segment of the
+  // compared points crosses the reference ray ON THE POSITIVE SIDE of the
+  // ray - the comparison sign should be flipped."
+  //
+  // The "positive side" means the crossing happens at the reference ray itself (0°),
+  // not at the opposite direction (180°).
+  //
+  // When to flip (crossing on positive side):
+  // - A in positive half (aRef > 0), B in negative half (bRef < 0), short path CW (cross < 0)
+  //   → Short path goes from A (positive) through 0° to B (negative) → crosses at 0° → FLIP
+  // - A in negative half (aRef < 0), B in positive half (bRef > 0), short path CCW (cross > 0)
+  //   → Short path goes from A (negative) through 0° to B (positive) → crosses at 0° → FLIP
+  //
+  // When NOT to flip (crossing on negative side):
+  // - A in positive half, B in negative half, short path CCW (cross > 0)
+  //   → Short path goes from A through 180° to B → crosses at 180° → DON'T flip
+  // - A in negative half, B in positive half, short path CW (cross < 0)
+  //   → Short path goes from A through 180° to B → crosses at 180° → DON'T flip
+
+  if (oppositeSides) {
+    // Check if the short arc crosses at the positive side of reference (0°)
+    const crossesAtPositiveSide =
+      (aRef > 0 && bRef < 0 && cross < 0) || // A positive, B negative, short path CW
+      (aRef < 0 && bRef > 0 && cross > 0); // A negative, B positive, short path CCW
+
+    if (crossesAtPositiveSide) {
+      // FLIP the cross-product comparison
+      if (cross > 0) return 1; // Flip: B before A
+      if (cross < 0) return -1; // Flip: A before B
+    } else {
+      // DON'T flip - use cross-product directly
+      if (cross > 0) return -1; // A before B
+      if (cross < 0) return 1; // B before A
+    }
+    // cross === 0: fall through to collinear handling
+  } else {
+    // Same side: use cross-product directly (transitive within half-plane)
+    // CCW order from origin (increasing angle)
+    //   cross > 0 → A is CCW from B → A comes first (return -1)
+    //   cross < 0 → A is CW from B → B comes first (return 1)
+    if (cross > 0) return -1;
+    if (cross < 0) return 1;
   }
 
-  if (cross < 0) {
-    // A is CW from B → B comes first
-    return 1;
-  }
 
   // Collinear (cross === 0): Use tiebreakers
   return handleCollinearPoints(
@@ -705,7 +733,12 @@ function castRayToEndpoint(
       // Skip the surface that the endpoint belongs to
       if (targetEndpoint.surface.id === obstacle.id) continue;
 
-      const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
+      const hit = lineLineIntersection(
+        origin,
+        rayEnd,
+        obstacle.segment.start,
+        obstacle.segment.end
+      );
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
         closestT = hit.t;
         closestSurface = obstacle;
@@ -719,7 +752,12 @@ function castRayToEndpoint(
   // endpoint is definitionally valid (going TO the window, not blocked BY screen)
   if (!windowSurfaceId || targetEndpoint.surface.id !== windowSurfaceId) {
     for (const boundary of screenBoundaries.all) {
-      const hit = lineLineIntersection(origin, rayEnd, boundary.segment.start, boundary.segment.end);
+      const hit = lineLineIntersection(
+        origin,
+        rayEnd,
+        boundary.segment.start,
+        boundary.segment.end
+      );
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
         closestT = hit.t;
         closestSurface = boundary;
@@ -945,8 +983,9 @@ export function projectConeV2(
 
     // PROVENANCE CHECK: Window endpoints are IN the cone by definition - they ARE the cone boundaries.
     // Skip the floating-point isPointInCone check for window endpoints.
-    const isWindowEndpoint = isEndpoint(target) && excludeSurfaceId && target.surface.id === excludeSurfaceId;
-    
+    const isWindowEndpoint =
+      isEndpoint(target) && excludeSurfaceId && target.surface.id === excludeSurfaceId;
+
     // Check if target is in cone (skip for window endpoints - they're definitionally in cone)
     if (!isWindowEndpoint && !isPointInCone(targetXY, source)) continue;
 
@@ -1042,7 +1081,7 @@ export function projectConeV2(
   const uniqueVertices = removeDuplicatesSourcePoint(vertices);
 
   // Sort by angle from origin, using ray pairs for tie-breaking
-  return sortPolygonVerticesSourcePoint(uniqueVertices, origin, startLine, rayPairs);
+  return sortPolygonVerticesSourcePoint(uniqueVertices, source, rayPairs);
 }
 
 /**
@@ -1099,14 +1138,18 @@ type RayPairMap = Map<string, { endpoint: Endpoint; continuation: SourcePoint | 
  * Shadow boundary rules:
  * - ENTERING shadow (surface extends clockwise): continuation → endpoint
  * - EXITING shadow (surface extends counter-clockwise): endpoint → continuation
+ *
+ * UNIFIED LOGIC: Both full cones and windowed cones use identical sorting.
+ * The only difference is the reference direction (derived from rightBoundary).
  */
 function sortPolygonVerticesSourcePoint(
   points: SourcePoint[],
-  origin: Vector2,
-  startLine: Segment | null,
+  source: ConeSource,
   rayPairs: RayPairMap
 ): SourcePoint[] {
   if (points.length === 0) return [];
+
+  const { origin, rightBoundary, startLine } = source;
 
   // Build a map from continuation point key to its paired endpoint
   const continuationToEndpoint = new Map<string, Endpoint>();
@@ -1154,31 +1197,28 @@ function sortPolygonVerticesSourcePoint(
     }
   }
 
-  // Reference direction for half-plane split.
-  // This splits the 360° into two ≤180° half-planes where cross-product is transitive.
-  let refDirection: Vector2;
-  if (startLine !== null) {
-    // Windowed cone: use first clockwise boundary ray as reference.
-    // First CW = endpoint with LARGER angle (encountered first when traversing CW from +X)
-    // This ensures all visible points (inside the cone) are on the same side of the reference,
-    // preventing the ±180° discontinuity from splitting the visible region incorrectly.
-    const startAngle = Math.atan2(
-      startLine.start.y - origin.y,
-      startLine.start.x - origin.x
-    );
-    const endAngle = Math.atan2(
-      startLine.end.y - origin.y,
-      startLine.end.x - origin.x
-    );
-    const firstCW = startAngle > endAngle ? startLine.start : startLine.end;
-    refDirection = { x: firstCW.x - origin.x, y: firstCW.y - origin.y };
-  } else {
-    // Full cone: use positive X direction (1, 0)
-    refDirection = { x: 1, y: 0 };
-  }
+  // Reference direction for sorting: ALWAYS use rightBoundary.
+  // This is the SINGLE SOURCE OF TRUTH for the radial ordering.
+  //
+  // For full cones: rightBoundary = leftBoundary = (origin.x + 1, origin.y)
+  //   → refDirection = (1, 0), same as before
+  // For windowed cones: rightBoundary is the CW boundary of the cone
+  //   → Polygon traversal: leftBoundary → middle points → rightBoundary
+  //
+  // By using rightBoundary as reference with "reference points LAST":
+  // - leftBoundary has most positive cross (most CCW from right) → comes first
+  // - Middle points have positive cross → in the middle
+  // - rightBoundary has cross ≈ 0 → comes last
+  //
+  // This unifies the sorting logic for all cone types.
+  const refDirection: Vector2 = {
+    x: rightBoundary.x - origin.x,
+    y: rightBoundary.y - origin.y,
+  };
 
   // Sort using reference-ray based cross-product comparison.
   // This is epsilon-free and guarantees transitivity.
+  // The same sorting logic applies to both full cones and windowed cones.
   pointsWithData.sort((a, b) =>
     comparePointsCCW(
       a,
@@ -1191,12 +1231,77 @@ function sortPolygonVerticesSourcePoint(
     )
   );
 
-  // For windowed cones, ensure edge points are at the ends
-  if (startLine !== null) {
-    return arrangeWindowedCone(pointsWithData, origin, startLine);
+  // UNIFIED: Separate points into three categories using PROVENANCE:
+  // 1. Points on LEFT boundary ray → go first (including left boundary endpoint)
+  // 2. Points in the MIDDLE (not on either boundary ray) → sorted order
+  // 3. Points on RIGHT boundary ray → go last (including right boundary endpoint)
+  //
+  // This works identically for full cones (left = right) and windowed cones.
+  // Cross product with boundary direction = 0 means point is on that ray.
+  
+  const leftDir = { x: source.leftBoundary.x - origin.x, y: source.leftBoundary.y - origin.y };
+  const rightDir = { x: rightBoundary.x - origin.x, y: rightBoundary.y - origin.y };
+
+  const leftRayPoints: Array<{ point: SourcePoint; distSq: number }> = [];
+  const rightRayPoints: Array<{ point: SourcePoint; distSq: number }> = [];
+  const middlePoints: SourcePoint[] = [];
+
+  for (const item of pointsWithData) {
+    const pointDir = { x: item.xy.x - origin.x, y: item.xy.y - origin.y };
+    const distSq = pointDir.x * pointDir.x + pointDir.y * pointDir.y;
+    
+    // Cross product to check if on boundary ray (cross = 0 means collinear)
+    const leftCross = leftDir.x * pointDir.y - leftDir.y * pointDir.x;
+    const rightCross = rightDir.x * pointDir.y - rightDir.y * pointDir.x;
+    
+    // Use relative tolerance for collinearity check (scales with magnitudes)
+    const leftMagSq = leftDir.x * leftDir.x + leftDir.y * leftDir.y;
+    const rightMagSq = rightDir.x * rightDir.x + rightDir.y * rightDir.y;
+    const onLeftRay = leftCross * leftCross < leftMagSq * distSq * 1e-20;
+    const onRightRay = rightCross * rightCross < rightMagSq * distSq * 1e-20;
+    
+    // For full cones, left = right, so a point could be "on both" - treat as left
+    if (onLeftRay) {
+      leftRayPoints.push({ point: item.point, distSq });
+    } else if (onRightRay) {
+      rightRayPoints.push({ point: item.point, distSq });
+    } else {
+      middlePoints.push(item.point);
+    }
   }
 
-  return pointsWithData.map((item) => item.point);
+  // Sort boundary ray points by distance: window endpoints first, then farther points
+  // Window endpoints (OriginPoint) come first, then by increasing distance
+  const sortByDistanceWithProvenance = (a: { point: SourcePoint; distSq: number }, b: { point: SourcePoint; distSq: number }) => {
+    const aIsOrigin = isOriginPoint(a.point);
+    const bIsOrigin = isOriginPoint(b.point);
+    if (aIsOrigin && !bIsOrigin) return -1; // Origin points first
+    if (!aIsOrigin && bIsOrigin) return 1;
+    return a.distSq - b.distSq; // Then by distance
+  };
+
+  leftRayPoints.sort(sortByDistanceWithProvenance);
+  rightRayPoints.sort(sortByDistanceWithProvenance);
+
+  // Determine traversal direction using cross-product of boundaries.
+  // This is a UNIFIED calculation that works for both full and windowed cones:
+  // - For full cones: leftDir = rightDir, so boundaryCross = 0, no reversal
+  // - For windowed cones: boundaryCross determines if we traverse CW or CCW
+  //
+  // If boundaryCross < 0: leftDir is CCW from rightDir → short arc is CW → reverse middle
+  // If boundaryCross > 0: leftDir is CW from rightDir → short arc is CCW → no reversal
+  // If boundaryCross = 0: full cone or collinear → no reversal
+  const boundaryCross = leftDir.x * rightDir.y - leftDir.y * rightDir.x;
+  if (boundaryCross < 0) {
+    middlePoints.reverse();
+  }
+
+  // Combine: left ray points → middle points → right ray points
+  return [
+    ...leftRayPoints.map(p => p.point),
+    ...middlePoints,
+    ...rightRayPoints.map(p => p.point)
+  ];
 }
 
 /**
@@ -1384,68 +1489,6 @@ function getShadowBoundaryOrder(endpoint: Endpoint, origin: Vector2): number {
   }
 
   return cross;
-}
-
-/**
- * Arrange points for windowed cone, ensuring edge points are at ends.
- * Uses exact coordinate matching for window endpoints.
- *
- * Handles the ±180° discontinuity: when window endpoints span this boundary,
- * we determine left/right based on the CCW angular direction of the visible cone.
- */
-function arrangeWindowedCone(
-  sortedPoints: Array<{
-    point: SourcePoint;
-    xy: Vector2;
-    pairedEndpoint: Endpoint | null;
-  }>,
-  origin: Vector2,
-  startLine: Segment
-): SourcePoint[] {
-  const leftEdge: SourcePoint[] = [];
-  const rightEdge: SourcePoint[] = [];
-  const middle: SourcePoint[] = [];
-
-  // Determine which window endpoint is left vs right by angle
-  const startAngle = Math.atan2(startLine.start.y - origin.y, startLine.start.x - origin.x);
-  const endAngle = Math.atan2(startLine.end.y - origin.y, startLine.end.x - origin.x);
-
-  // Calculate the CCW angular distance from start to end
-  // This handles the ±180° wrap-around correctly
-  let ccwDistance = endAngle - startAngle;
-  if (ccwDistance < 0) {
-    ccwDistance += 2 * Math.PI; // Normalize to [0, 2π)
-  }
-
-  // If CCW distance < π, going from start to end is the shorter CCW arc
-  // Otherwise, going from end to start is the shorter CCW arc
-  // For a windowed cone, visible points are in the shorter arc,
-  // so "left" is the CCW start of the visible region.
-  let leftXY: Vector2;
-  let rightXY: Vector2;
-
-  if (ccwDistance <= Math.PI) {
-    // Visible region goes CCW from start to end
-    leftXY = startLine.start;
-    rightXY = startLine.end;
-  } else {
-    // Visible region goes CCW from end to start (the other way around)
-    leftXY = startLine.end;
-    rightXY = startLine.start;
-  }
-
-  for (const item of sortedPoints) {
-    // Exact coordinate match for window edges
-    if (item.xy.x === leftXY.x && item.xy.y === leftXY.y) {
-      leftEdge.push(item.point);
-    } else if (item.xy.x === rightXY.x && item.xy.y === rightXY.y) {
-      rightEdge.push(item.point);
-    } else {
-      middle.push(item.point);
-    }
-  }
-
-  return [...leftEdge, ...middle, ...rightEdge];
 }
 
 /**

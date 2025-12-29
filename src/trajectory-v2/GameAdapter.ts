@@ -58,7 +58,7 @@ export class GameAdapter {
   private validRegionGraphics: Phaser.GameObjects.Graphics | null = null;
   private validRegionRenderer: ValidRegionRenderer | null = null;
   private showValidRegion = false;
-  private useMultiStagePropagation = false;
+  private useMultiStagePropagation = true;
   private screenBounds: ScreenBounds;
 
   // Cached state for visibility rendering
@@ -76,7 +76,7 @@ export class GameAdapter {
 
     // Create visibility overlay graphics (rendered below trajectory)
     this.showValidRegion = config.showValidRegion ?? false;
-    this.useMultiStagePropagation = config.useMultiStagePropagation ?? false;
+    this.useMultiStagePropagation = config.useMultiStagePropagation ?? true;
     if (this.showValidRegion) {
       this.validRegionGraphics = scene.add.graphics();
       this.validRegionGraphics.setDepth(-1); // Below other graphics
@@ -172,7 +172,7 @@ export class GameAdapter {
    * @param cursor - Cursor position
    * @param plannedSurfaces - Surfaces in the plan
    * @param allSurfaces - All surfaces in the scene
-   * @param umbrella - Optional umbrella segment for windowed cone projection
+   * @param umbrellaSegments - Optional array of umbrella segments for windowed cone projection
    */
   update(
     deltaSeconds: number,
@@ -180,7 +180,7 @@ export class GameAdapter {
     cursor: Vector2,
     plannedSurfaces: readonly Surface[],
     allSurfaces: readonly Surface[],
-    umbrella: Segment | null = null
+    umbrellaSegments: Segment[] | null = null
   ): void {
     // Cache for visibility rendering
     this.lastPlayer = player;
@@ -204,7 +204,7 @@ export class GameAdapter {
         player,
         plannedSurfaces,
         allSurfaces,
-        umbrella,
+        umbrellaSegments,
         this.useMultiStagePropagation
       );
     }
@@ -417,6 +417,23 @@ export class GameAdapter {
   }
 
   /**
+   * Set valid region overlay visibility.
+   */
+  setShowValidRegion(show: boolean): void {
+    this.showValidRegion = show;
+    if (!show && this.validRegionRenderer) {
+      this.validRegionRenderer.clear();
+    }
+  }
+
+  /**
+   * Check if valid region overlay is visible.
+   */
+  isValidRegionVisible(): boolean {
+    return this.showValidRegion;
+  }
+
+  /**
    * Toggle multi-stage propagation with progressive opacity.
    *
    * When enabled, each intermediate polygon (one per planned surface)
@@ -435,23 +452,6 @@ export class GameAdapter {
    */
   isMultiStagePropagationEnabled(): boolean {
     return this.useMultiStagePropagation;
-  }
-
-  /**
-   * Set valid region overlay visibility.
-   */
-  setShowValidRegion(show: boolean): void {
-    this.showValidRegion = show;
-    if (!show && this.validRegionRenderer) {
-      this.validRegionRenderer.clear();
-    }
-  }
-
-  /**
-   * Check if valid region overlay is visible.
-   */
-  isValidRegionVisible(): boolean {
-    return this.showValidRegion;
   }
 
   /**

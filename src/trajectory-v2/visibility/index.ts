@@ -25,7 +25,8 @@ export * from "./PropagationTypes";
 export * from "./ValidRegionRenderer";
 export * from "./VisibilityFromChain";
 export * from "./RaySector";
-export * from "./SectorPropagation";
+export * from "./SectorDeduction";
+export * from "./MultiStageProjection";
 
 // =============================================================================
 // DEPRECATED EXPORTS - Legacy Modules (for backward compatibility only)
@@ -48,4 +49,3 @@ export * from "./ConePropagator";
 
 /** @deprecated Legacy module, no longer maintained */
 export * from "./OutlineBuilder";
-

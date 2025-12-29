@@ -193,14 +193,16 @@ describe("Vertical Surface Collinear Bug", () => {
     expect(rightIndices.y300).toBeGreaterThanOrEqual(0);
     expect(rightIndices.y400).toBeGreaterThanOrEqual(0);
 
-    // When player is on LEFT (x < 850), CCW traversal encounters farther-up points first
-    // Order should be: y100 < y200 < y300 < y400 (top to bottom)
+    // When player is on LEFT (x < 850), looking up-right at vertical surfaces:
+    // Angles are all close to -90° but y100 has most negative angle.
+    // CCW sort (increasing angle): y100 → y200 → y300 → y400 (top to bottom)
     expect(leftIndices.y100).toBeLessThan(leftIndices.y200);
     expect(leftIndices.y200).toBeLessThan(leftIndices.y300);
     expect(leftIndices.y300).toBeLessThan(leftIndices.y400);
 
-    // When player is on RIGHT (x > 850), CCW traversal encounters closer points first
-    // Order should be: y400 < y300 < y200 < y100 (bottom to top)
+    // When player is on RIGHT (x > 850), looking up-left at vertical surfaces:
+    // Angles are all close to -90° but y100 has least negative angle.
+    // CCW sort (increasing angle): y400 → y300 → y200 → y100 (bottom to top)
     expect(rightIndices.y400).toBeLessThan(rightIndices.y300);
     expect(rightIndices.y300).toBeLessThan(rightIndices.y200);
     expect(rightIndices.y200).toBeLessThan(rightIndices.y100);
