@@ -23,7 +23,7 @@ import {
 import type { ScreenBounds } from "./ConePropagator";
 import type { ValidRegionOutline } from "./OutlineBuilder";
 import { preparePolygonForRendering } from "./RenderingDedup";
-import { type Segment, type WindowConfig, getWindowSegments, isMultiWindow } from "./WindowConfig";
+import { type Segment, type WindowConfig, getWindowSegments } from "./WindowConfig";
 
 /**
  * Configuration for the valid region overlay.
@@ -94,6 +94,17 @@ export const BlendModes = {
  * - Umbrella mode: cone through umbrella window from player
  * - Planned surfaces: cone through last surface window from reflected player image
  */
+/**
+ * Represents a single stage in the visibility calculation chain.
+ * Each stage has source points, polygon, and origin.
+ */
+export interface VisibilityStage {
+  readonly sourcePoints: readonly SourcePoint[];
+  readonly polygon: readonly Vector2[];
+  readonly origin: Vector2;
+  readonly isValid: boolean;
+}
+
 export class ValidRegionRenderer {
   private graphics: IValidRegionGraphics;
   private config: ValidRegionConfig;
@@ -101,6 +112,9 @@ export class ValidRegionRenderer {
   private lastOutline: ValidRegionOutline | null = null;
   private lastSourcePoints: readonly SourcePoint[] = [];
   private lastOrigin: Vector2 | null = null;
+
+  /** All visibility stages from the last render (Stage 1, Stage 2, etc.) */
+  private visibilityStages: VisibilityStage[] = [];
 
   constructor(
     graphics: IValidRegionGraphics,
@@ -160,13 +174,13 @@ export class ValidRegionRenderer {
     // Find runs of consecutive points on the target surface
     // For each run, output only the first and last point (extremes)
     // This merges intermediate points that are just ray intersections
-    
+
     const result: Vector2[] = [];
     let currentRun: Vector2[] = [];
 
     const flushRun = () => {
       if (currentRun.length === 0) return;
-      
+
       if (currentRun.length === 1) {
         // Single point - include it
         result.push(currentRun[0]!);
@@ -181,7 +195,7 @@ export class ValidRegionRenderer {
     for (const sourcePoint of this.lastSourcePoints) {
       // Check if this point comes from the target surface
       let coords: Vector2 | null = null;
-      
+
       if (isEndpoint(sourcePoint)) {
         if (sourcePoint.surface.id === targetSurfaceId) {
           coords = sourcePoint.computeXY();
@@ -200,7 +214,7 @@ export class ValidRegionRenderer {
         flushRun();
       }
     }
-    
+
     // Flush final run
     flushRun();
 
@@ -215,12 +229,6 @@ export class ValidRegionRenderer {
       }
     }
 
-    // #region agent log
-    if (dedupedResult.length > 0) {
-      fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ValidRegionRenderer.ts:180',message:'getVisibleSurfacePoints result',data:{targetSurfaceId,pointCount:dedupedResult.length,points:dedupedResult},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'POINTS'})}).catch(()=>{});
-    }
-    // #endregion
-
     return dedupedResult;
   }
 
@@ -229,6 +237,114 @@ export class ValidRegionRenderer {
    */
   getLastOrigin(): Vector2 | null {
     return this.lastOrigin;
+  }
+
+  /**
+   * Get all visibility stages from the last render.
+   * Stage 0 is always player visibility (with umbrella if present).
+   * Stage 1+ are reflected visibilities through planned surfaces.
+   */
+  getVisibilityStages(): readonly VisibilityStage[] {
+    return this.visibilityStages;
+  }
+
+  /**
+   * Get visible segments on a target surface.
+   *
+   * This is the UNIFIED source of truth for determining which portions
+   * of a surface receive light. Returns multiple segments if there are gaps
+   * (e.g., umbrella hole mode with 2 cones).
+   *
+   * Used by:
+   * 1. Reflection window calculation (each segment = a window)
+   * 2. Highlight cone rendering (each segment = a cone)
+   *
+   * @param targetSurfaceId The surface to find visible segments for
+   * @returns Array of visible segments (may be 0, 1, or multiple)
+   */
+  getVisibleSurfaceSegments(targetSurfaceId: string): readonly Segment[] {
+    if (this.lastSourcePoints.length === 0) {
+      return [];
+    }
+    // Reuse the private implementation with a dummy segment parameter
+    return this.extractVisibleSurfaceSegments(
+      targetSurfaceId,
+      this.lastSourcePoints,
+      { start: { x: 0, y: 0 }, end: { x: 0, y: 0 } } // unused
+    );
+  }
+
+  /**
+   * Extract visible segments on a surface from source points.
+   *
+   * Uses provenance to find which portions of a surface are visible,
+   * converting source points to window segments for reflection.
+   *
+   * DETECTS GAPS: Iterates through angularly-sorted source points and
+   * tracks consecutive runs of points on the target surface. When a
+   * point from a different surface interrupts the run, a new segment starts.
+   *
+   * This is the UNIFIED source of truth for:
+   * 1. Reflection windows (each segment = a window)
+   * 2. Highlight cones (each segment = a cone)
+   *
+   * @param targetSurfaceId Surface to extract visible segments for
+   * @param sourcePoints Source points from visibility calculation (angularly sorted)
+   * @param _surfaceSegment The full surface segment (unused, kept for API)
+   * @returns Array of visible segments (may be empty, one, or multiple)
+   */
+  private extractVisibleSurfaceSegments(
+    targetSurfaceId: string,
+    sourcePoints: readonly SourcePoint[],
+    _surfaceSegment: Segment
+  ): Segment[] {
+    const segments: Segment[] = [];
+    let currentRunStart: Vector2 | null = null;
+    let currentRunEnd: Vector2 | null = null;
+
+    for (const sp of sourcePoints) {
+      // Check if this point is on the target surface
+      let isOnTarget = false;
+      let coords: Vector2 | null = null;
+
+      if (isEndpoint(sp) && sp.surface.id === targetSurfaceId) {
+        isOnTarget = true;
+        coords = sp.computeXY();
+      } else if (isHitPoint(sp) && sp.hitSurface.id === targetSurfaceId) {
+        isOnTarget = true;
+        coords = sp.computeXY();
+      }
+
+      if (isOnTarget && coords) {
+        // Extend current run
+        if (currentRunStart === null) {
+          currentRunStart = coords;
+        }
+        currentRunEnd = coords;
+      } else {
+        // Gap detected - emit current run as segment if valid
+        if (
+          currentRunStart &&
+          currentRunEnd &&
+          (currentRunStart.x !== currentRunEnd.x || currentRunStart.y !== currentRunEnd.y)
+        ) {
+          segments.push({ start: currentRunStart, end: currentRunEnd });
+        }
+        currentRunStart = null;
+        currentRunEnd = null;
+      }
+    }
+
+    // Emit final run
+    if (
+      currentRunStart &&
+      currentRunEnd &&
+      (currentRunStart.x !== currentRunEnd.x || currentRunStart.y !== currentRunEnd.y)
+    ) {
+      segments.push({ start: currentRunStart, end: currentRunEnd });
+    }
+
+    return segments;
   }
 
   /**
@@ -270,72 +386,212 @@ export class ValidRegionRenderer {
       isValid: boolean;
     };
 
-    if (windowConfig || plannedSurfaces.length > 0) {
-      // Calculate origin and windows
-      let origin = player;
-      let windows: readonly Segment[];
+    // Clear stages for this render
+    this.visibilityStages = [];
 
-      // ID of the window surface to exclude from obstacles
-      // This prevents floating-point issues where the window blocks itself
-      let excludeSurfaceId: string | undefined;
+    // =========================================================================
+    // STAGE 1: Player visibility (with umbrella if present, or full 360°)
+    // This stage is ALWAYS computed first, as it informs subsequent stages.
+    // =========================================================================
+    const stage1SourcePoints: SourcePoint[] = [];
+    const stage1Polygons: (readonly Vector2[])[] = [];
 
-      if (plannedSurfaces.length > 0) {
-        // Reflect player through all planned surfaces to get player image
-        for (const surface of plannedSurfaces) {
-          origin = reflectPointThroughLine(origin, surface.segment.start, surface.segment.end);
-        }
-        // Last planned surface is the window
-        const lastSurface = plannedSurfaces[plannedSurfaces.length - 1]!;
-        windows = [{ start: lastSurface.segment.start, end: lastSurface.segment.end }];
-        excludeSurfaceId = lastSurface.id;
-      } else {
-        // Umbrella mode - get all window segments from config
-        // (single window for full umbrella, multiple for umbrella hole)
-        windows = getWindowSegments(windowConfig!);
-      }
-
-      // Project cone(s) through each window - supports multi-window (umbrella hole)
-      const allPolygons: (readonly Vector2[])[] = [];
-      const allSourcePoints: SourcePoint[] = [];
-      for (const window of windows) {
-        const cone = createConeThroughWindow(origin, window.start, window.end);
-        const sourcePoints = projectConeV2(cone, allSurfaces, this.screenBounds, excludeSurfaceId);
-        allSourcePoints.push(...sourcePoints);
+    if (windowConfig) {
+      // Umbrella mode - windowed visibility from player
+      const umbrellaWindows = getWindowSegments(windowConfig);
+      for (const window of umbrellaWindows) {
+        const cone = createConeThroughWindow(player, window.start, window.end);
+        const sourcePoints = projectConeV2(cone, allSurfaces, this.screenBounds);
+        stage1SourcePoints.push(...sourcePoints);
         const rawPolygon = toVector2Array(sourcePoints);
         const polygon = preparePolygonForRendering(rawPolygon);
         if (polygon.length >= 3) {
-          allPolygons.push(polygon);
+          stage1Polygons.push(polygon);
+        }
+      }
+    } else {
+      // Full 360° visibility from player
+      const cone = createFullCone(player);
+      const sourcePoints = projectConeV2(cone, allSurfaces, this.screenBounds);
+      stage1SourcePoints.push(...sourcePoints);
+      const rawPolygon = toVector2Array(sourcePoints);
+      const polygon = preparePolygonForRendering(rawPolygon);
+      if (polygon.length >= 3) {
+        stage1Polygons.push(polygon);
+      }
+    }
+
+    // Store Stage 1
+    const stage1: VisibilityStage = {
+      sourcePoints: stage1SourcePoints,
+      polygon: stage1Polygons.length > 0 ? stage1Polygons.flat() : [],
+      origin: player,
+      isValid: stage1Polygons.length > 0,
+    };
+    this.visibilityStages.push(stage1);
+
+    // =========================================================================
+    // STAGE 2+: Reflected visibility through planned surfaces (CASCADING)
+    // Each stage uses the PREVIOUS stage's source points to determine visible windows.
+    // This ensures proper light propagation through multiple reflections.
+    // =========================================================================
+    // #region agent log
+    fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "ValidRegionRenderer.ts:render-cascade",
+        message: "Starting cascade through planned surfaces",
+        data: {
+          plannedSurfacesCount: plannedSurfaces.length,
+          plannedSurfaceIds: plannedSurfaces.map((s) => s.id),
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        hypothesisId: "H2A,H2B,H2C",
+      }),
+    }).catch(() => {});
+    // #endregion
+
+    if (plannedSurfaces.length > 0) {
+      // Track the current state through the cascade
+      let currentSourcePoints: readonly SourcePoint[] = stage1SourcePoints;
+      let currentOrigin = player;
+      let lastValidStagePolygons: (readonly Vector2[])[] = stage1Polygons;
+
+      // Iterate through each planned surface to compute cascading stages
+      for (let surfaceIndex = 0; surfaceIndex < plannedSurfaces.length; surfaceIndex++) {
+        const currentSurface = plannedSurfaces[surfaceIndex]!;
+
+        // Extract visible segments on this surface from the PREVIOUS stage's source points
+        const visibleSegments = this.extractVisibleSurfaceSegments(
+          currentSurface.id,
+          currentSourcePoints,
+          currentSurface.segment
+        );
+
+        // #region agent log
+        fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "ValidRegionRenderer.ts:cascade-stage",
+            message: `Cascade stage ${surfaceIndex + 1}`,
+            data: {
+              surfaceIndex,
+              surfaceId: currentSurface.id,
+              visibleSegmentsCount: visibleSegments.length,
+              prevSourcePointsCount: currentSourcePoints.length,
+            },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            hypothesisId: "H2A,H2B,H2C",
+          }),
+        }).catch(() => {});
+        // #endregion
+
+        if (visibleSegments.length === 0) {
+          // No light reaches this surface - stop cascading
+          break;
+        }
+
+        // Reflect origin through this surface only (incremental reflection)
+        currentOrigin = reflectPointThroughLine(
+          currentOrigin,
+          currentSurface.segment.start,
+          currentSurface.segment.end
+        );
+
+        // Compute visibility through visible windows
+        const stageSourcePoints: SourcePoint[] = [];
+        const stagePolygons: (readonly Vector2[])[] = [];
+
+        for (const window of visibleSegments) {
+          const cone = createConeThroughWindow(currentOrigin, window.start, window.end);
+          const sourcePoints = projectConeV2(
+            cone,
+            allSurfaces,
+            this.screenBounds,
+            currentSurface.id // Exclude the current reflection surface
+          );
+          stageSourcePoints.push(...sourcePoints);
+          const rawPolygon = toVector2Array(sourcePoints);
+          const polygon = preparePolygonForRendering(rawPolygon);
+          if (polygon.length >= 3) {
+            stagePolygons.push(polygon);
+          }
+        }
+
+        // Store this stage
+        const stage: VisibilityStage = {
+          sourcePoints: stageSourcePoints,
+          polygon: stagePolygons.length > 0 ? stagePolygons.flat() : [],
+          origin: currentOrigin,
+          isValid: stagePolygons.length > 0,
+        };
+        this.visibilityStages.push(stage);
+
+        // Update current state for next iteration
+        currentSourcePoints = stageSourcePoints;
+        if (stagePolygons.length > 0) {
+          lastValidStagePolygons = stagePolygons;
         }
       }
 
-      // Store source points and origin for provenance-based highlight mode
-      // For planned surfaces: use reflected origin (player image)
-      // For umbrella mode: use player position
-      this.lastSourcePoints = allSourcePoints;
-      this.lastOrigin = plannedSurfaces.length > 0 ? origin : player;
+      // Use the last stage for rendering and highlight mode
+      const lastStage = this.visibilityStages[this.visibilityStages.length - 1];
+      if (lastStage && lastStage.isValid) {
+        this.lastSourcePoints = lastStage.sourcePoints;
+        this.lastOrigin = lastStage.origin;
+        visibilityResult = {
+          polygons: lastValidStagePolygons,
+          origin: lastStage.origin,
+          isValid: true,
+        };
+      } else {
+        // Fall back to stage 1 if no valid reflected stages
+        this.lastSourcePoints = stage1SourcePoints;
+        this.lastOrigin = player;
+        visibilityResult = {
+          polygons: stage1Polygons,
+          origin: player,
+          isValid: stage1Polygons.length > 0,
+        };
+      }
+    } else {
+      // No planned surfaces - use Stage 1 (already computed above)
+      this.lastSourcePoints = stage1SourcePoints;
+      this.lastOrigin = player;
 
       visibilityResult = {
-        polygons: allPolygons,
-        origin,
-        isValid: allPolygons.length > 0 && allPolygons.some((p) => p.length >= 3),
-      };
-    } else {
-      // Full 360° visibility from player using epsilon-free ConeProjectionV2
-      const cone = createFullCone(player);
-      const sourcePoints = projectConeV2(cone, allSurfaces, this.screenBounds);
-      // Store source points for provenance-based operations
-      this.lastSourcePoints = sourcePoints;
-      this.lastOrigin = player;
-      // Convert SourcePoints to Vector2 and apply visual deduplication
-      const rawPolygon = toVector2Array(sourcePoints);
-      const polygon = preparePolygonForRendering(rawPolygon);
-      visibilityResult = {
-        polygons: polygon.length >= 3 ? [polygon] : [],
+        polygons: stage1Polygons,
         origin: player,
-        isValid: polygon.length >= 3,
+        isValid: stage1Polygons.length > 0 && stage1Polygons.some((p) => p.length >= 3),
       };
     }
 
+    // #region agent log
+    fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "ValidRegionRenderer.ts:render-complete",
+        message: "All stages computed",
+        data: {
+          totalStagesComputed: this.visibilityStages.length,
+          stageInfos: this.visibilityStages.map((s, i) => ({
+            idx: i,
+            valid: s.isValid,
+            polyLen: s.polygon.length,
+            origin: s.origin,
+          })),
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        hypothesisId: "H2A",
+      }),
+    }).catch(() => {});
+    // #endregion
     // Convert to ValidRegionOutline format for compatibility (uses first polygon for legacy)
     const firstPolygon = visibilityResult.polygons[0] ?? [];
     const outline: ValidRegionOutline = {
@@ -360,21 +616,18 @@ export class ValidRegionRenderer {
     // Clear previous render
     this.graphics.clear();
 
-    // If no valid region, darken entire screen
-    if (!visibilityResult.isValid || visibilityResult.polygons.length === 0) {
+    // If no valid stages, darken entire screen
+    if (this.visibilityStages.length === 0 || !this.visibilityStages.some((s) => s.isValid)) {
       this.renderFullOverlay();
       return;
     }
 
-    // Render the overlay with valid region cutout
+    // Render all visibility stages with progressive opacity
+    // Earlier stages fade into background, later stages stand out
     // Use polygon drawing (not triangle fan) when we have a window (umbrella or planned surfaces)
     // Triangle fan from player only works for 360° visibility
     const hasWindow = windowConfig !== null || plannedSurfaces.length > 0;
-    this.renderOverlayWithCutoutMulti(
-      visibilityResult.polygons,
-      visibilityResult.origin,
-      hasWindow
-    );
+    this.renderAllStagesWithCutout(hasWindow);
 
     // Debug: show outline (for first polygon only)
     if (this.config.showOutline) {
@@ -394,84 +647,44 @@ export class ValidRegionRenderer {
   }
 
   /**
-   * Render overlay with multiple valid regions (for umbrella hole mode).
+   * Render all visibility stages with progressive opacity.
    *
    * Strategy:
    * 1. Draw full screen with shadow alpha
-   * 2. For each polygon, erase and draw with lit alpha
+   * 2. For each stage (earliest to latest):
+   *    - Calculate visibility percentage using formula: 10 + 40 / (2^depth)
+   *    - Convert to overlay alpha
+   *    - Erase and redraw polygons with calculated alpha
    *
-   * @param polygons Array of visibility polygons
-   * @param origin The visibility origin (player or reflected image)
+   * Earlier stages are rendered first (dimmest) so later stages (brighter)
+   * paint over them where they overlap.
+   *
    * @param hasWindow Whether visibility is through a window (umbrella or planned surfaces)
    */
-  private renderOverlayWithCutoutMulti(
-    polygons: readonly (readonly Vector2[])[],
-    origin: Vector2,
-    hasWindow: boolean
-  ): void {
+  private renderAllStagesWithCutout(hasWindow: boolean): void {
     const { minX, minY, maxX, maxY } = this.screenBounds;
+    const totalStages = this.visibilityStages.length;
+    // #region agent log
+    fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "ValidRegionRenderer.ts:renderAllStagesWithCutout",
+        message: "Stage rendering start",
+        data: {
+          totalStages,
+          hasWindow,
+          stageValids: this.visibilityStages.map((s) => s.isValid),
+          stagePolygonLengths: this.visibilityStages.map((s) => s.polygon.length),
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        hypothesisId: "H1C,H2A",
+      }),
+    }).catch(() => {});
+    // #endregion
 
-    this.graphics.setBlendMode(BlendModes.NORMAL);
-
-    // Step 1: Draw full screen with shadow alpha
-    this.graphics.fillStyle(this.config.overlayColor, this.config.shadowAlpha);
-    this.graphics.fillRect(minX, minY, maxX - minX, maxY - minY);
-
-    // Step 2 & 3: For each polygon, erase and draw with lit alpha
-    for (const polygon of polygons) {
-      if (polygon.length < 3) continue;
-
-      // Convert to vertex format for drawing
-      const vertices = polygon.map((pos) => ({ position: pos }));
-
-      // Erase this polygon area
-      this.graphics.setBlendMode(BlendModes.ERASE);
-      this.graphics.fillStyle(0xffffff, 1.0);
-
-      if (hasWindow) {
-        this.drawPolygon(vertices);
-      } else {
-        this.drawTriangleFan(origin, vertices);
-      }
-
-      // Draw with lit alpha
-      this.graphics.setBlendMode(BlendModes.NORMAL);
-      this.graphics.fillStyle(this.config.overlayColor, this.config.litAlpha);
-
-      if (hasWindow) {
-        this.drawPolygon(vertices);
-      } else {
-        this.drawTriangleFan(origin, vertices);
-      }
-    }
-  }
-
-  /**
-   * Render overlay with valid region having a subtle brightness difference.
-   *
-   * Strategy:
-   * 1. Draw full screen with shadow alpha
-   * 2. Draw valid region with ERASE to cut out
-   * 3. Draw valid region again with lit alpha (lighter tint)
-   *
-   * When there's a window (umbrella or planned surfaces), the visibility
-   * polygon does NOT include the origin. Using a triangle fan from origin
-   * would incorrectly include the area between origin and the window.
-   * Instead, we render the polygon directly.
-   *
-   * For full 360° visibility (no window), we use triangle fan from origin
-   * (the player) which gives correct visibility filling.
-   *
-   * @deprecated Use renderOverlayWithCutoutMulti for multi-polygon support
-   */
-  private renderOverlayWithCutout(outline: ValidRegionOutline, hasWindow: boolean): void {
-    const { minX, minY, maxX, maxY } = this.screenBounds;
-    const vertices = outline.vertices;
-    const origin = outline.origin;
-
-    // Filter out origin vertices from the outline (we use the actual origin)
-    const edgeVertices = vertices.filter((v) => v.type !== "origin");
-    if (edgeVertices.length < 2) {
+    if (totalStages === 0) {
       this.renderFullOverlay();
       return;
     }
@@ -482,27 +695,73 @@ export class ValidRegionRenderer {
     this.graphics.fillStyle(this.config.overlayColor, this.config.shadowAlpha);
     this.graphics.fillRect(minX, minY, maxX - minX, maxY - minY);
 
-    // Step 2: Erase the valid region
-    this.graphics.setBlendMode(BlendModes.ERASE);
-    this.graphics.fillStyle(0xffffff, 1.0);
+    // Step 2: For each stage, ERASE the polygon area then FILL with stage alpha
+    //
+    // We draw from EARLIEST to LATEST (Stage 0 first, Stage N last).
+    // For each stage:
+    //   a) ERASE the polygon to remove existing overlay (shadow or earlier stage)
+    //   b) FILL the polygon with this stage's overlay alpha
+    //
+    // For nested stages (Stage N inside Stage 0):
+    // - Stage 0: ERASE (removes shadow), FILL with 0.58 alpha
+    // - Stage N: ERASE (removes Stage 0's 0.58), FILL with 0.50 alpha
+    // Result: Stage N region has 0.50 alpha (brighter)
+    //
+    // NOTE: ERASE (destination-out) requires Canvas mode or WebGL with proper
+    // blend mode support. In WebGL, ERASE may not work correctly.
+    for (let stageIndex = 0; stageIndex < totalStages; stageIndex++) {
+      const stage = this.visibilityStages[stageIndex]!;
+      if (!stage.isValid || stage.polygon.length < 3) continue;
 
-    if (hasWindow) {
-      // For windowed visibility (umbrella or planned surfaces),
-      // draw the polygon directly - origin is not part of the polygon
-      this.drawPolygon(edgeVertices);
-    } else {
-      // For full 360° visibility, use triangle fan from player
-      this.drawTriangleFan(origin, edgeVertices);
-    }
+      const visibility = this.calculateStageVisibility(stageIndex, totalStages);
+      const overlayAlpha = this.visibilityToOverlayAlpha(visibility);
+      // #region agent log
+      fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location: "ValidRegionRenderer.ts:renderStage",
+          message: "Rendering stage",
+          data: {
+            stageIndex,
+            totalStages,
+            visibility,
+            overlayAlpha,
+            polygonLen: stage.polygon.length,
+            depth: totalStages - 1 - stageIndex,
+          },
+          timestamp: Date.now(),
+          sessionId: "debug-session",
+          hypothesisId: "H1B,H1C",
+        }),
+      }).catch(() => {});
+      // #endregion
 
-    // Step 3: Draw valid region with lit alpha (subtle tint)
-    this.graphics.setBlendMode(BlendModes.NORMAL);
-    this.graphics.fillStyle(this.config.overlayColor, this.config.litAlpha);
+      // Convert flat polygon array to vertex format for drawing
+      const vertices = stage.polygon.map((pos) => ({ position: pos }));
 
-    if (hasWindow) {
-      this.drawPolygon(edgeVertices);
-    } else {
-      this.drawTriangleFan(origin, edgeVertices);
+      // Determine if this stage uses a window (all stages after stage 0 do, or stage 0 if hasWindow)
+      const stageHasWindow = stageIndex > 0 || hasWindow;
+
+      // Step 2a: ERASE the polygon area (removes shadow/earlier stage overlay)
+      this.graphics.setBlendMode(BlendModes.ERASE);
+      this.graphics.fillStyle(0xffffff, 1.0);
+
+      if (stageHasWindow) {
+        this.drawPolygon(vertices);
+      } else {
+        this.drawTriangleFan(stage.origin, vertices);
+      }
+
+      // Step 2b: FILL with the stage's calculated alpha (lower alpha = brighter)
+      this.graphics.setBlendMode(BlendModes.NORMAL);
+      this.graphics.fillStyle(this.config.overlayColor, overlayAlpha);
+
+      if (stageHasWindow) {
+        this.drawPolygon(vertices);
+      } else {
+        this.drawTriangleFan(stage.origin, vertices);
+      }
     }
   }
 
@@ -623,5 +882,45 @@ export class ValidRegionRenderer {
   clear(): void {
     this.graphics.clear();
     this.lastOutline = null;
+  }
+
+  /**
+   * Calculate visibility percentage for a stage based on its depth.
+   *
+   * Uses the formula: visibility = 10 + 40 / (2^depth)
+   * Where depth is distance from the latest stage (0 = latest).
+   *
+   * Examples:
+   * - Latest stage (depth 0): 10 + 40/1 = 50%
+   * - Second-to-last (depth 1): 10 + 40/2 = 30%
+   * - Third-to-last (depth 2): 10 + 40/4 = 20%
+   *
+   * @param stageIndex The stage index (0-based, 0 = earliest)
+   * @param totalStages Total number of stages
+   * @returns Visibility percentage (10-50)
+   */
+  private calculateStageVisibility(stageIndex: number, totalStages: number): number {
+    const depth = totalStages - 1 - stageIndex;
+    const visibility = 10 + 40 / 2 ** depth;
+    return Math.max(10, Math.min(50, visibility)); // clamp to [10, 50]
+  }
+
+  /**
+   * Convert visibility percentage to overlay alpha.
+   *
+   * Uses linear interpolation between shadowAlpha and litAlpha:
+   * overlayAlpha = shadowAlpha - (shadowAlpha - litAlpha) * (visibility / 50)
+   *
+   * With defaults (shadowAlpha=0.7, litAlpha=0.5):
+   * - 50% visibility → 0.5 overlay (brightest)
+   * - 30% visibility → 0.58 overlay
+   * - 10% visibility → 0.66 overlay (dimmest)
+   *
+   * @param visibility Visibility percentage (0-50)
+   * @returns Overlay alpha (litAlpha to shadowAlpha)
+   */
+  private visibilityToOverlayAlpha(visibility: number): number {
+    const { shadowAlpha, litAlpha } = this.config;
+    return shadowAlpha - (shadowAlpha - litAlpha) * (visibility / 50);
   }
 }

@@ -963,8 +963,13 @@ export function projectConeV2(
     if (targetXY.x === origin.x && targetXY.y === origin.y) continue;
 
     // PROVENANCE CHECK: Window endpoints are IN the cone by definition - they ARE the cone boundaries.
-    // Skip the floating-point isPointInCone check for window endpoints.
-    const isWindowEndpoint = isEndpoint(target) && excludeSurfaceId && target.surface.id === excludeSurfaceId;
+    // Skip the floating-point isPointInCone check for ACTUAL window endpoints only.
+    // Note: excludeSurfaceId is too broad - it includes all endpoints of the excluded surface.
+    // We must check if targetXY matches the actual startLine endpoints.
+    const isWindowEndpoint = isWindowed && startLine && (
+      (targetXY.x === startLine.start.x && targetXY.y === startLine.start.y) ||
+      (targetXY.x === startLine.end.x && targetXY.y === startLine.end.y)
+    );
     
     // Check if target is in cone (skip for window endpoints - they're definitionally in cone)
     if (!isWindowEndpoint && !isPointInCone(targetXY, source)) continue;

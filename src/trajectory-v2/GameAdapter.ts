@@ -17,7 +17,7 @@ import { AimingSystem } from "./systems/AimingSystem";
 import { ArrowSystem } from "./systems/ArrowSystem";
 import { type IGraphics, RenderSystem } from "./systems/RenderSystem";
 import type { ScreenBounds } from "./visibility/ConePropagator";
-import { type ReachingConeConfig, calculateReachingCones, calculateReachingConesFromProvenance } from "./visibility/HighlightMode";
+import { type ReachingConeConfig, calculateReachingCones, segmentsToCones } from "./visibility/HighlightMode";
 import { HighlightRenderer } from "./visibility/HighlightRenderer";
 import { type IValidRegionGraphics, ValidRegionRenderer } from "./visibility/ValidRegionRenderer";
 import type { WindowConfig } from "./visibility/WindowConfig";
@@ -485,9 +485,15 @@ export class GameAdapter {
       return;
     }
 
-    // Use provenance-based approach: get points on target surface from visibility polygon
-    const visiblePoints = this.validRegionRenderer?.getVisibleSurfacePoints(hoveredSurface.id) ?? [];
+    // UNIFIED APPROACH: Use getVisibleSurfaceSegments as single source of truth
+    // This is the same data used for reflection window calculation
+    const visibleSegments = this.validRegionRenderer?.getVisibleSurfaceSegments(hoveredSurface.id) ?? [];
     const origin = this.validRegionRenderer?.getLastOrigin() ?? this.lastPlayer;
+
+    if (visibleSegments.length === 0) {
+      this.highlightRenderer.clear();
+      return;
+    }
 
     // Determine startLine based on current visibility mode
     // With planned surfaces: startLine is the last planned surface
@@ -506,32 +512,15 @@ export class GameAdapter {
       }
     }
 
-    // #region agent log
-    fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'GameAdapter.ts:490',message:'Provenance highlight',data:{surfaceId:hoveredSurface.id,visiblePointsCount:visiblePoints.length,origin,hasWindow:!!startLine},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'PROV'})}).catch(()=>{});
-    // #endregion
-
-    let cones;
-    if (visiblePoints.length >= 2) {
-      // Use provenance-based approach (accurate, uses already-calculated visibility)
-      cones = calculateReachingConesFromProvenance(origin, hoveredSurface, visiblePoints, startLine);
-    } else {
-      // Fallback to obstacle-based calculation
-      const config: ReachingConeConfig = {
-        origin,
-        targetSurface: hoveredSurface,
-        obstacles: this.lastAllSurfaces.filter((s) => s.id !== hoveredSurface.id),
-        startLine,
-      };
-      cones = calculateReachingCones(config);
-    }
+    // Convert segments to cones using the unified function
+    const cones = segmentsToCones(origin, hoveredSurface, visibleSegments, startLine);
 
     if (cones.length === 0) {
       this.highlightRenderer.clear();
       return;
     }
 
-    // Render the cones directly - no clipping needed when using provenance
-    // because the visible points are already from the visibility polygon
+    // Render the cones directly
     const polygons = cones.map((cone) => [...cone.vertices]);
     this.highlightRenderer.renderMultipleOutlines(polygons);
   }

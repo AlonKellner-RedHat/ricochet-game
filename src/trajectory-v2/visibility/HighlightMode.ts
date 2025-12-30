@@ -358,10 +358,6 @@ function splitConeByObstacles(
   // Sort shadows by their left edge (higher cross first = closer to left boundary)
   shadows.sort((a, b) => b.leftCross - a.leftCross);
 
-  // #region agent log
-  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HighlightMode.ts:360',message:'shadows from obstacles',data:{shadowsCount:shadows.length,shadows:shadows.map(s=>({leftPoint:s.leftPoint,rightPoint:s.rightPoint})),blockingObstacles:blockingObstacles.map(o=>o.id)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
-
   // Sweep and find gaps between shadows
   // Higher cross = closer to left boundary, lower cross = closer to right boundary
   const gaps: Array<{ left: Vector2; right: Vector2 }> = [];
@@ -399,10 +395,6 @@ function splitConeByObstacles(
     return [{ left, right }];
   }
 
-  // #region agent log
-  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HighlightMode.ts:398',message:'splitConeByObstacles result',data:{gapsCount:gaps.length,gaps:gaps.map(g=>({left:g.left,right:g.right})),originalLeft:left,originalRight:right,shadowsCount:shadows.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
-
   return gaps;
 }
 
@@ -427,10 +419,6 @@ export function calculateReachingCones(config: ReachingConeConfig): ReachingCone
 
   // Calculate visible intervals on the surface using 1D approach
   const visibleIntervals = calculateVisibleIntervals(origin, targetSurface, obstacles);
-
-  // #region agent log
-  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HighlightMode.ts:435',message:'visible intervals',data:{intervals:visibleIntervals,surfStart,surfEnd},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'FIX2'})}).catch(()=>{});
-  // #endregion
 
   // Convert each visible interval to a ReachingCone
   const result: ReachingCone[] = [];
@@ -478,6 +466,58 @@ export function calculateReachingCones(config: ReachingConeConfig): ReachingCone
  * @param visibleSurfacePoints Points on the surface from visibility polygon (via provenance)
  * @param startLine Optional window line
  * @returns Array of reaching cones
+ */
+/**
+ * Convert visible surface segments directly to reaching cones.
+ *
+ * This is the UNIFIED approach: takes segments from getVisibleSurfaceSegments()
+ * and converts each segment to a cone polygon.
+ *
+ * @param origin Light source origin (player or reflected image)
+ * @param targetSurface The surface being highlighted
+ * @param segments Visible segments on the surface (from getVisibleSurfaceSegments)
+ * @param startLine Optional window line (for quadrilateral cones)
+ */
+export function segmentsToCones(
+  origin: Vector2,
+  targetSurface: Surface,
+  segments: readonly Segment[],
+  startLine: Segment | null
+): ReachingCone[] {
+  const result: ReachingCone[] = [];
+
+  for (const segment of segments) {
+    let vertices: Vector2[];
+
+    if (startLine === null) {
+      // Triangle: origin + segment endpoints
+      vertices = [origin, segment.start, segment.end];
+    } else {
+      // Quadrilateral: intersect rays with startLine
+      const leftIntersection = findRayStartLineIntersection(origin, segment.start, startLine);
+      const rightIntersection = findRayStartLineIntersection(origin, segment.end, startLine);
+
+      if (leftIntersection && rightIntersection) {
+        vertices = [leftIntersection, segment.start, segment.end, rightIntersection];
+      } else {
+        // Fallback to triangle
+        vertices = [origin, segment.start, segment.end];
+      }
+    }
+
+    result.push({
+      vertices,
+      origin,
+      targetSurface,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * @deprecated Use segmentsToCones() with getVisibleSurfaceSegments() instead.
+ * Kept for backwards compatibility during transition.
  */
 export function calculateReachingConesFromProvenance(
   origin: Vector2,

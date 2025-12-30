@@ -7,8 +7,8 @@ import { TrajectoryDebugLogger } from "@/trajectory-v2/TrajectoryDebugLogger";
 import {
   type Segment,
   type WindowConfig,
-  createSingleWindow,
   createMultiWindow,
+  createSingleWindow,
   splitWindow,
 } from "@/trajectory-v2/visibility/WindowConfig";
 import Phaser from "phaser";
@@ -147,7 +147,12 @@ export class GameScene extends Phaser.Scene {
       arrowSpeed: 800,
       shootCooldown: 0.3,
       showValidRegion: true, // Enable visibility overlay
-      validRegionShadowAlpha: 0.4,
+      // Visibility overlay config:
+      // - shadowAlpha: opacity for shadowed regions (higher = darker)
+      // - litAlpha: opacity for fully lit regions (lower = brighter)
+      // litAlpha MUST be less than shadowAlpha for correct brightness ordering
+      validRegionShadowAlpha: 0.7, // Shadow regions are dark
+      validRegionLitAlpha: 0.3, // Lit regions are bright
     });
 
     // Create arrow graphics
@@ -240,11 +245,11 @@ export class GameScene extends Phaser.Scene {
     // 2. Light comes from the reflective side of the surface
     const plannedSurfaces = this.trajectoryAdapter.getPlannedSurfaces();
     let highlightSurface = null;
-    
+
     if (this.hoveredSurface?.isPlannable()) {
       // Get the light origin: player position or player image (if planned surfaces exist)
       const lightOrigin = this.trajectoryAdapter.getLightOrigin();
-      
+
       // Calculate direction from light origin to surface center
       const surfCenter = {
         x: (this.hoveredSurface.segment.start.x + this.hoveredSurface.segment.end.x) / 2,
@@ -254,13 +259,13 @@ export class GameScene extends Phaser.Scene {
         x: surfCenter.x - lightOrigin.x,
         y: surfCenter.y - lightOrigin.y,
       };
-      
+
       // Check if light comes from reflective side
       if (this.hoveredSurface.canReflectFrom(dirToSurface)) {
         highlightSurface = this.hoveredSurface;
       }
     }
-    
+
     this.trajectoryAdapter.renderHighlightCones(highlightSurface, plannedSurfaces);
 
     // Update cursor based on hover state and cursor reachability
@@ -321,7 +326,10 @@ export class GameScene extends Phaser.Scene {
    * - God mode: Direct arrow key control, bypass physics and collisions
    * - Slow + God mode: Direct control at 1 pixel per second
    */
-  private updatePlayerMovement(deltaSeconds: number, input: { left: boolean; right: boolean; jump: boolean; jumpHeld: boolean }): void {
+  private updatePlayerMovement(
+    deltaSeconds: number,
+    input: { left: boolean; right: boolean; jump: boolean; jumpHeld: boolean }
+  ): void {
     if (this.godMode) {
       // God mode: Direct position control with arrow keys
       // Determine speed (can be compounded with slow mode)
@@ -603,12 +611,7 @@ export class GameScene extends Phaser.Scene {
   /**
    * Draw a dashed line over a surface segment
    */
-  private drawDashedLine(
-    surface: Surface,
-    color: number,
-    lineWidth: number,
-    alpha: number
-  ): void {
+  private drawDashedLine(surface: Surface, color: number, lineWidth: number, alpha: number): void {
     const dashLength = 8;
     const gapLength = 4;
 
@@ -795,7 +798,7 @@ export class GameScene extends Phaser.Scene {
     // Draw mode indicator
     const midX = (umbrella.start.x + umbrella.end.x) / 2;
     const midY = umbrella.start.y - 15;
-    
+
     if (this.umbrellaMode === UmbrellaMode.FULL) {
       // Single circle for full mode
       this.umbrellaGraphics.fillStyle(0x00ffff, 0.8);

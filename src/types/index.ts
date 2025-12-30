@@ -337,6 +337,12 @@ export interface GameOptions {
   readonly height: number;
   readonly backgroundColor: number;
   readonly useWebGPU: boolean;
+  /**
+   * Force Canvas renderer instead of WebGL.
+   * Canvas mode properly supports ERASE blend mode (destination-out),
+   * which is needed for correct multi-stage visibility overlay rendering.
+   */
+  readonly forceCanvas?: boolean;
 }
 
 /** Grid cell position */
