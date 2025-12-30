@@ -237,8 +237,8 @@ describe("Multi-Stage Rendering", () => {
 
       // Stage 1 (latest) should have HIGHER visibility than Stage 0
       expect(stage1Visibility).toBeGreaterThan(stage0Visibility);
-      expect(stage1Visibility).toBe(50); // Latest should be 50%
-      expect(stage0Visibility).toBe(30); // depth=1: 10 + 40/2 = 30%
+      expect(stage1Visibility).toBe(32); // Latest (depth 0): 32/1 = 32%
+      expect(stage0Visibility).toBe(8); // depth=1: 32/4 = 8%
     });
 
     it("should calculate lower overlay alpha for later stages (brighter)", () => {
@@ -256,9 +256,13 @@ describe("Multi-Stage Rendering", () => {
 
       // Lower alpha = brighter (less dark overlay)
       // Stage 1 (latest) should have LOWER alpha than Stage 0
+      // Formula: overlayAlpha = shadowAlpha * (1 - visibility/100)
+      // With shadowAlpha = 0.7 and 4^depth:
+      // - 32% visibility → 0.7 * 0.68 = 0.476
+      // - 8% visibility → 0.7 * 0.92 = 0.644
       expect(stage1Alpha).toBeLessThan(stage0Alpha);
-      expect(stage1Alpha).toBeCloseTo(0.5, 2); // 50% visibility → 0.5 alpha
-      expect(stage0Alpha).toBeCloseTo(0.58, 2); // 30% visibility → 0.58 alpha
+      expect(stage1Alpha).toBeCloseTo(0.476, 2); // 32% visibility
+      expect(stage0Alpha).toBeCloseTo(0.644, 2); // 8% visibility
     });
 
     it("should render later stages with lower overlay alpha", () => {
@@ -412,8 +416,9 @@ describe("Multi-Stage Rendering", () => {
       }
 
       // The last polygon should have lowest alpha (brightest)
+      // With 32% visibility: 0.7 * (1 - 0.32) = 0.476
       const lastAlpha = alphas[alphas.length - 1];
-      expect(lastAlpha).toBeCloseTo(0.5, 2);
+      expect(lastAlpha).toBeCloseTo(0.476, 2);
     });
 
     it("should produce strictly decreasing overlay alphas for increasing stage indices", () => {
@@ -437,9 +442,10 @@ describe("Multi-Stage Rendering", () => {
       }
 
       // Stage 0 should have highest alpha (dimmest)
-      // Stage N-1 should have lowest alpha (brightest = 0.5)
+      // Stage N-1 should have lowest alpha (brightest)
+      // With 32% visibility: 0.7 * (1 - 0.32) = 0.476
       expect(alphas[0]).toBeGreaterThan(alphas[alphas.length - 1]!);
-      expect(alphas[alphas.length - 1]).toBeCloseTo(0.5, 2);
+      expect(alphas[alphas.length - 1]).toBeCloseTo(0.476, 2);
     });
   });
 
@@ -809,17 +815,16 @@ describe("Multi-Stage Rendering", () => {
   });
 
   describe("Visibility formula verification", () => {
-    it("should follow the formula: 10 + 40 / 2^depth", () => {
+    it("should follow the formula: 32 / 4^depth", () => {
       const calcVisibility = (renderer as any).calculateStageVisibility.bind(renderer);
 
-      // Test with 5 stages
-      const totalStages = 5;
+      // Test with 4 stages
+      const totalStages = 4;
       const expectedVisibilities = [
-        { stageIndex: 0, depth: 4, expected: 10 + 40 / 16 },    // 12.5%
-        { stageIndex: 1, depth: 3, expected: 10 + 40 / 8 },     // 15%
-        { stageIndex: 2, depth: 2, expected: 10 + 40 / 4 },     // 20%
-        { stageIndex: 3, depth: 1, expected: 10 + 40 / 2 },     // 30%
-        { stageIndex: 4, depth: 0, expected: 10 + 40 / 1 },     // 50%
+        { stageIndex: 0, depth: 3, expected: 32 / 64 },   // 0.5%
+        { stageIndex: 1, depth: 2, expected: 32 / 16 },   // 2%
+        { stageIndex: 2, depth: 1, expected: 32 / 4 },    // 8%
+        { stageIndex: 3, depth: 0, expected: 32 / 1 },    // 32%
       ];
 
       for (const { stageIndex, depth, expected } of expectedVisibilities) {

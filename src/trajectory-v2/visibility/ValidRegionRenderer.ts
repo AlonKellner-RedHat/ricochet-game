@@ -435,24 +435,6 @@ export class ValidRegionRenderer {
     // Each stage uses the PREVIOUS stage's source points to determine visible windows.
     // This ensures proper light propagation through multiple reflections.
     // =========================================================================
-    // #region agent log
-    fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "ValidRegionRenderer.ts:render-cascade",
-        message: "Starting cascade through planned surfaces",
-        data: {
-          plannedSurfacesCount: plannedSurfaces.length,
-          plannedSurfaceIds: plannedSurfaces.map((s) => s.id),
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        hypothesisId: "H2A,H2B,H2C",
-      }),
-    }).catch(() => {});
-    // #endregion
-
     if (plannedSurfaces.length > 0) {
       // Track the current state through the cascade
       let currentSourcePoints: readonly SourcePoint[] = stage1SourcePoints;
@@ -470,28 +452,14 @@ export class ValidRegionRenderer {
           currentSurface.segment
         );
 
-        // #region agent log
-        fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "ValidRegionRenderer.ts:cascade-stage",
-            message: `Cascade stage ${surfaceIndex + 1}`,
-            data: {
-              surfaceIndex,
-              surfaceId: currentSurface.id,
-              visibleSegmentsCount: visibleSegments.length,
-              prevSourcePointsCount: currentSourcePoints.length,
-            },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            hypothesisId: "H2A,H2B,H2C",
-          }),
-        }).catch(() => {});
-        // #endregion
-
         if (visibleSegments.length === 0) {
           // No light reaches this surface - stop cascading
+          break;
+        }
+
+        // Check if current origin is on the reflective side of this surface.
+        // If not, light cannot reflect off this surface - stop cascading.
+        if (!this.isOriginOnReflectiveSide(currentOrigin, currentSurface)) {
           break;
         }
 
@@ -570,28 +538,6 @@ export class ValidRegionRenderer {
       };
     }
 
-    // #region agent log
-    fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "ValidRegionRenderer.ts:render-complete",
-        message: "All stages computed",
-        data: {
-          totalStagesComputed: this.visibilityStages.length,
-          stageInfos: this.visibilityStages.map((s, i) => ({
-            idx: i,
-            valid: s.isValid,
-            polyLen: s.polygon.length,
-            origin: s.origin,
-          })),
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        hypothesisId: "H2A",
-      }),
-    }).catch(() => {});
-    // #endregion
     // Convert to ValidRegionOutline format for compatibility (uses first polygon for legacy)
     const firstPolygon = visibilityResult.polygons[0] ?? [];
     const outline: ValidRegionOutline = {
@@ -664,25 +610,6 @@ export class ValidRegionRenderer {
   private renderAllStagesWithCutout(hasWindow: boolean): void {
     const { minX, minY, maxX, maxY } = this.screenBounds;
     const totalStages = this.visibilityStages.length;
-    // #region agent log
-    fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "ValidRegionRenderer.ts:renderAllStagesWithCutout",
-        message: "Stage rendering start",
-        data: {
-          totalStages,
-          hasWindow,
-          stageValids: this.visibilityStages.map((s) => s.isValid),
-          stagePolygonLengths: this.visibilityStages.map((s) => s.polygon.length),
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        hypothesisId: "H1C,H2A",
-      }),
-    }).catch(() => {});
-    // #endregion
 
     if (totalStages === 0) {
       this.renderFullOverlay();
@@ -715,28 +642,6 @@ export class ValidRegionRenderer {
 
       const visibility = this.calculateStageVisibility(stageIndex, totalStages);
       const overlayAlpha = this.visibilityToOverlayAlpha(visibility);
-      // #region agent log
-      fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          location: "ValidRegionRenderer.ts:renderStage",
-          message: "Rendering stage",
-          data: {
-            stageIndex,
-            totalStages,
-            visibility,
-            overlayAlpha,
-            polygonLen: stage.polygon.length,
-            depth: totalStages - 1 - stageIndex,
-          },
-          timestamp: Date.now(),
-          sessionId: "debug-session",
-          hypothesisId: "H1B,H1C",
-        }),
-      }).catch(() => {});
-      // #endregion
-
       // Convert flat polygon array to vertex format for drawing
       const vertices = stage.polygon.map((pos) => ({ position: pos }));
 
@@ -887,40 +792,64 @@ export class ValidRegionRenderer {
   /**
    * Calculate visibility percentage for a stage based on its depth.
    *
-   * Uses the formula: visibility = 10 + 40 / (2^depth)
+   * Uses the formula: visibility = 32 / (4^depth)
    * Where depth is distance from the latest stage (0 = latest).
    *
    * Examples:
-   * - Latest stage (depth 0): 10 + 40/1 = 50%
-   * - Second-to-last (depth 1): 10 + 40/2 = 30%
-   * - Third-to-last (depth 2): 10 + 40/4 = 20%
+   * - background: 0%
+   * - polygon N (latest, depth 0): 32 / 1 = 32%
+   * - polygon N-1 (depth 1): 32 / 4 = 8%
+   * - polygon N-2 (depth 2): 32 / 16 = 2%
+   * - polygon N-3 (depth 3): 32 / 64 = 0.5%
    *
    * @param stageIndex The stage index (0-based, 0 = earliest)
    * @param totalStages Total number of stages
-   * @returns Visibility percentage (10-50)
+   * @returns Visibility percentage (asymptotically approaching 0)
    */
   private calculateStageVisibility(stageIndex: number, totalStages: number): number {
     const depth = totalStages - 1 - stageIndex;
-    const visibility = 10 + 40 / 2 ** depth;
-    return Math.max(10, Math.min(50, visibility)); // clamp to [10, 50]
+    return 32 / 4 ** depth;
   }
 
   /**
    * Convert visibility percentage to overlay alpha.
    *
-   * Uses linear interpolation between shadowAlpha and litAlpha:
-   * overlayAlpha = shadowAlpha - (shadowAlpha - litAlpha) * (visibility / 50)
+   * Visibility directly maps to how much of the scene shows through:
+   * - 0% visibility → shadowAlpha (darkest, for background)
+   * - 32% visibility → shadowAlpha * 0.68 (brightest polygon)
    *
-   * With defaults (shadowAlpha=0.7, litAlpha=0.5):
-   * - 50% visibility → 0.5 overlay (brightest)
-   * - 30% visibility → 0.58 overlay
-   * - 10% visibility → 0.66 overlay (dimmest)
+   * Formula: overlayAlpha = shadowAlpha * (1 - visibility / 100)
    *
-   * @param visibility Visibility percentage (0-50)
-   * @returns Overlay alpha (litAlpha to shadowAlpha)
+   * @param visibility Visibility percentage (0-100)
+   * @returns Overlay alpha (0 to shadowAlpha)
    */
   private visibilityToOverlayAlpha(visibility: number): number {
-    const { shadowAlpha, litAlpha } = this.config;
-    return shadowAlpha - (shadowAlpha - litAlpha) * (visibility / 50);
+    const { shadowAlpha } = this.config;
+    return shadowAlpha * (1 - visibility / 100);
+  }
+
+  /**
+   * Check if the given origin point is on the reflective side of a surface.
+   *
+   * This is used to prevent reflecting light through surfaces when the light
+   * comes from the non-reflective (back) side.
+   *
+   * @param origin The light origin point
+   * @param surface The surface to check
+   * @returns true if origin is on the reflective side, false otherwise
+   */
+  private isOriginOnReflectiveSide(origin: Vector2, surface: Surface): boolean {
+    // Calculate direction from origin toward the surface center
+    const midpoint = {
+      x: (surface.segment.start.x + surface.segment.end.x) / 2,
+      y: (surface.segment.start.y + surface.segment.end.y) / 2,
+    };
+    const direction = {
+      x: midpoint.x - origin.x,
+      y: midpoint.y - origin.y,
+    };
+
+    // canReflectFrom checks if incoming light from this direction can reflect
+    return surface.canReflectFrom(direction);
   }
 }

@@ -148,11 +148,9 @@ export class GameScene extends Phaser.Scene {
       shootCooldown: 0.3,
       showValidRegion: true, // Enable visibility overlay
       // Visibility overlay config:
-      // - shadowAlpha: opacity for shadowed regions (higher = darker)
-      // - litAlpha: opacity for fully lit regions (lower = brighter)
-      // litAlpha MUST be less than shadowAlpha for correct brightness ordering
-      validRegionShadowAlpha: 0.7, // Shadow regions are dark
-      validRegionLitAlpha: 0.3, // Lit regions are bright
+      // shadowAlpha: base opacity for background (0% visibility)
+      // Stages use visibility = 32/2^depth, with overlay = shadowAlpha * (1 - visibility/100)
+      validRegionShadowAlpha: 0.7, // Background shadow darkness
     });
 
     // Create arrow graphics

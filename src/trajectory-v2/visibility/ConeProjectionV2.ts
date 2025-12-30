@@ -1182,20 +1182,18 @@ function sortPolygonVerticesSourcePoint(
   // This splits the 360° into two ≤180° half-planes where cross-product is transitive.
   let refDirection: Vector2;
   if (startLine !== null) {
-    // Windowed cone: use first clockwise boundary ray as reference.
-    // First CW = endpoint with LARGER angle (encountered first when traversing CW from +X)
-    // This ensures all visible points (inside the cone) are on the same side of the reference,
-    // preventing the ±180° discontinuity from splitting the visible region incorrectly.
-    const startAngle = Math.atan2(
-      startLine.start.y - origin.y,
-      startLine.start.x - origin.x
-    );
-    const endAngle = Math.atan2(
-      startLine.end.y - origin.y,
-      startLine.end.x - origin.x
-    );
-    const firstCW = startAngle > endAngle ? startLine.start : startLine.end;
-    refDirection = { x: firstCW.x - origin.x, y: firstCW.y - origin.y };
+    // Windowed cone: use the "right" boundary (CW-most) as reference.
+    // Determine left vs right using cross-product (no atan2!):
+    // cross(start - origin, end - origin) > 0 means start is CCW from end,
+    // so end is the "right" (CW-most) boundary.
+    const startDir = { x: startLine.start.x - origin.x, y: startLine.start.y - origin.y };
+    const endDir = { x: startLine.end.x - origin.x, y: startLine.end.y - origin.y };
+    const cross = startDir.x * endDir.y - startDir.y * endDir.x;
+    // If cross > 0: start is CCW from end → end is "right" (first CW)
+    // If cross < 0: end is CCW from start → start is "right" (first CW)
+    // If cross == 0: collinear, pick either (use end as default)
+    const rightBoundary = cross >= 0 ? startLine.end : startLine.start;
+    refDirection = { x: rightBoundary.x - origin.x, y: rightBoundary.y - origin.y };
   } else {
     // Full cone: use positive X direction (1, 0)
     refDirection = { x: 1, y: 0 };
@@ -1430,30 +1428,23 @@ function arrangeWindowedCone(
   const rightEdge: SourcePoint[] = [];
   const middle: SourcePoint[] = [];
 
-  // Determine which window endpoint is left vs right by angle
-  const startAngle = Math.atan2(startLine.start.y - origin.y, startLine.start.x - origin.x);
-  const endAngle = Math.atan2(startLine.end.y - origin.y, startLine.end.x - origin.x);
+  // Determine which window endpoint is left vs right using cross-product (no atan2!).
+  // cross(start - origin, end - origin) > 0 means start is CCW from end,
+  // so start is "left" and end is "right".
+  const startDir = { x: startLine.start.x - origin.x, y: startLine.start.y - origin.y };
+  const endDir = { x: startLine.end.x - origin.x, y: startLine.end.y - origin.y };
+  const cross = startDir.x * endDir.y - startDir.y * endDir.x;
 
-  // Calculate the CCW angular distance from start to end
-  // This handles the ±180° wrap-around correctly
-  let ccwDistance = endAngle - startAngle;
-  if (ccwDistance < 0) {
-    ccwDistance += 2 * Math.PI; // Normalize to [0, 2π)
-  }
-
-  // If CCW distance < π, going from start to end is the shorter CCW arc
-  // Otherwise, going from end to start is the shorter CCW arc
-  // For a windowed cone, visible points are in the shorter arc,
-  // so "left" is the CCW start of the visible region.
+  // If cross > 0: start is CCW from end → start is "left", end is "right"
+  // If cross < 0: end is CCW from start → end is "left", start is "right"
+  // If cross == 0: collinear (degenerate window), use arbitrary assignment
   let leftXY: Vector2;
   let rightXY: Vector2;
 
-  if (ccwDistance <= Math.PI) {
-    // Visible region goes CCW from start to end
+  if (cross >= 0) {
     leftXY = startLine.start;
     rightXY = startLine.end;
   } else {
-    // Visible region goes CCW from end to start (the other way around)
     leftXY = startLine.end;
     rightXY = startLine.start;
   }

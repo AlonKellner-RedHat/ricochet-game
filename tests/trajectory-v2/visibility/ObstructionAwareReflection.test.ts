@@ -757,5 +757,308 @@ describe("Obstruction-Aware Reflection Windows", () => {
       expect(cones.length).toBe(2);
     });
   });
+
+  describe("Reflective side check", () => {
+    /**
+     * Create a directional test surface that only reflects from one side.
+     * Uses the cross-product to determine which side is reflective.
+     */
+    function createDirectionalSurface(
+      id: string,
+      start: Vector2,
+      end: Vector2
+    ): Surface {
+      // Normal points to the "left" of the segment (counter-clockwise 90°)
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const normal = { x: -dy / len, y: dx / len };
+
+      return {
+        id,
+        segment: { start, end },
+        isPlannable: () => true,
+        canReflectFrom: (incomingDirection: Vector2) => {
+          // Approaching from front means incoming direction is opposite to normal
+          // dot(incoming, normal) < 0 means they point in opposite directions
+          const dot = incomingDirection.x * normal.x + incomingDirection.y * normal.y;
+          return dot < 0;
+        },
+        getNormal: () => normal,
+        getCenter: () => ({
+          x: (start.x + end.x) / 2,
+          y: (start.y + end.y) / 2,
+        }),
+      } as Surface;
+    }
+
+    it("should NOT generate Stage 3 visibility when light hits wrong side of second surface", () => {
+      /**
+       * This test reproduces the bug from user's JSON:
+       * - Player at (170, 666)
+       * - Planned surfaces: ricochet-4, then ricochet-3
+       * - After reflecting through ricochet-4, the light origin is on the WRONG side of ricochet-3
+       * - Therefore, no Stage 3 visibility should be generated
+       */
+      const player = { x: 170, y: 666 };
+      
+      // ricochet-4: vertical surface on the right side
+      const ricochet4 = createDirectionalSurface(
+        "ricochet-4",
+        { x: 850, y: 350 },
+        { x: 850, y: 500 }
+      );
+      
+      // ricochet-3: diagonal surface in upper left
+      const ricochet3 = createDirectionalSurface(
+        "ricochet-3",
+        { x: 100, y: 200 },
+        { x: 200, y: 300 }
+      );
+
+      // Other surfaces (walls and platforms)
+      const floor = createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 });
+      const ceiling = createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 });
+      const leftWall = createTestSurface("left-wall", { x: 20, y: 80 }, { x: 20, y: 700 });
+      const rightWall = createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 });
+
+      const allSurfaces = [floor, ceiling, leftWall, rightWall, ricochet4, ricochet3];
+      const plannedSurfaces = [ricochet4, ricochet3];
+
+      const screenBounds = { minX: 0, minY: 0, maxX: 1280, maxY: 720 };
+
+      // Create mock graphics
+      const mockGraphics = {
+        clear: () => {},
+        fillStyle: () => {},
+        lineStyle: () => {},
+        beginPath: () => {},
+        moveTo: () => {},
+        lineTo: () => {},
+        closePath: () => {},
+        fillPath: () => {},
+        strokePath: () => {},
+        fillRect: () => {},
+        setBlendMode: () => {},
+      };
+
+      const renderer = new ValidRegionRenderer(mockGraphics, screenBounds);
+      renderer.render(player, plannedSurfaces, allSurfaces, null);
+
+      const stages = renderer.getVisibilityStages();
+      console.log("=== Wrong-Side Reflection Test ===");
+      console.log(`Total stages: ${stages.length}`);
+      for (let i = 0; i < stages.length; i++) {
+        const stage = stages[i]!;
+        console.log(`Stage ${i}: valid=${stage.isValid}, polygon points=${stage.polygon.length}`);
+      }
+
+      // Stage 1: Player's direct visibility (should be valid)
+      expect(stages.length).toBeGreaterThanOrEqual(1);
+      expect(stages[0]!.isValid).toBe(true);
+
+      // After reflecting through ricochet-4, the reflected origin should be 
+      // on the WRONG side of ricochet-3 (based on the geometry).
+      // Therefore, we should only have 2 stages (Stage 1 player + Stage 2 through ricochet-4).
+      // Stage 3 should NOT be generated or should be invalid.
+
+      // The key assertion: we should NOT have a valid Stage 3
+      if (stages.length >= 3) {
+        // If Stage 3 exists, it should be invalid (no polygon)
+        const stage3 = stages[2]!;
+        expect(stage3.isValid).toBe(false);
+        expect(stage3.polygon.length).toBe(0);
+      }
+      // OR we should only have 2 stages
+      expect(stages.length).toBeLessThanOrEqual(2);
+    });
+
+    it("should check if origin is on reflective side before reflecting", () => {
+      /**
+       * Unit test for the reflective-side check logic.
+       * 
+       * For a vertical surface from (100, 200) to (100, 400):
+       * - Direction: (0, 200) - pointing down
+       * - Normal: (-200, 0) normalized = (-1, 0) - points LEFT
+       * 
+       * The surface reflects light coming from the LEFT (where the normal points).
+       * canReflectFrom(direction) returns true when dot(direction, normal) < 0,
+       * i.e., when the incoming direction is OPPOSITE to the normal.
+       * 
+       * So light coming from the RIGHT (pointing LEFT) CAN reflect (dot < 0).
+       * Light coming from the LEFT (pointing RIGHT) CANNOT reflect (dot > 0).
+       */
+      const surface = createDirectionalSurface(
+        "vertical",
+        { x: 100, y: 200 },
+        { x: 100, y: 400 }
+      );
+
+      const surfaceCenter = surface.getCenter();
+      const normal = surface.getNormal!();
+      console.log("Surface center:", surfaceCenter);
+      console.log("Surface normal:", normal);
+
+      // Origin to the RIGHT of surface (e.g., x=300)
+      // Light travels LEFT toward surface
+      // Direction is LEFT, opposite to normal (which also points LEFT)
+      // Wait, that's same direction... Let me recalculate.
+      //
+      // Normal points LEFT (-1, 0).
+      // For origin at (300, 300), direction to surface center (100, 300) is (-200, 0) normalized = (-1, 0).
+      // Dot product: (-1)*(-1) + 0*0 = 1 > 0 → CANNOT reflect
+      //
+      // For origin at (-100, 300), direction to surface center (100, 300) is (200, 0) normalized = (1, 0).
+      // Dot product: (1)*(-1) + 0*0 = -1 < 0 → CAN reflect
+
+      // Origin to the LEFT of surface - light points RIGHT toward surface
+      const leftOrigin = { x: -100, y: 300 };
+      const dirFromLeft = {
+        x: surfaceCenter.x - leftOrigin.x,  // 200 (pointing right)
+        y: surfaceCenter.y - leftOrigin.y,  // 0
+      };
+      console.log("Dir from left:", dirFromLeft);
+      console.log("Dot product:", dirFromLeft.x * normal.x + dirFromLeft.y * normal.y);
+      
+      // Direction (1, 0) dot Normal (-1, 0) = -1 < 0 → CAN reflect
+      expect(surface.canReflectFrom(dirFromLeft)).toBe(true);
+
+      // Origin to the RIGHT of surface - light points LEFT toward surface
+      const rightOrigin = { x: 300, y: 300 };
+      const dirFromRight = {
+        x: surfaceCenter.x - rightOrigin.x,  // -200 (pointing left)
+        y: surfaceCenter.y - rightOrigin.y,  // 0
+      };
+      console.log("Dir from right:", dirFromRight);
+      console.log("Dot product:", dirFromRight.x * normal.x + dirFromRight.y * normal.y);
+      
+      // Direction (-1, 0) dot Normal (-1, 0) = 1 > 0 → CANNOT reflect
+      expect(surface.canReflectFrom(dirFromRight)).toBe(false);
+    });
+  });
+
+  describe("Polygon sorting for reflected visibility", () => {
+    it("should produce non-self-intersecting polygon for single planned surface", () => {
+      /**
+       * Reproduces bug: Self-intersecting polygon after reflecting through ricochet-3.
+       * 
+       * Setup from user's JSON:
+       * - Player at (170, 666)
+       * - One planned surface: ricochet-3 from (100, 200) to (200, 300)
+       * - After reflection, origin is at (566, 270)
+       * 
+       * The bug shows vertices in wrong order:
+       * 1. (200, 300) at ~175°
+       * 2. (20, 187.98) at ~188°  
+       * 3. (20, 314.75) at ~175°  <- WRONG! Should come before #2
+       * 4. (100, 200) at ~188°
+       * 
+       * This creates a bowtie/self-intersection.
+       */
+      const player = { x: 170, y: 666 };
+      
+      // ricochet-3: diagonal surface in upper left
+      // Use createTestSurface since we just need to test polygon ordering
+      const ricochet3 = createTestSurface(
+        "ricochet-3",
+        { x: 100, y: 200 },
+        { x: 200, y: 300 }
+      );
+
+      // Walls
+      const floor = createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 });
+      const ceiling = createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 });
+      const leftWall = createTestSurface("left-wall", { x: 20, y: 80 }, { x: 20, y: 700 });
+      const rightWall = createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 });
+
+      const allSurfaces = [floor, ceiling, leftWall, rightWall, ricochet3];
+      const plannedSurfaces = [ricochet3];
+
+      const screenBounds = { minX: 0, minY: 0, maxX: 1280, maxY: 720 };
+
+      // Create mock graphics
+      const mockGraphics = {
+        clear: () => {},
+        fillStyle: () => {},
+        lineStyle: () => {},
+        beginPath: () => {},
+        moveTo: () => {},
+        lineTo: () => {},
+        closePath: () => {},
+        fillPath: () => {},
+        strokePath: () => {},
+        fillRect: () => {},
+        setBlendMode: () => {},
+      };
+
+      const renderer = new ValidRegionRenderer(mockGraphics, screenBounds);
+      renderer.render(player, plannedSurfaces, allSurfaces, null);
+
+      const stages = renderer.getVisibilityStages();
+      console.log("=== Polygon Sorting Test ===");
+      console.log(`Total stages: ${stages.length}`);
+      
+      // Get Stage 2 (the reflected visibility)
+      expect(stages.length).toBeGreaterThanOrEqual(2);
+      const stage2 = stages[1]!;
+      expect(stage2.isValid).toBe(true);
+      
+      const polygon = stage2.polygon;
+      console.log(`Stage 2 polygon vertices: ${polygon.length}`);
+      for (let i = 0; i < polygon.length; i++) {
+        const v = polygon[i]!;
+        console.log(`  ${i}: (${v.x.toFixed(2)}, ${v.y.toFixed(2)})`);
+      }
+
+      // Verify polygon is not self-intersecting by checking angular order
+      // All points should be in monotonic angular order from the origin
+      const origin = stage2.origin;
+      console.log(`Origin: (${origin.x}, ${origin.y})`);
+
+      // Use cross-product to verify CCW ordering
+      // For each consecutive triple (a, b, c), cross(b-a, c-a) should be positive (CCW)
+      // or we use cross(origin->a, origin->b) to check angular order
+      let isValid = true;
+      for (let i = 0; i < polygon.length; i++) {
+        const a = polygon[i]!;
+        const b = polygon[(i + 1) % polygon.length]!;
+        const c = polygon[(i + 2) % polygon.length]!;
+        
+        // Check that the polygon doesn't backtrack
+        // Cross product of (b-a) x (c-b) should maintain consistent sign
+        const cross1 = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+        console.log(`  Edge ${i}->${i+1}->${i+2}: cross=${cross1.toFixed(2)}`);
+      }
+
+      // Simple self-intersection check: verify no edge pairs cross
+      for (let i = 0; i < polygon.length; i++) {
+        const a1 = polygon[i]!;
+        const a2 = polygon[(i + 1) % polygon.length]!;
+        
+        for (let j = i + 2; j < polygon.length; j++) {
+          // Skip adjacent edges
+          if (j === (i + polygon.length - 1) % polygon.length) continue;
+          
+          const b1 = polygon[j]!;
+          const b2 = polygon[(j + 1) % polygon.length]!;
+          
+          // Check if edges (a1,a2) and (b1,b2) intersect
+          const d1 = (b2.x - b1.x) * (a1.y - b1.y) - (b2.y - b1.y) * (a1.x - b1.x);
+          const d2 = (b2.x - b1.x) * (a2.y - b1.y) - (b2.y - b1.y) * (a2.x - b1.x);
+          const d3 = (a2.x - a1.x) * (b1.y - a1.y) - (a2.y - a1.y) * (b1.x - a1.x);
+          const d4 = (a2.x - a1.x) * (b2.y - a1.y) - (a2.y - a1.y) * (b2.x - a1.x);
+          
+          // Edges intersect if d1 and d2 have opposite signs AND d3 and d4 have opposite signs
+          const intersects = (d1 * d2 < 0) && (d3 * d4 < 0);
+          if (intersects) {
+            console.log(`  INTERSECTION: edge ${i}->${i+1} crosses edge ${j}->${j+1}`);
+            isValid = false;
+          }
+        }
+      }
+
+      expect(isValid).toBe(true);
+    });
+  });
 });
 
