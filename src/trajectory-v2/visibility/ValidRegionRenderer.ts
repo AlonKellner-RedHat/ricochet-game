@@ -20,7 +20,7 @@ import {
   projectConeV2,
   toVector2Array,
 } from "./ConeProjectionV2";
-import type { ScreenBounds } from "./ConePropagator";
+import type { ScreenBounds } from "./AnalyticalPropagation";
 import type { ValidRegionOutline } from "./OutlineBuilder";
 import { preparePolygonForRendering } from "./RenderingDedup";
 import { type Segment, type WindowConfig, getWindowSegments } from "./WindowConfig";

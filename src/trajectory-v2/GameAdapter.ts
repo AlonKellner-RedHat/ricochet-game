@@ -16,7 +16,7 @@ import { TrajectoryEngine } from "./engine/TrajectoryEngine";
 import { AimingSystem } from "./systems/AimingSystem";
 import { ArrowSystem } from "./systems/ArrowSystem";
 import { type IGraphics, RenderSystem } from "./systems/RenderSystem";
-import type { ScreenBounds } from "./visibility/ConePropagator";
+import type { ScreenBounds } from "./visibility/AnalyticalPropagation";
 import { type ReachingConeConfig, calculateReachingCones, segmentsToCones } from "./visibility/HighlightMode";
 import { HighlightRenderer } from "./visibility/HighlightRenderer";
 import { type IValidRegionGraphics, ValidRegionRenderer } from "./visibility/ValidRegionRenderer";
