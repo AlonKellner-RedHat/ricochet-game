@@ -459,61 +459,210 @@ export class GameScene extends Phaser.Scene {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
-    // Boundary walls (gray)
+    // === 1. BOUNDARIES ===
+    // Floor (non-reflective)
     this.surfaces.push(
-      // Floor
       new WallSurface("floor", {
         start: { x: 0, y: height - 20 },
         end: { x: width, y: height - 20 },
-      }),
-      // Ceiling
-      new WallSurface("ceiling", {
-        start: { x: 0, y: 80 },
-        end: { x: width, y: 80 },
-      }),
-      // Left wall
-      new WallSurface("left-wall", {
-        start: { x: 20, y: 80 },
-        end: { x: 20, y: height - 20 },
-      }),
-      // Right wall
-      new WallSurface("right-wall", {
-        start: { x: width - 20, y: 80 },
-        end: { x: width - 20, y: height - 20 },
-      }),
-      // Platform in the middle
-      new WallSurface("platform-1", {
-        start: { x: 300, y: 450 },
-        end: { x: 500, y: 450 },
-      }),
-      // Higher platform
-      new WallSurface("platform-2", {
-        start: { x: 550, y: 350 },
-        end: { x: 750, y: 350 },
       })
     );
 
-    // Ricochet surfaces (cyan)
+    // Ceiling (reflective, normal pointing down - segment goes left-to-right)
     this.surfaces.push(
-      // Angled surface top-right
-      new RicochetSurface("ricochet-1", {
-        start: { x: 800, y: 150 },
-        end: { x: 900, y: 250 },
+      new RicochetSurface("ceiling", {
+        start: { x: 0, y: 80 },
+        end: { x: width, y: 80 },
+      })
+    );
+
+    // Left wall (reflective, normal pointing right - segment goes bottom-to-top)
+    this.surfaces.push(
+      new RicochetSurface("left-wall", {
+        start: { x: 20, y: height - 20 },
+        end: { x: 20, y: 80 },
+      })
+    );
+
+    // Right wall (non-reflective)
+    this.surfaces.push(
+      new WallSurface("right-wall", {
+        start: { x: width - 20, y: 80 },
+        end: { x: width - 20, y: height - 20 },
+      })
+    );
+
+    // Simple platform for player to stand on
+    this.surfaces.push(
+      new WallSurface("platform", {
+        start: { x: 50, y: height - 100 },
+        end: { x: 200, y: height - 100 },
+      })
+    );
+
+    // === 2. TWO TALL VERTICAL SURFACES FACING EACH OTHER ===
+    // Left mirror (normal pointing right - segment goes bottom-to-top)
+    this.surfaces.push(
+      new RicochetSurface("mirror-left", {
+        start: { x: 250, y: 550 },
+        end: { x: 250, y: 150 },
+      })
+    );
+
+    // Right mirror (normal pointing left - segment goes top-to-bottom)
+    this.surfaces.push(
+      new RicochetSurface("mirror-right", {
+        start: { x: 550, y: 150 },
+        end: { x: 550, y: 550 },
+      })
+    );
+
+    // === 3. INVERTED PYRAMID (stacked horizontal surfaces, shortest at bottom, longest at top) ===
+    // All surfaces face down (segment goes left-to-right)
+    // Centered at x=1050, stacked vertically
+    const pyramidCenterX = 1050;
+    const pyramidBaseY = 500;
+    const pyramidSpacing = 40;
+
+    // Bottom (shortest) - 40px wide
+    this.surfaces.push(
+      new RicochetSurface("pyramid-1", {
+        start: { x: pyramidCenterX - 20, y: pyramidBaseY },
+        end: { x: pyramidCenterX + 20, y: pyramidBaseY },
+      })
+    );
+
+    // Second level - 70px wide
+    this.surfaces.push(
+      new RicochetSurface("pyramid-2", {
+        start: { x: pyramidCenterX - 35, y: pyramidBaseY - pyramidSpacing },
+        end: { x: pyramidCenterX + 35, y: pyramidBaseY - pyramidSpacing },
+      })
+    );
+
+    // Third level - 100px wide
+    this.surfaces.push(
+      new RicochetSurface("pyramid-3", {
+        start: { x: pyramidCenterX - 50, y: pyramidBaseY - pyramidSpacing * 2 },
+        end: { x: pyramidCenterX + 50, y: pyramidBaseY - pyramidSpacing * 2 },
+      })
+    );
+
+    // Top (longest) - 130px wide
+    this.surfaces.push(
+      new RicochetSurface("pyramid-4", {
+        start: { x: pyramidCenterX - 65, y: pyramidBaseY - pyramidSpacing * 3 },
+        end: { x: pyramidCenterX + 65, y: pyramidBaseY - pyramidSpacing * 3 },
+      })
+    );
+
+    // === 4. 4x4 GRID OF SMALL REFLECTIVE SURFACES ===
+    // Grid positioned in top-right area
+    const gridStartX = 900;
+    const gridStartY = 200;
+    const gridSpacing = 50;
+    const surfaceLength = 30;
+
+    // 8 directions: N, NE, E, SE, S, SW, W, NW (in radians)
+    const directions = [
+      -Math.PI / 2, // N (up)
+      -Math.PI / 4, // NE
+      0, // E (right)
+      Math.PI / 4, // SE
+      Math.PI / 2, // S (down)
+      (3 * Math.PI) / 4, // SW
+      Math.PI, // W (left)
+      (-3 * Math.PI) / 4, // NW
+    ];
+
+    // Seeded random for reproducibility
+    const seed = 42;
+    let randomState = seed;
+    const seededRandom = () => {
+      randomState = (randomState * 1103515245 + 12345) & 0x7fffffff;
+      return randomState / 0x7fffffff;
+    };
+
+    for (let row = 0; row < 4; row++) {
+      for (let col = 0; col < 4; col++) {
+        const centerX = gridStartX + col * gridSpacing;
+        const centerY = gridStartY + row * gridSpacing;
+
+        // Pick random direction from 8 options
+        const dirIndex = Math.floor(seededRandom() * 8);
+        const angle = directions[dirIndex];
+
+        // Calculate surface endpoints (surface is perpendicular to facing direction)
+        // The surface line is perpendicular to the normal direction
+        const halfLen = surfaceLength / 2;
+        const surfaceAngle = angle + Math.PI / 2; // Perpendicular to facing
+
+        // For normal to point in 'angle' direction, segment goes "left" relative to that
+        // This means we go from (angle + PI/2) to (angle - PI/2)
+        const startX = centerX + Math.cos(surfaceAngle) * halfLen;
+        const startY = centerY + Math.sin(surfaceAngle) * halfLen;
+        const endX = centerX - Math.cos(surfaceAngle) * halfLen;
+        const endY = centerY - Math.sin(surfaceAngle) * halfLen;
+
+        this.surfaces.push(
+          new RicochetSurface(`grid-${row}-${col}`, {
+            start: { x: startX, y: startY },
+            end: { x: endX, y: endY },
+          })
+        );
+      }
+    }
+
+    // === 5. THREE TWO-SURFACE CHAINS (^-shapes with apex pointing UP, reflective side facing DOWN) ===
+    // Apex at top, arms extend downward. Reflective sides face down (toward ground).
+    const chainLength = 60;
+    const chainApexY = 250; // Apex Y position (top of the ^)
+
+    // Chain 1: 120 degrees between surfaces (each arm 60 degrees from vertical)
+    const chain1X = 650;
+    const angle1 = (60 * Math.PI) / 180;
+    this.surfaces.push(
+      // Left arm: from bottom-left to apex (normal points down-right)
+      new RicochetSurface("chain1-left", {
+        start: { x: chain1X - Math.sin(angle1) * chainLength, y: chainApexY + Math.cos(angle1) * chainLength },
+        end: { x: chain1X, y: chainApexY },
       }),
-      // Horizontal surface middle
-      new RicochetSurface("ricochet-2", {
-        start: { x: 400, y: 250 },
-        end: { x: 550, y: 250 },
+      // Right arm: from apex to bottom-right (normal points down-left)
+      new RicochetSurface("chain1-right", {
+        start: { x: chain1X, y: chainApexY },
+        end: { x: chain1X + Math.sin(angle1) * chainLength, y: chainApexY + Math.cos(angle1) * chainLength },
+      })
+    );
+
+    // Chain 2: 90 degrees between surfaces (each arm 45 degrees from vertical)
+    const chain2X = 750;
+    const angle2 = (45 * Math.PI) / 180;
+    this.surfaces.push(
+      // Left arm: from bottom-left to apex (normal points down-right)
+      new RicochetSurface("chain2-left", {
+        start: { x: chain2X - Math.sin(angle2) * chainLength, y: chainApexY + Math.cos(angle2) * chainLength },
+        end: { x: chain2X, y: chainApexY },
       }),
-      // Angled surface left
-      new RicochetSurface("ricochet-3", {
-        start: { x: 100, y: 200 },
-        end: { x: 200, y: 300 },
+      // Right arm: from apex to bottom-right (normal points down-left)
+      new RicochetSurface("chain2-right", {
+        start: { x: chain2X, y: chainApexY },
+        end: { x: chain2X + Math.sin(angle2) * chainLength, y: chainApexY + Math.cos(angle2) * chainLength },
+      })
+    );
+
+    // Chain 3: 60 degrees between surfaces (each arm 30 degrees from vertical)
+    const chain3X = 850;
+    const angle3 = (30 * Math.PI) / 180;
+    this.surfaces.push(
+      // Left arm: from bottom-left to apex (normal points down-right)
+      new RicochetSurface("chain3-left", {
+        start: { x: chain3X - Math.sin(angle3) * chainLength, y: chainApexY + Math.cos(angle3) * chainLength },
+        end: { x: chain3X, y: chainApexY },
       }),
-      // Vertical surface
-      new RicochetSurface("ricochet-4", {
-        start: { x: 850, y: 350 },
-        end: { x: 850, y: 500 },
+      // Right arm: from apex to bottom-right (normal points down-left)
+      new RicochetSurface("chain3-right", {
+        start: { x: chain3X, y: chainApexY },
+        end: { x: chain3X + Math.sin(angle3) * chainLength, y: chainApexY + Math.cos(angle3) * chainLength },
       })
     );
   }

@@ -9,6 +9,12 @@ import {
   buildVisibilityPolygon,
   type ScreenBounds,
 } from "@/trajectory-v2/visibility/AnalyticalPropagation";
+import {
+  createConeThroughWindow,
+  projectConeV2,
+  toVector2Array,
+} from "@/trajectory-v2/visibility/ConeProjectionV2";
+import { preparePolygonForRendering } from "@/trajectory-v2/visibility/RenderingDedup";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
 
@@ -183,4 +189,211 @@ function edgesIntersect(
   }
   return false;
 }
+
+/**
+ * Tests for the pixel-perfect vertex removal bug.
+ * 
+ * Bug: At specific player positions, the rendering deduplication incorrectly
+ * removes vertices that are geometrically distinct but happen to be within
+ * the tolerance threshold.
+ * 
+ * First Principle: Vertices from different sources (different surface endpoints
+ * or different ray calculations) should NEVER be deduplicated, regardless of
+ * their geometric distance. Only vertices from the SAME source should be merged.
+ */
+describe("Pixel Perfect Vertex Removal Bug", () => {
+  /**
+   * Reproduce the exact bug from the user report.
+   * 
+   * Scene: Player reflected through pyramid-3, origin at (1089.866172610004, 174)
+   * Bug: Vertex (1000, 420) - the left endpoint of pyramid-3 - is missing
+   * 
+   * The bug report shows that the visibility polygon had only 3 vertices at
+   * the buggy position, but 4 at the working position. The missing vertex is
+   * the exact (1000, 420) endpoint.
+   * 
+   * First Principle: Window endpoints (1000, 420) and (1100, 420) MUST appear
+   * in the polygon because they are the SOURCE OF TRUTH for the window bounds.
+   */
+  it("should preserve pyramid-3 left endpoint (1000, 420) at the buggy position", () => {
+    // Exact coordinates from the bug report
+    const origin: Vector2 = { x: 1089.866172610004, y: 174 };
+    
+    // The planned surface (pyramid-3) that we're looking through
+    const pyramid3Start: Vector2 = { x: 1000, y: 420 };
+    const pyramid3End: Vector2 = { x: 1100, y: 420 };
+    
+    // All surfaces from the bug report (complete list)
+    const surfaces: Surface[] = [
+      createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }, false),
+      createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 }, true),
+      createTestSurface("left-wall", { x: 20, y: 700 }, { x: 20, y: 80 }, true),
+      createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 }, false),
+      createTestSurface("platform", { x: 50, y: 620 }, { x: 200, y: 620 }, false),
+      createTestSurface("mirror-left", { x: 250, y: 550 }, { x: 250, y: 150 }, true),
+      createTestSurface("mirror-right", { x: 550, y: 150 }, { x: 550, y: 550 }, true),
+      createTestSurface("pyramid-1", { x: 1030, y: 500 }, { x: 1070, y: 500 }, true),
+      createTestSurface("pyramid-2", { x: 1015, y: 460 }, { x: 1085, y: 460 }, true),
+      createTestSurface("pyramid-3", pyramid3Start, pyramid3End, true),
+      createTestSurface("pyramid-4", { x: 985, y: 380 }, { x: 1115, y: 380 }, true),
+      // Grid surfaces - complete 4x4 grid
+      createTestSurface("grid-0-0", { x: 885, y: 200 }, { x: 915, y: 200 }, true),
+      createTestSurface("grid-0-1", { x: 935, y: 200 }, { x: 965, y: 200 }, true),
+      createTestSurface("grid-0-2", { x: 1010.6066017177982, y: 189.3933982822018 }, { x: 989.3933982822018, y: 210.6066017177982 }, true),
+      createTestSurface("grid-0-3", { x: 1039.3933982822018, y: 189.3933982822018 }, { x: 1060.6066017177982, y: 210.6066017177982 }, true),
+      createTestSurface("grid-1-0", { x: 900, y: 235 }, { x: 900, y: 265 }, true),
+      createTestSurface("grid-1-1", { x: 939.3933982822018, y: 239.3933982822018 }, { x: 960.6066017177982, y: 260.6066017177982 }, true),
+      createTestSurface("grid-1-2", { x: 985, y: 250 }, { x: 1015, y: 250 }, true),
+      createTestSurface("grid-1-3", { x: 1060.6066017177982, y: 260.6066017177982 }, { x: 1039.3933982822018, y: 239.3933982822018 }, true),
+      createTestSurface("grid-2-0", { x: 915, y: 300 }, { x: 885, y: 300 }, true),
+      createTestSurface("grid-2-1", { x: 960.6066017177982, y: 310.6066017177982 }, { x: 939.3933982822018, y: 289.3933982822018 }, true),
+      createTestSurface("grid-2-2", { x: 1000, y: 315 }, { x: 1000, y: 285 }, true),
+      createTestSurface("grid-2-3", { x: 1060.6066017177982, y: 289.3933982822018 }, { x: 1039.3933982822018, y: 310.6066017177982 }, true),
+      createTestSurface("grid-3-0", { x: 889.3933982822018, y: 339.3933982822018 }, { x: 910.6066017177982, y: 360.6066017177982 }, true),
+      createTestSurface("grid-3-1", { x: 939.3933982822018, y: 339.3933982822018 }, { x: 960.6066017177982, y: 360.6066017177982 }, true),
+      createTestSurface("grid-3-2", { x: 1000, y: 365 }, { x: 1000, y: 335 }, true),
+      createTestSurface("grid-3-3", { x: 1050, y: 365 }, { x: 1050, y: 335 }, true),
+      // Chain surfaces
+      createTestSurface("chain1-left", { x: 598.0384757729337, y: 280 }, { x: 650, y: 250 }, true),
+      createTestSurface("chain1-right", { x: 650, y: 250 }, { x: 701.9615242270663, y: 280 }, true),
+      createTestSurface("chain2-left", { x: 707.5735931288071, y: 292.42640687119285 }, { x: 750, y: 250 }, true),
+      createTestSurface("chain2-right", { x: 750, y: 250 }, { x: 792.4264068711929, y: 292.42640687119285 }, true),
+      createTestSurface("chain3-left", { x: 820, y: 301.9615242270663 }, { x: 850, y: 250 }, true),
+      createTestSurface("chain3-right", { x: 850, y: 250 }, { x: 880, y: 301.9615242270663 }, true),
+    ];
+    
+    // Create cone through the pyramid-3 window
+    const cone = createConeThroughWindow(origin, pyramid3Start, pyramid3End);
+    
+    // Project the cone to get source points
+    const sourcePoints = projectConeV2(cone, surfaces, screenBounds, "pyramid-3");
+    
+    // Convert to Vector2 array
+    const rawPolygon = toVector2Array(sourcePoints);
+    
+    // Check if (1000, 420) is in the raw polygon BEFORE deduplication
+    const hasVertexBeforeDedup = rawPolygon.some(
+      v => Math.abs(v.x - 1000) < 0.01 && Math.abs(v.y - 420) < 0.01
+    );
+    
+    console.log("Raw polygon vertices:", rawPolygon.length);
+    console.log("Has (1000, 420) before dedup:", hasVertexBeforeDedup);
+    console.log("All raw vertices:");
+    for (const v of rawPolygon) {
+      console.log(`  (${v.x.toFixed(6)}, ${v.y.toFixed(6)})`);
+    }
+    
+    // Apply rendering deduplication (this is where the bug occurs)
+    const dedupedPolygon = preparePolygonForRendering(rawPolygon);
+    
+    // Check if (1000, 420) is still present AFTER deduplication
+    const hasVertexAfterDedup = dedupedPolygon.some(
+      v => Math.abs(v.x - 1000) < 0.01 && Math.abs(v.y - 420) < 0.01
+    );
+    
+    console.log("Deduped polygon vertices:", dedupedPolygon.length);
+    console.log("Has (1000, 420) after dedup:", hasVertexAfterDedup);
+    console.log("All deduped vertices:");
+    for (const v of dedupedPolygon) {
+      console.log(`  (${v.x.toFixed(6)}, ${v.y.toFixed(6)})`);
+    }
+    
+    // The vertex should be present before deduplication
+    expect(hasVertexBeforeDedup).toBe(true);
+    
+    // CRITICAL: The vertex should STILL be present after deduplication
+    // This is the failing assertion that demonstrates the bug
+    expect(hasVertexAfterDedup).toBe(true);
+  });
+
+  /**
+   * Verify that the working position (0.33 pixels away) produces correct output.
+   * This serves as a control test.
+   */
+  it("should preserve pyramid-3 left endpoint at the working position", () => {
+    // Working position - just 0.33 pixels different
+    const origin: Vector2 = { x: 1089.534016889148, y: 174 };
+    
+    const pyramid3Start: Vector2 = { x: 1000, y: 420 };
+    const pyramid3End: Vector2 = { x: 1100, y: 420 };
+    
+    const surfaces: Surface[] = [
+      createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }, false),
+      createTestSurface("ceiling", { x: 0, y: 80 }, { x: 1280, y: 80 }, true),
+      createTestSurface("left-wall", { x: 20, y: 700 }, { x: 20, y: 80 }, true),
+      createTestSurface("right-wall", { x: 1260, y: 80 }, { x: 1260, y: 700 }, false),
+      createTestSurface("platform", { x: 50, y: 620 }, { x: 200, y: 620 }, false),
+      createTestSurface("mirror-left", { x: 250, y: 550 }, { x: 250, y: 150 }, true),
+      createTestSurface("mirror-right", { x: 550, y: 150 }, { x: 550, y: 550 }, true),
+      createTestSurface("pyramid-1", { x: 1030, y: 500 }, { x: 1070, y: 500 }, true),
+      createTestSurface("pyramid-2", { x: 1015, y: 460 }, { x: 1085, y: 460 }, true),
+      createTestSurface("pyramid-3", pyramid3Start, pyramid3End, true),
+      createTestSurface("pyramid-4", { x: 985, y: 380 }, { x: 1115, y: 380 }, true),
+      createTestSurface("grid-0-0", { x: 885, y: 200 }, { x: 915, y: 200 }, true),
+      createTestSurface("grid-0-1", { x: 935, y: 200 }, { x: 965, y: 200 }, true),
+      createTestSurface("chain1-left", { x: 598.0384757729337, y: 280 }, { x: 650, y: 250 }, true),
+      createTestSurface("chain1-right", { x: 650, y: 250 }, { x: 701.9615242270663, y: 280 }, true),
+    ];
+    
+    const cone = createConeThroughWindow(origin, pyramid3Start, pyramid3End);
+    const sourcePoints = projectConeV2(cone, surfaces, screenBounds, "pyramid-3");
+    const rawPolygon = toVector2Array(sourcePoints);
+    const dedupedPolygon = preparePolygonForRendering(rawPolygon);
+    
+    const hasVertex = dedupedPolygon.some(
+      v => Math.abs(v.x - 1000) < 0.01 && Math.abs(v.y - 420) < 0.01
+    );
+    
+    console.log("Working position - polygon vertices:", dedupedPolygon.length);
+    console.log("Has (1000, 420):", hasVertex);
+    
+    expect(hasVertex).toBe(true);
+  });
+
+  /**
+   * Unit test for the exact bug: sequential deduplication removes window endpoint
+   * when a computed hit point is within 0.5 pixels.
+   * 
+   * This directly tests preparePolygonForRendering() with the exact vertex pattern
+   * from the bug report:
+   * - Computed hit point at (1000.4628791048536, 420)
+   * - Window endpoint at (1000, 420)
+   * 
+   * Distance: 0.4628 < 0.5 (tolerance), so the endpoint is incorrectly removed.
+   */
+  it("should not remove window endpoint even when computed hit is within tolerance", () => {
+    // Simulate the exact polygon from the buggy case
+    // The vertices are sorted such that the computed hit comes before the exact endpoint
+    const vertices: Vector2[] = [
+      { x: 1000.4628791048536, y: 420 },  // Computed hit point (grazing ray)
+      { x: 898.7030328388289, y: 700 },   // Floor hit
+      { x: 897.7132994682881, y: 700 },   // Floor hit (continuation)
+      { x: 1000, y: 420 },                // Window endpoint (SHOULD NOT BE REMOVED)
+    ];
+    
+    console.log("Input vertices:");
+    for (const v of vertices) {
+      console.log(`  (${v.x}, ${v.y})`);
+    }
+    
+    // Apply rendering deduplication
+    const result = preparePolygonForRendering(vertices);
+    
+    console.log("Output vertices after preparePolygonForRendering:");
+    for (const v of result) {
+      console.log(`  (${v.x}, ${v.y})`);
+    }
+    
+    // The window endpoint (1000, 420) MUST be preserved
+    const hasExactEndpoint = result.some(
+      v => v.x === 1000 && v.y === 420
+    );
+    
+    console.log("Has exact endpoint (1000, 420):", hasExactEndpoint);
+    
+    // This test demonstrates the bug: the endpoint is removed
+    // because it's within 0.5 pixels of the computed hit point
+    expect(hasExactEndpoint).toBe(true);
+  });
+});
 

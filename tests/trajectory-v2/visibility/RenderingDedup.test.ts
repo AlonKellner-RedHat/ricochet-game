@@ -1,8 +1,11 @@
 /**
  * RenderingDedup Tests
  *
- * Tests for tolerance-based visual deduplication.
- * These are the ONLY tolerance comparisons in the system.
+ * Tests for exact-equality deduplication and collinear point removal.
+ * 
+ * IMPORTANT: The deduplication is now EXACT (no tolerance/epsilon).
+ * This prevents bugs where geometrically distinct vertices from different
+ * sources are incorrectly merged, which was causing visibility polygon errors.
  */
 
 import { describe, it, expect } from "vitest";
@@ -16,32 +19,48 @@ import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 describe("RenderingDedup", () => {
   describe("dedupeForRendering()", () => {
-    it("removes points within tolerance", () => {
+    it("removes only exact duplicate points", () => {
+      // Near-duplicates are NOT removed (provenance-safe behavior)
       const vertices: Vector2[] = [
         { x: 0, y: 0 },
-        { x: 0.1, y: 0.1 }, // Too close to first
+        { x: 0.1, y: 0.1 }, // Different coordinates - NOT removed
         { x: 100, y: 0 },
         { x: 100, y: 100 },
         { x: 0, y: 100 },
       ];
 
-      const result = dedupeForRendering(vertices, VISUAL_TOLERANCE_PIXELS);
+      const result = dedupeForRendering(vertices);
 
-      expect(result.length).toBe(4); // One duplicate removed
+      // All vertices are kept because none are exact duplicates
+      expect(result.length).toBe(5);
+      expect(result[0]).toEqual({ x: 0, y: 0 });
+      expect(result[1]).toEqual({ x: 0.1, y: 0.1 }); // Preserved!
+    });
+
+    it("removes exact duplicates", () => {
+      const vertices: Vector2[] = [
+        { x: 0, y: 0 },
+        { x: 0, y: 0 }, // Exact duplicate - removed
+        { x: 100, y: 0 },
+      ];
+
+      const result = dedupeForRendering(vertices);
+
+      expect(result.length).toBe(2);
       expect(result[0]).toEqual({ x: 0, y: 0 });
       expect(result[1]).toEqual({ x: 100, y: 0 });
     });
 
-    it("keeps points exactly at tolerance distance", () => {
+    it("keeps distinct points regardless of distance", () => {
       const vertices: Vector2[] = [
         { x: 0, y: 0 },
-        { x: 0.5, y: 0 }, // Exactly at tolerance
+        { x: 0.5, y: 0 }, // Close but distinct
         { x: 100, y: 0 },
       ];
 
-      const result = dedupeForRendering(vertices, 0.5);
+      const result = dedupeForRendering(vertices);
 
-      // Points at exactly tolerance distance should be kept
+      // All points are kept because they have different coordinates
       expect(result.length).toBe(3);
     });
 
@@ -131,8 +150,8 @@ describe("RenderingDedup", () => {
     it("applies both dedup and collinear removal", () => {
       const vertices: Vector2[] = [
         { x: 0, y: 0 },
-        { x: 0.1, y: 0.1 }, // Duplicate of first
-        { x: 50, y: 0 }, // Collinear with 0,0 and 100,0
+        { x: 0, y: 0 }, // Exact duplicate - removed
+        { x: 50, y: 0 }, // Collinear with 0,0 and 100,0 - removed by collinear pass
         { x: 100, y: 0 },
         { x: 100, y: 100 },
         { x: 0, y: 100 },
@@ -140,8 +159,29 @@ describe("RenderingDedup", () => {
 
       const result = preparePolygonForRendering(vertices);
 
-      // Should remove duplicate AND collinear point
+      // Should remove exact duplicate AND collinear point
       expect(result.length).toBeLessThanOrEqual(4);
+    });
+
+    it("preserves near-duplicate vertices from different sources", () => {
+      // This is the critical case that caused the pixel-perfect bug!
+      // A computed hit point at (1000.46, 420) and a window endpoint at (1000, 420)
+      // are geometrically distinct and must BOTH be preserved
+      const vertices: Vector2[] = [
+        { x: 1000.4628791048536, y: 420 }, // Computed hit point
+        { x: 898.7, y: 700 },
+        { x: 897.7, y: 700 },
+        { x: 1000, y: 420 }, // Window endpoint (0.46px away from first)
+      ];
+
+      const result = preparePolygonForRendering(vertices);
+
+      // Both (1000.46, 420) and (1000, 420) must be preserved
+      expect(result.length).toBe(4);
+      expect(result.some((v) => v.x === 1000.4628791048536 && v.y === 420)).toBe(
+        true
+      );
+      expect(result.some((v) => v.x === 1000 && v.y === 420)).toBe(true);
     });
 
     it("produces a valid renderable polygon", () => {

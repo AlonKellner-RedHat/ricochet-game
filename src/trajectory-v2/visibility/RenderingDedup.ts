@@ -17,51 +17,59 @@ import type { SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 /**
  * Default visual tolerance in pixels.
  * Points closer than this are considered visually identical.
+ * 
+ * @deprecated No longer used - deduplication is now exact (provenance-based).
+ * Tolerance-based deduplication caused bugs where geometrically distinct
+ * vertices from different sources were incorrectly merged.
  */
 export const VISUAL_TOLERANCE_PIXELS = 0.5;
 
 /**
- * Remove visually duplicate points from a polygon for rendering.
+ * Remove duplicate points from a polygon for rendering.
  *
- * This should be called AFTER all exact calculations are complete,
- * right before passing vertices to the graphics renderer.
+ * IMPORTANT: Uses EXACT equality only - no tolerance/epsilon.
+ * 
+ * The core visibility algorithm (projectConeV2) already performs provenance-based
+ * deduplication using SourcePoint.equals(). This function only removes points
+ * that are EXACTLY identical (same x and y coordinates).
+ * 
+ * Tolerance-based deduplication was removed because it caused bugs where
+ * geometrically distinct vertices from different sources (e.g., a window
+ * endpoint at (1000, 420) and a computed hit at (1000.46, 420)) were
+ * incorrectly merged, breaking the visibility polygon.
  *
  * @param vertices - Polygon vertices (already sorted and processed)
- * @param tolerance - Minimum distance between vertices (default: 0.5 pixels)
+ * @param _tolerance - DEPRECATED: Ignored. Kept for API compatibility.
  */
-export function dedupeForRendering(vertices: Vector2[], tolerance = VISUAL_TOLERANCE_PIXELS): Vector2[] {
+export function dedupeForRendering(vertices: Vector2[], _tolerance?: number): Vector2[] {
   if (vertices.length <= 2) return vertices;
 
   const result: Vector2[] = [];
 
   for (const v of vertices) {
-    // Only check against the PREVIOUS vertex (sequential deduplication)
-    // Non-adjacent vertices can be close together without being duplicates
-    // (e.g., two shadow extensions that hit near the same point)
+    // Only remove EXACT duplicates (same coordinates)
+    // This is epsilon-free and provenance-safe
     if (result.length === 0) {
       result.push(v);
       continue;
     }
 
     const prev = result[result.length - 1]!;
-    const dx = v.x - prev.x;
-    const dy = v.y - prev.y;
-    const distSq = dx * dx + dy * dy;
-
-    if (distSq >= tolerance * tolerance) {
+    
+    // EXACT equality check - no tolerance
+    // Different sources can produce very close but distinct vertices
+    // that must be preserved for correct polygon shape
+    if (v.x !== prev.x || v.y !== prev.y) {
       result.push(v);
     }
   }
 
-  // Also check wrap-around: if first and last are too close, remove last
+  // Also check wrap-around: if first and last are EXACTLY the same, remove last
   if (result.length > 2) {
     const first = result[0]!;
     const last = result[result.length - 1]!;
-    const dx = first.x - last.x;
-    const dy = first.y - last.y;
-    const distSq = dx * dx + dy * dy;
 
-    if (distSq < tolerance * tolerance) {
+    if (first.x === last.x && first.y === last.y) {
       result.pop();
     }
   }
