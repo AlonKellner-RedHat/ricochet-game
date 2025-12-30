@@ -527,7 +527,42 @@ export function cropPolygonByWindow(
  * Clip polygon by a half-plane defined by an edge.
  * Sutherland-Hodgman single-edge clipping step.
  */
-function clipPolygonByEdge(
+/**
+ * Clip a subject polygon by a clip polygon using Sutherland-Hodgman algorithm.
+ *
+ * Returns the intersection of the two polygons. If the polygons don't
+ * intersect, returns an empty array.
+ *
+ * @param subject The polygon to clip
+ * @param clip The clipping polygon
+ * @returns The clipped polygon (intersection)
+ */
+export function clipPolygonByPolygon(
+  subject: readonly Vector2[],
+  clip: readonly Vector2[]
+): Vector2[] {
+  if (subject.length < 3 || clip.length < 3) {
+    return [];
+  }
+
+  let result = [...subject];
+
+  // Clip by each edge of the clip polygon
+  for (let i = 0; i < clip.length; i++) {
+    if (result.length < 3) {
+      return [];
+    }
+
+    const edgeStart = clip[i]!;
+    const edgeEnd = clip[(i + 1) % clip.length]!;
+
+    result = clipPolygonByEdge(result, edgeStart, edgeEnd);
+  }
+
+  return result;
+}
+
+export function clipPolygonByEdge(
   polygon: readonly Vector2[],
   edgeStart: Vector2,
   edgeEnd: Vector2

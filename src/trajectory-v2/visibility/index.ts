@@ -26,6 +26,8 @@ export * from "./ValidRegionRenderer";
 export * from "./VisibilityFromChain";
 export * from "./RaySector";
 export * from "./WindowConfig";
+export * from "./HighlightMode";
+export * from "./HighlightRenderer";
 
 // =============================================================================
 // DEPRECATED EXPORTS - Legacy Modules (for backward compatibility only)
@@ -48,4 +50,3 @@ export * from "./ConePropagator";
 
 /** @deprecated Legacy module, no longer maintained */
 export * from "./OutlineBuilder";
-

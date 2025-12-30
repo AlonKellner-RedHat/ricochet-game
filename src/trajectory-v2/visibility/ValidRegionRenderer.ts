@@ -10,27 +10,20 @@
  */
 
 import type { Surface } from "@/surfaces/Surface";
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
+import { type SourcePoint, isEndpoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
+import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import { TrajectoryDebugLogger, type VisibilityDebugInfo } from "../TrajectoryDebugLogger";
 import {
-  TrajectoryDebugLogger,
-  type VisibilityDebugInfo,
-} from "../TrajectoryDebugLogger";
-import {
-  createFullCone,
   createConeThroughWindow,
+  createFullCone,
   projectConeV2,
   toVector2Array,
 } from "./ConeProjectionV2";
-import {
-  type Segment,
-  type WindowConfig,
-  getWindowSegments,
-  isMultiWindow,
-} from "./WindowConfig";
 import type { ScreenBounds } from "./ConePropagator";
-import { preparePolygonForRendering } from "./RenderingDedup";
 import type { ValidRegionOutline } from "./OutlineBuilder";
+import { preparePolygonForRendering } from "./RenderingDedup";
+import { type Segment, type WindowConfig, getWindowSegments, isMultiWindow } from "./WindowConfig";
 
 /**
  * Configuration for the valid region overlay.
@@ -106,6 +99,8 @@ export class ValidRegionRenderer {
   private config: ValidRegionConfig;
   private screenBounds: ScreenBounds;
   private lastOutline: ValidRegionOutline | null = null;
+  private lastSourcePoints: readonly SourcePoint[] = [];
+  private lastOrigin: Vector2 | null = null;
 
   constructor(
     graphics: IValidRegionGraphics,
@@ -122,6 +117,118 @@ export class ValidRegionRenderer {
    */
   setScreenBounds(bounds: ScreenBounds): void {
     this.screenBounds = bounds;
+  }
+
+  /**
+   * Get the last computed visibility polygon.
+   *
+   * Returns the vertices of the visibility polygon from the most recent
+   * render() call. This can be used to clip highlight cones to only
+   * show portions that are actually visible.
+   *
+   * @returns Array of polygon vertices, or empty array if no valid polygon
+   */
+  getLastVisibilityPolygon(): readonly Vector2[] {
+    if (!this.lastOutline) {
+      console.log("[ValidRegionRenderer] getLastVisibilityPolygon: no lastOutline");
+      return [];
+    }
+    if (!this.lastOutline.isValid) {
+      console.log("[ValidRegionRenderer] getLastVisibilityPolygon: lastOutline is not valid");
+      return [];
+    }
+    const result = this.lastOutline.vertices.map((v) => v.position);
+    console.log("[ValidRegionRenderer] getLastVisibilityPolygon:", result.length, "vertices");
+    return result;
+  }
+
+  /**
+   * Get visible points on a target surface using provenance.
+   *
+   * Finds vertices in the visibility polygon that originated from the
+   * target surface (via endpoint or hit provenance). This is the most
+   * accurate way to determine the visible portion of a surface.
+   *
+   * @param targetSurfaceId The ID of the surface to find visible points for
+   * @returns Array of visible points on the surface, in order along the polygon
+   */
+  getVisibleSurfacePoints(targetSurfaceId: string): readonly Vector2[] {
+    if (this.lastSourcePoints.length === 0) {
+      return [];
+    }
+
+    // Find runs of consecutive points on the target surface
+    // For each run, output only the first and last point (extremes)
+    // This merges intermediate points that are just ray intersections
+    
+    const result: Vector2[] = [];
+    let currentRun: Vector2[] = [];
+
+    const flushRun = () => {
+      if (currentRun.length === 0) return;
+      
+      if (currentRun.length === 1) {
+        // Single point - include it
+        result.push(currentRun[0]!);
+      } else {
+        // Multiple consecutive points - only include first and last
+        result.push(currentRun[0]!);
+        result.push(currentRun[currentRun.length - 1]!);
+      }
+      currentRun = [];
+    };
+
+    for (const sourcePoint of this.lastSourcePoints) {
+      // Check if this point comes from the target surface
+      let coords: Vector2 | null = null;
+      
+      if (isEndpoint(sourcePoint)) {
+        if (sourcePoint.surface.id === targetSurfaceId) {
+          coords = sourcePoint.computeXY();
+        }
+      } else if (isHitPoint(sourcePoint)) {
+        if (sourcePoint.hitSurface.id === targetSurfaceId) {
+          coords = sourcePoint.computeXY();
+        }
+      }
+
+      if (coords) {
+        // Add to current run
+        currentRun.push(coords);
+      } else {
+        // Different surface - flush current run
+        flushRun();
+      }
+    }
+    
+    // Flush final run
+    flushRun();
+
+    // Deduplicate the result
+    const seen = new Set<string>();
+    const dedupedResult: Vector2[] = [];
+    for (const p of result) {
+      const key = `${Math.round(p.x * 100)},${Math.round(p.y * 100)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        dedupedResult.push(p);
+      }
+    }
+
+    // #region agent log
+    if (dedupedResult.length > 0) {
+      fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ValidRegionRenderer.ts:180',message:'getVisibleSurfacePoints result',data:{targetSurfaceId,pointCount:dedupedResult.length,points:dedupedResult},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'POINTS'})}).catch(()=>{});
+    }
+    // #endregion
+
+    return dedupedResult;
+  }
+
+  /**
+   * Get the last origin used for visibility calculation.
+   */
+  getLastOrigin(): Vector2 | null {
+    return this.lastOrigin;
   }
 
   /**
@@ -157,7 +264,11 @@ export class ValidRegionRenderer {
     // - Umbrella mode: cone through umbrella window from player
     // - Umbrella hole mode: multiple cones through multiple windows
     // - Planned surfaces: cone through last surface window from reflected player image
-    let visibilityResult: { polygons: readonly (readonly Vector2[])[]; origin: Vector2; isValid: boolean };
+    let visibilityResult: {
+      polygons: readonly (readonly Vector2[])[];
+      origin: Vector2;
+      isValid: boolean;
+    };
 
     if (windowConfig || plannedSurfaces.length > 0) {
       // Calculate origin and windows
@@ -185,15 +296,23 @@ export class ValidRegionRenderer {
 
       // Project cone(s) through each window - supports multi-window (umbrella hole)
       const allPolygons: (readonly Vector2[])[] = [];
+      const allSourcePoints: SourcePoint[] = [];
       for (const window of windows) {
         const cone = createConeThroughWindow(origin, window.start, window.end);
         const sourcePoints = projectConeV2(cone, allSurfaces, this.screenBounds, excludeSurfaceId);
+        allSourcePoints.push(...sourcePoints);
         const rawPolygon = toVector2Array(sourcePoints);
         const polygon = preparePolygonForRendering(rawPolygon);
         if (polygon.length >= 3) {
           allPolygons.push(polygon);
         }
       }
+
+      // Store source points and origin for provenance-based highlight mode
+      // For planned surfaces: use reflected origin (player image)
+      // For umbrella mode: use player position
+      this.lastSourcePoints = allSourcePoints;
+      this.lastOrigin = plannedSurfaces.length > 0 ? origin : player;
 
       visibilityResult = {
         polygons: allPolygons,
@@ -204,6 +323,9 @@ export class ValidRegionRenderer {
       // Full 360° visibility from player using epsilon-free ConeProjectionV2
       const cone = createFullCone(player);
       const sourcePoints = projectConeV2(cone, allSurfaces, this.screenBounds);
+      // Store source points for provenance-based operations
+      this.lastSourcePoints = sourcePoints;
+      this.lastOrigin = player;
       // Convert SourcePoints to Vector2 and apply visual deduplication
       const rawPolygon = toVector2Array(sourcePoints);
       const polygon = preparePolygonForRendering(rawPolygon);
@@ -248,7 +370,11 @@ export class ValidRegionRenderer {
     // Use polygon drawing (not triangle fan) when we have a window (umbrella or planned surfaces)
     // Triangle fan from player only works for 360° visibility
     const hasWindow = windowConfig !== null || plannedSurfaces.length > 0;
-    this.renderOverlayWithCutoutMulti(visibilityResult.polygons, visibilityResult.origin, hasWindow);
+    this.renderOverlayWithCutoutMulti(
+      visibilityResult.polygons,
+      visibilityResult.origin,
+      hasWindow
+    );
 
     // Debug: show outline (for first polygon only)
     if (this.config.showOutline) {
@@ -470,13 +596,11 @@ export class ValidRegionRenderer {
   /**
    * Log visibility data for debugging.
    */
-  private logVisibilitySimple(
-    result: {
-      polygon: readonly Vector2[];
-      origin: Vector2;
-      isValid: boolean;
-    }
-  ): void {
+  private logVisibilitySimple(result: {
+    polygon: readonly Vector2[];
+    origin: Vector2;
+    isValid: boolean;
+  }): void {
     if (!TrajectoryDebugLogger.isEnabled()) return;
 
     const visibilityInfo: VisibilityDebugInfo = {

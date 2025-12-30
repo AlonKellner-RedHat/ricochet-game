@@ -135,12 +135,19 @@ export class GameScene extends Phaser.Scene {
       console.log(`God mode: ${this.godMode ? "ON (arrow keys, no physics)" : "OFF"}`);
     });
 
+    // Toggle highlight mode with 'H' key (shows reaching cones for hovered surfaces)
+    this.inputManager.onKeyPress("KeyH", () => {
+      this.trajectoryAdapter.toggleHighlightMode();
+      const enabled = this.trajectoryAdapter.isHighlightModeEnabled();
+      console.log(`Highlight mode: ${enabled ? "ON" : "OFF"}`);
+    });
+
     // Initialize trajectory v2 system
     this.trajectoryAdapter = new GameAdapter(this, {
       arrowSpeed: 800,
       shootCooldown: 0.3,
       showValidRegion: true, // Enable visibility overlay
-      validRegionOverlayAlpha: 0.4,
+      validRegionShadowAlpha: 0.4,
     });
 
     // Create arrow graphics
@@ -226,6 +233,35 @@ export class GameScene extends Phaser.Scene {
 
     // Draw umbrella if enabled
     this.drawUmbrella();
+
+    // Render highlight cones for hovered surface
+    // Only highlight if:
+    // 1. Surface is plannable (ricochet surface)
+    // 2. Light comes from the reflective side of the surface
+    const plannedSurfaces = this.trajectoryAdapter.getPlannedSurfaces();
+    let highlightSurface = null;
+    
+    if (this.hoveredSurface?.isPlannable()) {
+      // Get the light origin: player position or player image (if planned surfaces exist)
+      const lightOrigin = this.trajectoryAdapter.getLightOrigin();
+      
+      // Calculate direction from light origin to surface center
+      const surfCenter = {
+        x: (this.hoveredSurface.segment.start.x + this.hoveredSurface.segment.end.x) / 2,
+        y: (this.hoveredSurface.segment.start.y + this.hoveredSurface.segment.end.y) / 2,
+      };
+      const dirToSurface = {
+        x: surfCenter.x - lightOrigin.x,
+        y: surfCenter.y - lightOrigin.y,
+      };
+      
+      // Check if light comes from reflective side
+      if (this.hoveredSurface.canReflectFrom(dirToSurface)) {
+        highlightSurface = this.hoveredSurface;
+      }
+    }
+    
+    this.trajectoryAdapter.renderHighlightCones(highlightSurface, plannedSurfaces);
 
     // Update cursor based on hover state and cursor reachability
     if (this.hoveredSurface?.isPlannable()) {

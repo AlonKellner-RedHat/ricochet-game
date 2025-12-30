@@ -16,12 +16,11 @@ import { TrajectoryEngine } from "./engine/TrajectoryEngine";
 import { AimingSystem } from "./systems/AimingSystem";
 import { ArrowSystem } from "./systems/ArrowSystem";
 import { type IGraphics, RenderSystem } from "./systems/RenderSystem";
-import {
-  type IValidRegionGraphics,
-  ValidRegionRenderer,
-} from "./visibility/ValidRegionRenderer";
-import type { WindowConfig } from "./visibility/WindowConfig";
 import type { ScreenBounds } from "./visibility/ConePropagator";
+import { type ReachingConeConfig, calculateReachingCones, calculateReachingConesFromProvenance } from "./visibility/HighlightMode";
+import { HighlightRenderer } from "./visibility/HighlightRenderer";
+import { type IValidRegionGraphics, ValidRegionRenderer } from "./visibility/ValidRegionRenderer";
+import type { WindowConfig } from "./visibility/WindowConfig";
 
 /**
  * Configuration for the game adapter.
@@ -58,9 +57,15 @@ export class GameAdapter {
   private showValidRegion = false;
   private screenBounds: ScreenBounds;
 
+  // Highlight mode - shows reaching cones for hovered surface
+  private highlightGraphics: Phaser.GameObjects.Graphics | null = null;
+  private highlightRenderer: HighlightRenderer | null = null;
+  private highlightModeEnabled = false;
+
   // Cached state for visibility rendering
   private lastPlayer: Vector2 = { x: 0, y: 0 };
   private lastAllSurfaces: readonly Surface[] = [];
+  private lastWindowConfig: WindowConfig | null = null;
 
   constructor(scene: Phaser.Scene, config: GameAdapterConfig = {}) {
     // Store screen bounds
@@ -91,6 +96,16 @@ export class GameAdapter {
         }
       );
     }
+
+    // Create highlight mode graphics (for dashed cone outlines)
+    this.highlightGraphics = scene.add.graphics();
+    this.highlightGraphics.setDepth(10); // Above other graphics
+    this.highlightRenderer = new HighlightRenderer(this.highlightGraphics, {
+      color: 0xffff00, // Yellow dashed outline
+      alpha: 1,
+      lineWidth: 2,
+      dashPattern: { dashLength: 8, gapLength: 4 },
+    });
 
     // Create graphics object for trajectory
     this.graphics = scene.add.graphics();
@@ -181,6 +196,7 @@ export class GameAdapter {
     // Cache for visibility rendering
     this.lastPlayer = player;
     this.lastAllSurfaces = allSurfaces;
+    this.lastWindowConfig = windowConfig;
 
     // Update engine inputs
     this.engine.setPlayer(player);
@@ -424,6 +440,103 @@ export class GameAdapter {
   }
 
   /**
+   * Toggle highlight mode (shows reaching cones for hovered surfaces).
+   */
+  toggleHighlightMode(): void {
+    this.highlightModeEnabled = !this.highlightModeEnabled;
+    if (!this.highlightModeEnabled && this.highlightRenderer) {
+      this.highlightRenderer.clear();
+    }
+  }
+
+  /**
+   * Check if highlight mode is enabled.
+   */
+  isHighlightModeEnabled(): boolean {
+    return this.highlightModeEnabled;
+  }
+
+  /**
+   * Get the current light origin (player position or player image).
+   * Returns player image when there are planned surfaces, otherwise player position.
+   */
+  getLightOrigin(): Vector2 {
+    return this.validRegionRenderer?.getLastOrigin() ?? this.lastPlayer;
+  }
+
+  /**
+   * Render highlight cones for the hovered surface.
+   *
+   * Uses provenance-based approach: queries the visibility polygon for
+   * points that originate from the target surface, then builds cones
+   * directly from those points. This is the most accurate approach as
+   * it reuses the already-calculated visibility polygon.
+   *
+   * @param hoveredSurface The surface being hovered, or null to clear
+   * @param plannedSurfaces Current planned surfaces (for calculating origin and startLine)
+   */
+  renderHighlightCones(hoveredSurface: Surface | null, _plannedSurfaces: readonly Surface[]): void {
+    if (!this.highlightRenderer) {
+      return;
+    }
+
+    if (!this.highlightModeEnabled || !hoveredSurface) {
+      this.highlightRenderer.clear();
+      return;
+    }
+
+    // Use provenance-based approach: get points on target surface from visibility polygon
+    const visiblePoints = this.validRegionRenderer?.getVisibleSurfacePoints(hoveredSurface.id) ?? [];
+    const origin = this.validRegionRenderer?.getLastOrigin() ?? this.lastPlayer;
+
+    // Determine startLine based on current visibility mode
+    // With planned surfaces: startLine is the last planned surface
+    // With umbrella mode: startLine is from windowConfig
+    let startLine: { start: Vector2; end: Vector2 } | null = null;
+    
+    if (_plannedSurfaces.length > 0) {
+      // Use last planned surface as startLine
+      const lastPlanned = _plannedSurfaces[_plannedSurfaces.length - 1]!;
+      startLine = { start: lastPlanned.segment.start, end: lastPlanned.segment.end };
+    } else if (this.lastWindowConfig) {
+      if (this.lastWindowConfig.type === "single") {
+        startLine = this.lastWindowConfig.segment;
+      } else if (this.lastWindowConfig.segments.length > 0) {
+        startLine = this.lastWindowConfig.segments[0] ?? null;
+      }
+    }
+
+    // #region agent log
+    fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'GameAdapter.ts:490',message:'Provenance highlight',data:{surfaceId:hoveredSurface.id,visiblePointsCount:visiblePoints.length,origin,hasWindow:!!startLine},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'PROV'})}).catch(()=>{});
+    // #endregion
+
+    let cones;
+    if (visiblePoints.length >= 2) {
+      // Use provenance-based approach (accurate, uses already-calculated visibility)
+      cones = calculateReachingConesFromProvenance(origin, hoveredSurface, visiblePoints, startLine);
+    } else {
+      // Fallback to obstacle-based calculation
+      const config: ReachingConeConfig = {
+        origin,
+        targetSurface: hoveredSurface,
+        obstacles: this.lastAllSurfaces.filter((s) => s.id !== hoveredSurface.id),
+        startLine,
+      };
+      cones = calculateReachingCones(config);
+    }
+
+    if (cones.length === 0) {
+      this.highlightRenderer.clear();
+      return;
+    }
+
+    // Render the cones directly - no clipping needed when using provenance
+    // because the visible points are already from the visibility polygon
+    const polygons = cones.map((cone) => [...cone.vertices]);
+    this.highlightRenderer.renderMultipleOutlines(polygons);
+  }
+
+  /**
    * Clean up resources.
    */
   dispose(): void {
@@ -431,6 +544,9 @@ export class GameAdapter {
     this.graphics.destroy();
     if (this.validRegionGraphics) {
       this.validRegionGraphics.destroy();
+    }
+    if (this.highlightGraphics) {
+      this.highlightGraphics.destroy();
     }
   }
 }
