@@ -1065,6 +1065,10 @@ export function projectConeV2(
   const isWindowed = startLine !== null;
   const vertices: SourcePoint[] = [];
 
+  // #region agent log
+  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:entry',message:'projectConeV2 called',data:{origin,isWindowed,startLine,excludeSurfaceId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1-H5'})}).catch(()=>{});
+  // #endregion
+
   // Create screen boundaries as both object (for ray casting) and chain (for endpoints)
   const screenBoundaries = createScreenBoundaries(bounds);
   const screenChain = createScreenBoundaryChain(bounds);
@@ -1344,18 +1348,26 @@ export function projectConeV2(
       if (shouldAddLeft) {
         vertices.push(leftHit);
         // Track in rayPairs for proper sorting
-        // Find the Endpoint that corresponds to the left boundary
-        const leftBoundaryEndpoint = vertices.find(
+        // Find the OriginPoint or Endpoint that corresponds to the left boundary
+        const leftBoundaryPoint = vertices.find(
           (v) =>
-            isEndpoint(v) &&
             v.computeXY().x === source.leftBoundary.x &&
             v.computeXY().y === source.leftBoundary.y
-        ) as Endpoint | undefined;
-        if (leftBoundaryEndpoint) {
-          rayPairs.set(leftBoundaryEndpoint.getKey(), {
-            endpoint: leftBoundaryEndpoint,
-            continuation: leftHit,
-          });
+        );
+        // Track continuation if we found a point (OriginPoint or Endpoint)
+        // For OriginPoints, we use coordinates as key since they don't have getKey()
+        if (leftBoundaryPoint) {
+          const leftKey = isEndpoint(leftBoundaryPoint) || isJunctionPoint(leftBoundaryPoint)
+            ? leftBoundaryPoint.getKey()
+            : `origin:${source.leftBoundary.x},${source.leftBoundary.y}`;
+          // Create a fake Endpoint for rayPairs tracking (needed for sorting)
+          // We'll create a special key that arrangeWindowedConeV2 can match
+          if (isEndpoint(leftBoundaryPoint) || isJunctionPoint(leftBoundaryPoint)) {
+            rayPairs.set(leftKey, {
+              endpoint: leftBoundaryPoint as Endpoint | JunctionPoint,
+              continuation: leftHit,
+            });
+          }
         }
       }
     }
@@ -1412,6 +1424,10 @@ export function projectConeV2(
 
   // Insert screen corners where the polygon transitions between different screen edges
   const withCorners = insertScreenCorners(sorted, bounds);
+
+  // #region agent log
+  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:exit',message:'projectConeV2 returning',data:{isWindowed,vertexCount:withCorners.length,vertices:withCorners.map(v=>({type:v.type,xy:v.computeXY()}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1-H5'})}).catch(()=>{});
+  // #endregion
 
   return withCorners;
 }
@@ -1565,7 +1581,7 @@ function sortPolygonVerticesSourcePoint(
   // This is different from simple CCW angle sorting because the window surface
   // should be first, not the rays.
   if (startLine !== null && leftBoundary && rightBoundary) {
-    return arrangeWindowedConeV2(pointsWithData, leftBoundary, rightBoundary);
+    return arrangeWindowedConeV2(pointsWithData, origin, leftBoundary, rightBoundary);
   }
 
   return pointsWithData.map((item) => item.point);
@@ -1808,9 +1824,34 @@ function arrangeWindowedConeV2(
     xy: Vector2;
     pairedEndpoint: Endpoint | JunctionPoint | null;
   }>,
+  origin: Vector2,
   leftBoundary: Vector2,
   rightBoundary: Vector2
 ): SourcePoint[] {
+  // #region agent log
+  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:arrangeWindowedConeV2',message:'Arranging windowed cone',data:{origin,leftBoundary,rightBoundary,sortedPoints:sortedPoints.map(p=>({type:p.point.type,xy:p.xy,pairedXY:p.pairedEndpoint?.computeXY()}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2-H3'})}).catch(()=>{});
+  // #endregion
+
+  // Helper: check if a point is on the ray from origin through boundary
+  // Uses cross product to check collinearity
+  function isOnRayFromOrigin(point: Vector2, boundary: Vector2): boolean {
+    // Vector from origin to boundary
+    const bx = boundary.x - origin.x;
+    const by = boundary.y - origin.y;
+    // Vector from origin to point
+    const px = point.x - origin.x;
+    const py = point.y - origin.y;
+    // Cross product - should be ~0 for collinear points
+    const cross = bx * py - by * px;
+    // Also check that point is further from origin than boundary (same direction)
+    const boundaryDist = bx * bx + by * by;
+    const pointDist = px * px + py * py;
+    const sameDirection = (bx * px + by * py) > 0; // Dot product > 0 means same direction
+    // Tolerance for collinearity (relative to distance)
+    const tolerance = Math.sqrt(boundaryDist) * 0.01; // 1% tolerance
+    return Math.abs(cross) < tolerance && pointDist > boundaryDist && sameDirection;
+  }
+
   // Separate points into categories
   let rightEndpoint: SourcePoint | null = null;
   let leftEndpoint: SourcePoint | null = null;
@@ -1829,7 +1870,7 @@ function arrangeWindowedConeV2(
       if (!leftEndpoint) leftEndpoint = item.point;
       continue;
     }
-    // Continuation of left boundary
+    // Continuation of left boundary - check by pairedEndpoint OR by ray direction
     if (item.pairedEndpoint) {
       const pairedXY = item.pairedEndpoint.computeXY();
       if (pairedXY.x === leftBoundary.x && pairedXY.y === leftBoundary.y) {
@@ -1841,6 +1882,16 @@ function arrangeWindowedConeV2(
         if (!rightContinuation) rightContinuation = item.point;
         continue;
       }
+    }
+    // Fallback: check if point is on ray from origin through left/right boundary
+    // This handles cases where window endpoint is OriginPoint (no pairedEndpoint)
+    if (!leftContinuation && isOnRayFromOrigin(item.xy, leftBoundary)) {
+      leftContinuation = item.point;
+      continue;
+    }
+    if (!rightContinuation && isOnRayFromOrigin(item.xy, rightBoundary)) {
+      rightContinuation = item.point;
+      continue;
     }
     // Everything else goes to middle
     middlePoints.push(item.point);
@@ -1854,6 +1905,10 @@ function arrangeWindowedConeV2(
   if (leftContinuation) result.push(leftContinuation);
   result.push(...middlePoints);
   if (rightContinuation) result.push(rightContinuation);
+
+  // #region agent log
+  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:arrangeWindowedConeV2:result',message:'Windowed cone arranged',data:{hasRightEndpoint:!!rightEndpoint,hasLeftEndpoint:!!leftEndpoint,hasLeftCont:!!leftContinuation,hasRightCont:!!rightContinuation,middleCount:middlePoints.length,result:result.map(p=>({type:p.type,xy:p.computeXY()}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2-H3'})}).catch(()=>{});
+  // #endregion
 
   return result;
 }

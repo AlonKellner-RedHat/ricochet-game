@@ -13,7 +13,11 @@ import {
   isEndpoint,
   isHitPoint,
 } from "@/trajectory-v2/geometry/SourcePoint";
-import { type SurfaceChain, createSingleSurfaceChain, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
+import {
+  type SurfaceChain,
+  createSingleSurfaceChain,
+  isJunctionPoint,
+} from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import {
   createConeThroughWindow,
@@ -1343,9 +1347,7 @@ describe("ConeProjectionV2 - Umbrella Reference Ray Alignment", () => {
 
     // The polygon should be in proper angular order
     // Check that vertices are monotonically ordered by angle (with one wrap-around)
-    const angles = renderedVertices.map((v) =>
-      Math.atan2(v.y - player.y, v.x - player.x)
-    );
+    const angles = renderedVertices.map((v) => Math.atan2(v.y - player.y, v.x - player.x));
 
     // Count direction reversals (should be at most 1 for proper ordering)
     let reversals = 0;
@@ -1369,9 +1371,7 @@ describe("ConeProjectionV2 - Umbrella Reference Ray Alignment", () => {
     const renderedVertices = preparePolygonForRendering(toVector2Array(points));
 
     // Same angular order check
-    const angles = renderedVertices.map((v) =>
-      Math.atan2(v.y - player.y, v.x - player.x)
-    );
+    const angles = renderedVertices.map((v) => Math.atan2(v.y - player.y, v.x - player.x));
 
     let reversals = 0;
     for (let i = 0; i < angles.length - 1; i++) {
