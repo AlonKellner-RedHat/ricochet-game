@@ -54,6 +54,11 @@ export const SPECIAL_POSITIONS: Vector2[] = [
   // Chain3 60-degree V junction sorting bug
   { x: 595.2037203000001, y: 666 }, // player position for chain3 bug
   { x: 905.7756563245823, y: 120.1909307875895 }, // cursor position for chain3 bug
+  // Pyramid sorting bug - missing endpoint (1030, 500)
+  { x: 1090.8850699188959, y: 666 }, // BUGGY - pyramid-1 left endpoint missing
+  { x: 1090.7970816001189, y: 666 }, // CORRECT - pyramid-1 left endpoint present
+  { x: 1035.6085918854415, y: 485.25059665871123 }, // cursor for buggy
+  { x: 1031.0262529832935, y: 477.61336515513125 }, // cursor for correct
 ];
 
 /**

@@ -301,8 +301,18 @@ function handleCollinearPoints(
   }
 
   // Get surface info for both points (only for Endpoints, not JunctionPoints)
-  const aEndpoint = a.pairedEndpoint && isEndpoint(a.pairedEndpoint) ? a.pairedEndpoint : isEndpoint(p1) ? p1 : null;
-  const bEndpoint = b.pairedEndpoint && isEndpoint(b.pairedEndpoint) ? b.pairedEndpoint : isEndpoint(p2) ? p2 : null;
+  const aEndpoint =
+    a.pairedEndpoint && isEndpoint(a.pairedEndpoint)
+      ? a.pairedEndpoint
+      : isEndpoint(p1)
+        ? p1
+        : null;
+  const bEndpoint =
+    b.pairedEndpoint && isEndpoint(b.pairedEndpoint)
+      ? b.pairedEndpoint
+      : isEndpoint(p2)
+        ? p2
+        : null;
   const aSurface = aEndpoint ? aEndpoint.surface : null;
   const bSurface = bEndpoint ? bEndpoint.surface : null;
 
@@ -525,6 +535,7 @@ function castRayToEndpoint(
   windowSurfaceId?: string
 ): SourcePoint | null {
   const target = targetEndpoint.computeXY();
+
   const dx = target.x - origin.x;
   const dy = target.y - origin.y;
   const lenSq = dx * dx + dy * dy;
@@ -567,6 +578,8 @@ function castRayToEndpoint(
         obstacle.segment.start,
         obstacle.segment.end
       );
+
+
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
         closestT = hit.t;
         closestSurface = obstacle;
@@ -584,6 +597,8 @@ function castRayToEndpoint(
         boundary.segment.start,
         boundary.segment.end
       );
+
+
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
         closestT = hit.t;
         closestSurface = boundary;
@@ -591,6 +606,7 @@ function castRayToEndpoint(
       }
     }
   }
+
 
   if (closestSurface) {
     return new HitPoint(ray, closestSurface, closestT, closestS);
@@ -811,6 +827,7 @@ export function projectConeV2(
   bounds: ScreenBoundsConfig,
   excludeSurfaceId?: string
 ): SourcePoint[] {
+
   const { origin, startLine } = source;
   const isWindowed = startLine !== null;
   const vertices: SourcePoint[] = [];
@@ -913,6 +930,7 @@ export function projectConeV2(
   for (const target of rayTargets) {
     const targetXY = target.computeXY();
 
+
     // Skip if target is at origin
     if (targetXY.x === origin.x && targetXY.y === origin.y) continue;
 
@@ -924,7 +942,9 @@ export function projectConeV2(
         (targetXY.x === startLine.end.x && targetXY.y === startLine.end.y));
 
     // Check if target is in cone
-    if (!isWindowEndpoint && !isPointInCone(targetXY, source)) continue;
+    if (!isWindowEndpoint && !isPointInCone(targetXY, source)) {
+      continue;
+    }
 
     // For windowed cones, verify target is PAST the window
     if (isWindowed && startLine && !isWindowEndpoint) {
@@ -1034,6 +1054,7 @@ export function projectConeV2(
       excludeSurfaceId
     );
 
+
     if (hit) {
       vertices.push(hit);
 
@@ -1045,6 +1066,7 @@ export function projectConeV2(
           screenBoundaries
         );
 
+
         if (!isAtCorner) {
           const continuation = castContinuationRay(
             origin,
@@ -1054,6 +1076,8 @@ export function projectConeV2(
             startLine,
             excludeSurfaceId
           );
+
+
           if (continuation) {
             vertices.push(continuation);
             rayPairs.set(targetEndpoint.getKey(), { endpoint: targetEndpoint, continuation });
@@ -1088,7 +1112,10 @@ export function projectConeV2(
   const uniqueVertices = removeDuplicatesSourcePoint(vertices);
 
   // Sort by angle from origin, using ray pairs for tie-breaking
-  return sortPolygonVerticesSourcePoint(uniqueVertices, origin, startLine, rayPairs);
+  const sorted = sortPolygonVerticesSourcePoint(uniqueVertices, origin, startLine, rayPairs);
+
+
+  return sorted;
 }
 
 /**
@@ -1150,7 +1177,7 @@ function sortPolygonVerticesSourcePoint(
       continuationToEndpoint.set(pair.continuation.getKey(), pair.endpoint);
     }
   }
-  
+
   // PRE-COMPUTE SURFACE ORIENTATIONS
   const surfaceOrientations = new Map<string, SurfaceOrientation>();
   for (const p of points) {

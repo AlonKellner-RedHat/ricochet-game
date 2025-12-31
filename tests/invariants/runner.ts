@@ -151,7 +151,9 @@ function computeVisibilityStageWithSources(
   }
 
   const rawPolygon = toVector2Array(sourcePoints);
-  const polygon = preparePolygonForRendering(rawPolygon);
+  // Use raw polygon for invariant testing - preparePolygonForRendering removes
+  // collinear points which breaks edge invariant checks
+  const polygon = rawPolygon;
 
   // Debug logging for investigation
   if (process.env.DEBUG_POLYGON === "1") {
