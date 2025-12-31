@@ -47,6 +47,15 @@ export interface VisibilityStage {
 
   /** Stage index (0 = player, 1+ = reflections) */
   readonly stageIndex: number;
+
+  /** Whether this is a windowed cone (reflection stage) */
+  readonly isWindowed?: boolean;
+
+  /** Surface ID excluded from obstacle checks (the reflection surface) */
+  readonly excludeSurfaceId?: string | null;
+
+  /** The window segment for windowed cones */
+  readonly startLine?: { start: Vector2; end: Vector2 };
 }
 
 /**

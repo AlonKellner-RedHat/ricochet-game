@@ -6,24 +6,29 @@
  */
 
 import type { Surface } from "@/surfaces/Surface";
-import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
 import {
-  createFullCone,
+  type SourcePoint,
+  isEndpoint,
+  isHitPoint,
+} from "@/trajectory-v2/geometry/SourcePoint";
+import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import {
   createConeThroughWindow,
+  createFullCone,
   projectConeV2,
   toVector2Array,
 } from "@/trajectory-v2/visibility/ConeProjectionV2";
 import { preparePolygonForRendering } from "@/trajectory-v2/visibility/RenderingDedup";
-import type {
-  Scene,
-  InvariantContext,
-  VisibilityStage,
-  PlanValidityResult,
-  ScreenBounds,
-} from "./types";
 import { SCREEN } from "./positions";
+import type {
+  InvariantContext,
+  PlanValidityResult,
+  Scene,
+  ScreenBounds,
+  VisibilityStage,
+} from "./types";
 
 /** Default screen bounds */
 export const DEFAULT_SCREEN_BOUNDS: ScreenBounds = {
@@ -57,10 +62,77 @@ function isPointInPolygon(point: Vector2, polygon: Vector2[]): boolean {
   return inside;
 }
 
+/** Segment type for window extraction */
+interface Segment {
+  start: Vector2;
+  end: Vector2;
+}
+
+/**
+ * Extract visible segments on a surface from source points.
+ * This is the same logic as ValidRegionRenderer.extractVisibleSurfaceSegments.
+ *
+ * Uses provenance to find which portions of a surface are visible,
+ * converting source points to window segments for reflection.
+ */
+function extractVisibleSurfaceSegments(
+  targetSurfaceId: string,
+  sourcePoints: readonly SourcePoint[]
+): Segment[] {
+  const segments: Segment[] = [];
+  let currentRunStart: Vector2 | null = null;
+  let currentRunEnd: Vector2 | null = null;
+
+  for (const sp of sourcePoints) {
+    // Check if this point is on the target surface
+    let isOnTarget = false;
+    let coords: Vector2 | null = null;
+
+    if (isEndpoint(sp) && sp.surface.id === targetSurfaceId) {
+      isOnTarget = true;
+      coords = sp.computeXY();
+    } else if (isHitPoint(sp) && sp.hitSurface.id === targetSurfaceId) {
+      isOnTarget = true;
+      coords = sp.computeXY();
+    }
+
+    if (isOnTarget && coords) {
+      // Extend current run
+      if (currentRunStart === null) {
+        currentRunStart = coords;
+      }
+      currentRunEnd = coords;
+    } else {
+      // Gap detected - emit current run as segment if valid
+      if (
+        currentRunStart &&
+        currentRunEnd &&
+        (currentRunStart.x !== currentRunEnd.x || currentRunStart.y !== currentRunEnd.y)
+      ) {
+        segments.push({ start: currentRunStart, end: currentRunEnd });
+      }
+      currentRunStart = null;
+      currentRunEnd = null;
+    }
+  }
+
+  // Emit final run
+  if (
+    currentRunStart &&
+    currentRunEnd &&
+    (currentRunStart.x !== currentRunEnd.x || currentRunStart.y !== currentRunEnd.y)
+  ) {
+    segments.push({ start: currentRunStart, end: currentRunEnd });
+  }
+
+  return segments;
+}
+
 /**
  * Compute visibility polygon for a single stage.
+ * Returns both the stage info and the raw source points for segment extraction.
  */
-function computeVisibilityStage(
+function computeVisibilityStageWithSources(
   origin: Vector2,
   allChains: readonly SurfaceChain[],
   screenBounds: ScreenBounds,
@@ -69,8 +141,8 @@ function computeVisibilityStage(
   surfaceId: string | null,
   windowStart?: Vector2,
   windowEnd?: Vector2
-): VisibilityStage {
-  let sourcePoints;
+): { stage: VisibilityStage; sourcePoints: SourcePoint[] } {
+  let sourcePoints: SourcePoint[];
 
   if (windowStart && windowEnd) {
     // Windowed cone through a surface
@@ -86,10 +158,12 @@ function computeVisibilityStage(
   const polygon = preparePolygonForRendering(rawPolygon);
 
   // Debug logging for investigation
-  if (process.env.DEBUG_POLYGON === '1') {
+  if (process.env.DEBUG_POLYGON === "1") {
     console.log(`\nStage ${stageIndex}: origin=(${origin.x.toFixed(2)}, ${origin.y.toFixed(2)})`);
     if (windowStart && windowEnd) {
-      console.log(`  Window: (${windowStart.x}, ${windowStart.y}) to (${windowEnd.x}, ${windowEnd.y})`);
+      console.log(
+        `  Window: (${windowStart.x}, ${windowStart.y}) to (${windowEnd.x}, ${windowEnd.y})`
+      );
     }
     console.log(`  Raw polygon: ${rawPolygon.length} vertices`);
     rawPolygon.forEach((v, i) => console.log(`    ${i}: (${v.x.toFixed(2)}, ${v.y.toFixed(2)})`));
@@ -98,17 +172,29 @@ function computeVisibilityStage(
   }
 
   return {
-    origin,
-    polygon,
-    surfaceId,
-    stageIndex,
+    stage: {
+      origin,
+      polygon,
+      surfaceId,
+      stageIndex,
+      // For reflection stages, include window info for invariant checks
+      isWindowed: !!(windowStart && windowEnd),
+      excludeSurfaceId,
+      startLine: windowStart && windowEnd ? { start: windowStart, end: windowEnd } : undefined,
+    },
+    sourcePoints,
   };
 }
 
 /**
  * Compute all visibility stages for a scene.
  * Stage 0: Direct visibility from player
- * Stage 1+: Visibility through each planned surface (reflected origin)
+ * Stage 1+: Visibility through visible segments of each planned surface (reflected origin)
+ *
+ * Uses the same logic as ValidRegionRenderer:
+ * 1. Compute visibility from player
+ * 2. Extract visible segments on each planned surface from previous stage
+ * 3. For each visible segment, compute reflected visibility
  */
 function computeVisibilityStages(
   player: Vector2,
@@ -118,21 +204,31 @@ function computeVisibilityStages(
   const stages: VisibilityStage[] = [];
 
   // Stage 0: Direct visibility from player
-  stages.push(
-    computeVisibilityStage(
-      player,
-      scene.allChains,
-      screenBounds,
-      null,
-      0,
-      null
-    )
+  const stage0Result = computeVisibilityStageWithSources(
+    player,
+    scene.allChains,
+    screenBounds,
+    null,
+    0,
+    null
   );
+  stages.push(stage0Result.stage);
+
+  // Track current source points for extracting visible segments
+  let currentSourcePoints = stage0Result.sourcePoints;
+  let currentOrigin = player;
 
   // Stages 1+: Visibility through each planned surface
-  let currentOrigin = player;
   for (let i = 0; i < scene.plannedSurfaces.length; i++) {
     const surface = scene.plannedSurfaces[i]!;
+
+    // Extract visible segments on this surface from the PREVIOUS stage's source points
+    const visibleSegments = extractVisibleSurfaceSegments(surface.id, currentSourcePoints);
+
+    if (visibleSegments.length === 0) {
+      // No light reaches this surface - stop cascading
+      break;
+    }
 
     // Reflect origin through the surface
     const reflectedOrigin = reflectPointThroughLine(
@@ -141,20 +237,45 @@ function computeVisibilityStages(
       surface.segment.end
     );
 
-    // Compute visibility from reflected origin through the surface window
-    stages.push(
-      computeVisibilityStage(
+    // Compute visibility through each visible segment (window)
+    // For simplicity, we combine all segments into one stage
+    // (ValidRegionRenderer does this per-segment, but for invariant testing we aggregate)
+    const stageSourcePoints: SourcePoint[] = [];
+    const stagePolygons: Vector2[][] = [];
+
+    for (const window of visibleSegments) {
+      const result = computeVisibilityStageWithSources(
         reflectedOrigin,
         scene.allChains,
         screenBounds,
         surface.id,
         i + 1,
         surface.id,
-        surface.segment.start,
-        surface.segment.end
-      )
-    );
+        window.start,
+        window.end
+      );
+      stageSourcePoints.push(...result.sourcePoints);
+      if (result.stage.polygon.length >= 3) {
+        stagePolygons.push([...result.stage.polygon]);
+      }
+    }
 
+    // Create aggregated stage
+    const aggregatedPolygon = stagePolygons.length > 0 ? stagePolygons[0] ?? [] : [];
+    stages.push({
+      origin: reflectedOrigin,
+      polygon: aggregatedPolygon,
+      surfaceId: surface.id,
+      stageIndex: i + 1,
+      isWindowed: true,
+      excludeSurfaceId: surface.id,
+      startLine:
+        visibleSegments.length > 0
+          ? { start: visibleSegments[0]!.start, end: visibleSegments[0]!.end }
+          : undefined,
+    });
+
+    currentSourcePoints = stageSourcePoints;
     currentOrigin = reflectedOrigin;
   }
 
@@ -185,10 +306,7 @@ function evaluatePlanValidity(
  * Check if light reaches the cursor.
  * Light reaches cursor if cursor is inside the final visibility polygon.
  */
-function checkLightReachesCursor(
-  cursor: Vector2,
-  stages: VisibilityStage[]
-): boolean {
+function checkLightReachesCursor(cursor: Vector2, stages: VisibilityStage[]): boolean {
   if (stages.length === 0) return false;
 
   // Check the last stage (final visibility region)
@@ -227,7 +345,7 @@ export function createTestSurface(
   id: string,
   start: Vector2,
   end: Vector2,
-  canReflect: boolean = true
+  canReflect = true
 ): Surface {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
@@ -238,15 +356,17 @@ export function createTestSurface(
   return {
     id,
     segment: { start, end },
-    normal: { x: normalX, y: normalY },
-    canReflect,
+    surfaceType: canReflect ? "ricochet" : "wall",
+    onArrowHit: () => ({
+      type: canReflect ? ("reflect" as const) : ("stop" as const),
+    }),
+    isPlannable: () => canReflect,
+    getVisualProperties: () => ({
+      color: canReflect ? 0x00ff00 : 0xff0000,
+      lineWidth: 2,
+      alpha: 1,
+    }),
+    getNormal: () => ({ x: normalX, y: normalY }),
     canReflectFrom: () => canReflect,
-    isOnReflectiveSide: (point: Vector2) => {
-      if (!canReflect) return false;
-      const cross = (end.x - start.x) * (point.y - start.y) -
-                    (end.y - start.y) * (point.x - start.x);
-      return cross >= 0;
-    },
-    distanceToPoint: () => 0,
   };
 }

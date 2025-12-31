@@ -828,12 +828,7 @@ function castRayToEndpoint(
     // Skip the surface that the endpoint belongs to
     if (targetEndpoint.surface.id === obstacle.id) continue;
 
-    const hit = lineLineIntersection(
-      origin,
-      rayEnd,
-      obstacle.segment.start,
-      obstacle.segment.end
-    );
+    const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
     if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
       // PROVENANCE CHECK: If the hit point is exactly at the target endpoint's coordinates,
       // this is NOT a blocking hit - they share the same point (shared endpoint between surfaces)
@@ -1395,9 +1390,17 @@ export function projectConeV2(
   // But only if the window endpoint itself is visible (not obstructed)
   if (!isFullCone(source)) {
     // First check if leftBoundary endpoint is obstructed
-    const leftBoundaryObstruction = castRayToTarget(origin, source.leftBoundary, effectiveObstacles, null);
+    const leftBoundaryObstruction = castRayToTarget(
+      origin,
+      source.leftBoundary,
+      effectiveObstacles,
+      null
+    );
     const leftBoundaryObstructed = leftBoundaryObstruction
-      ? Math.hypot(leftBoundaryObstruction.computeXY().x - origin.x, leftBoundaryObstruction.computeXY().y - origin.y) <
+      ? Math.hypot(
+          leftBoundaryObstruction.computeXY().x - origin.x,
+          leftBoundaryObstruction.computeXY().y - origin.y
+        ) <
         Math.hypot(source.leftBoundary.x - origin.x, source.leftBoundary.y - origin.y) - 0.1
       : false;
 
@@ -1418,73 +1421,81 @@ export function projectConeV2(
         // so we can include ALL hits (screen or game surface).
         const shouldAddLeft = leftInCone && leftPastWindow;
         if (shouldAddLeft) {
-        vertices.push(leftHit);
-        // Track in rayPairs for proper sorting
-        // Find the OriginPoint or Endpoint that corresponds to the left boundary
-        const leftBoundaryPoint = vertices.find(
-          (v) =>
-            v.computeXY().x === source.leftBoundary.x && v.computeXY().y === source.leftBoundary.y
-        );
-        // Track continuation if we found a point (OriginPoint or Endpoint)
-        // For OriginPoints, we use coordinates as key since they don't have getKey()
-        if (leftBoundaryPoint) {
-          const leftKey =
-            isEndpoint(leftBoundaryPoint) || isJunctionPoint(leftBoundaryPoint)
-              ? leftBoundaryPoint.getKey()
-              : `origin:${source.leftBoundary.x},${source.leftBoundary.y}`;
-          // Create a fake Endpoint for rayPairs tracking (needed for sorting)
-          // We'll create a special key that arrangeWindowedConeV2 can match
-          if (isEndpoint(leftBoundaryPoint) || isJunctionPoint(leftBoundaryPoint)) {
-            rayPairs.set(leftKey, {
-              endpoint: leftBoundaryPoint as Endpoint | JunctionPoint,
-              continuation: leftHit,
-            });
+          vertices.push(leftHit);
+          // Track in rayPairs for proper sorting
+          // Find the OriginPoint or Endpoint that corresponds to the left boundary
+          const leftBoundaryPoint = vertices.find(
+            (v) =>
+              v.computeXY().x === source.leftBoundary.x && v.computeXY().y === source.leftBoundary.y
+          );
+          // Track continuation if we found a point (OriginPoint or Endpoint)
+          // For OriginPoints, we use coordinates as key since they don't have getKey()
+          if (leftBoundaryPoint) {
+            const leftKey =
+              isEndpoint(leftBoundaryPoint) || isJunctionPoint(leftBoundaryPoint)
+                ? leftBoundaryPoint.getKey()
+                : `origin:${source.leftBoundary.x},${source.leftBoundary.y}`;
+            // Create a fake Endpoint for rayPairs tracking (needed for sorting)
+            // We'll create a special key that arrangeWindowedConeV2 can match
+            if (isEndpoint(leftBoundaryPoint) || isJunctionPoint(leftBoundaryPoint)) {
+              rayPairs.set(leftKey, {
+                endpoint: leftBoundaryPoint as Endpoint | JunctionPoint,
+                continuation: leftHit,
+              });
+            }
           }
         }
       }
-    }
     } // End of: if (!leftBoundaryObstructed)
 
     // First check if rightBoundary endpoint is obstructed
-    const rightBoundaryObstruction = castRayToTarget(origin, source.rightBoundary, effectiveObstacles, null);
+    const rightBoundaryObstruction = castRayToTarget(
+      origin,
+      source.rightBoundary,
+      effectiveObstacles,
+      null
+    );
     const rightBoundaryObstructed = rightBoundaryObstruction
-      ? Math.hypot(rightBoundaryObstruction.computeXY().x - origin.x, rightBoundaryObstruction.computeXY().y - origin.y) <
+      ? Math.hypot(
+          rightBoundaryObstruction.computeXY().x - origin.x,
+          rightBoundaryObstruction.computeXY().y - origin.y
+        ) <
         Math.hypot(source.rightBoundary.x - origin.x, source.rightBoundary.y - origin.y) - 0.1
       : false;
 
     // Only cast continuation ray if right boundary is NOT obstructed
     if (!rightBoundaryObstructed) {
-    const rightHit = castRayToTarget(
-      origin,
-      source.rightBoundary,
-      effectiveObstacles, // Already includes screen boundary surfaces
-      startLine
-    );
-    if (rightHit) {
-      const hitXY = rightHit.computeXY();
-      const rightInCone = isPointInCone(hitXY, source);
-      const rightPastWindow = !startLine || isPointPastWindow(origin, hitXY, startLine);
-      // For windowed cones, we now track cone boundary hits in rayPairs properly,
-      // so we can include ALL hits (screen or game surface).
-      const shouldAddRight = rightInCone && rightPastWindow;
-      if (shouldAddRight) {
-        vertices.push(rightHit);
-        // Track in rayPairs for proper sorting
-        // Find the Endpoint that corresponds to the right boundary
-        const rightBoundaryEndpoint = vertices.find(
-          (v) =>
-            isEndpoint(v) &&
-            v.computeXY().x === source.rightBoundary.x &&
-            v.computeXY().y === source.rightBoundary.y
-        ) as Endpoint | undefined;
-        if (rightBoundaryEndpoint) {
-          rayPairs.set(rightBoundaryEndpoint.getKey(), {
-            endpoint: rightBoundaryEndpoint,
-            continuation: rightHit,
-          });
+      const rightHit = castRayToTarget(
+        origin,
+        source.rightBoundary,
+        effectiveObstacles, // Already includes screen boundary surfaces
+        startLine
+      );
+      if (rightHit) {
+        const hitXY = rightHit.computeXY();
+        const rightInCone = isPointInCone(hitXY, source);
+        const rightPastWindow = !startLine || isPointPastWindow(origin, hitXY, startLine);
+        // For windowed cones, we now track cone boundary hits in rayPairs properly,
+        // so we can include ALL hits (screen or game surface).
+        const shouldAddRight = rightInCone && rightPastWindow;
+        if (shouldAddRight) {
+          vertices.push(rightHit);
+          // Track in rayPairs for proper sorting
+          // Find the Endpoint that corresponds to the right boundary
+          const rightBoundaryEndpoint = vertices.find(
+            (v) =>
+              isEndpoint(v) &&
+              v.computeXY().x === source.rightBoundary.x &&
+              v.computeXY().y === source.rightBoundary.y
+          ) as Endpoint | undefined;
+          if (rightBoundaryEndpoint) {
+            rayPairs.set(rightBoundaryEndpoint.getKey(), {
+              endpoint: rightBoundaryEndpoint,
+              continuation: rightHit,
+            });
+          }
         }
       }
-    }
     } // End of: if (!rightBoundaryObstructed)
   }
 
@@ -2025,9 +2036,7 @@ function arrangeWindowedConeV2(
   // The middle points should follow the screen boundary in CCW order
   // We sort by angular distance from leftContinuation (or leftBoundary if no leftCont)
   if (middlePoints.length > 1) {
-    const refPoint = leftContinuation
-      ? leftContinuation.computeXY()
-      : leftBoundary;
+    const refPoint = leftContinuation ? leftContinuation.computeXY() : leftBoundary;
     const refVec = { x: refPoint.x - origin.x, y: refPoint.y - origin.y };
 
     middlePoints.sort((a, b) => {
