@@ -313,12 +313,12 @@ function comparePointsCCW(
   const cross = aVec.x * bVec.y - aVec.y * bVec.x;
 
   if (cross > 0) {
-    // A is CCW from B → A comes first
+    // A is CCW from B → A comes first in CCW ordering
     return -1;
   }
 
   if (cross < 0) {
-    // A is CW from B → B comes first
+    // A is CW from B → B comes first in CCW ordering
     return 1;
   }
 
@@ -1980,6 +1980,40 @@ function arrangeWindowedConeV2(
   if (rightEndpoint) result.push(rightEndpoint);
   if (leftEndpoint) result.push(leftEndpoint);
   if (leftContinuation) result.push(leftContinuation);
+
+  // Sort middle points for correct polygon traversal from leftCont to rightCont
+  // The middle points should follow the screen boundary in CCW order
+  // We sort by angular distance from leftContinuation (or leftBoundary if no leftCont)
+  if (middlePoints.length > 1) {
+    const refPoint = leftContinuation
+      ? leftContinuation.computeXY()
+      : leftBoundary;
+    const refVec = { x: refPoint.x - origin.x, y: refPoint.y - origin.y };
+
+    middlePoints.sort((a, b) => {
+      const aXY = a.computeXY();
+      const bXY = b.computeXY();
+      const aVec = { x: aXY.x - origin.x, y: aXY.y - origin.y };
+      const bVec = { x: bXY.x - origin.x, y: bXY.y - origin.y };
+
+      // Cross product with reference: positive = CCW from ref
+      const aRef = refVec.x * aVec.y - refVec.y * aVec.x;
+      const bRef = refVec.x * bVec.y - refVec.y * bVec.x;
+
+      // Sort by signed distance from reference ray
+      // Points more CCW from ref should come first (they're closer in CCW direction)
+      if (aRef !== bRef) {
+        // More negative (CW from ref) = further in CCW traversal = comes later
+        return bRef - aRef;
+      }
+
+      // Same cross with ref - use distance tiebreaker
+      const aDistSq = aVec.x * aVec.x + aVec.y * aVec.y;
+      const bDistSq = bVec.x * bVec.x + bVec.y * bVec.y;
+      return aDistSq - bDistSq;
+    });
+  }
+
   result.push(...middlePoints);
   if (rightContinuation) result.push(rightContinuation);
 
