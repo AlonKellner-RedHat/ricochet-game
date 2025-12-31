@@ -1155,16 +1155,6 @@ export function projectConeV2(
         startLine
       );
 
-      // #region agent log
-      const hitXY = hit ? hit.computeXY() : null;
-      const hitDist = hitXY ? Math.hypot(hitXY.x - origin.x, hitXY.y - origin.y) : null;
-      const junctionDist = Math.hypot(targetXY.x - origin.x, targetXY.y - origin.y);
-      const isObstructed = hitDist !== null && hitDist < junctionDist - 0.1;
-      fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:junction',message:'Junction ray cast',data:{junctionXY:targetXY,hit:hit?{type:hit.type,xy:hitXY}:null,hitDist,junctionDist,isObstructed,obstacleCount:effectiveObstacles.length,isWindowed},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
-
-      // BUG: castRayToTarget returns ANY hit, not checking if it's before the junction
-      // The junction should only be added if the ray reaches it (hit distance >= junction distance)
       if (hit) {
         // Add the junction directly to vertices (it's now a SourcePoint)
         vertices.push(target);
@@ -1180,10 +1170,6 @@ export function projectConeV2(
           ((targetXY.x === startLine.start.x && targetXY.y === startLine.start.y) ||
             (targetXY.x === startLine.end.x && targetXY.y === startLine.end.y));
 
-        // #region agent log
-        fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:junction-passthrough',message:'Junction pass-through check',data:{junctionXY:targetXY,canPassThrough,isJunctionWindowEndpoint,isWindowed},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
-
         // Cast continuation ray if light can pass through and not a window endpoint
         if (canPassThrough && !isJunctionWindowEndpoint) {
           // Create temporary Endpoint for ray casting (provides surfaceId to exclude)
@@ -1191,10 +1177,6 @@ export function projectConeV2(
           const surfaceBefore = target.getSurfaceBefore();
           const surfaceAfter = target.getSurfaceAfter();
           const tempEndpointForRayCast = new Endpoint(surfaceBefore, "end");
-
-          // #region agent log
-          fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:junction-cont-start',message:'Casting junction continuation',data:{junctionXY:targetXY,surfaceBeforeId:surfaceBefore.id,surfaceAfterId:surfaceAfter.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-          // #endregion
 
           const continuation = castContinuationRay(
             origin,
@@ -1206,18 +1188,10 @@ export function projectConeV2(
             surfaceAfter.id // Exclude the second surface at the junction
           );
 
-          // #region agent log
-          fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:junction-cont-result',message:'Junction continuation result',data:{junctionXY:targetXY,continuation:continuation?{type:continuation.type,xy:continuation.computeXY()}:null},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-          // #endregion
-
           if (continuation) {
             const contXY = continuation.computeXY();
             const inCone = isPointInCone(contXY, source);
             const pastWindow = startLine ? isPointPastWindow(origin, contXY, startLine) : true;
-
-            // #region agent log
-            fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:junction-cont-filter',message:'Junction continuation filter',data:{contXY,inCone,pastWindow,isWindowed,willAdd:!isWindowed||(inCone&&pastWindow)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-            // #endregion
 
             // Only add continuation if within the cone AND past the window (for windowed cones)
             if (
@@ -1404,10 +1378,6 @@ export function projectConeV2(
   // Remove duplicate points using equals()
   const uniqueVertices = removeDuplicatesSourcePoint(vertices);
 
-  // #region agent log
-  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:pre-sort',message:'Vertices before sorting',data:{vertexCount:uniqueVertices.length,isWindowed,vertices:uniqueVertices.slice(0,15).map(v=>({type:v.type,xy:v.computeXY()}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-  // #endregion
-
   // Sort by angle from origin, using ray pairs for tie-breaking
   // Pass pre-calculated surfaceOrientations to avoid recalculating
   // For windowed cones, pass the pre-computed left/right boundaries for consistent arrangement
@@ -1423,10 +1393,6 @@ export function projectConeV2(
 
   // Insert screen corners where the polygon transitions between different screen edges
   const withCorners = insertScreenCorners(sorted, bounds);
-
-  // #region agent log
-  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:post-sort',message:'Vertices after sorting (with corners)',data:{vertexCount:withCorners.length,isWindowed,vertices:withCorners.slice(0,15).map(v=>({type:v.type,xy:v.computeXY()}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-  // #endregion
 
   return withCorners;
 }
