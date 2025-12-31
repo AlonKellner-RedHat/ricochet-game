@@ -894,15 +894,16 @@ function castRayToTarget(
 
   if (startLine) {
     // PROVENANCE CHECK: If target IS an endpoint of startLine, the ray
-    // definitionally passes through the startLine. We need to check for obstacles
-    // BETWEEN origin and target, so minT stays 0 (check from origin).
+    // definitionally passes through the startLine. Skip floating-point
+    // intersection calculation to avoid precision issues (s = 1.0000000000000002).
     const targetIsStartLineEndpoint =
       pointsEqual(target, startLine.start) || pointsEqual(target, startLine.end);
 
     if (targetIsStartLineEndpoint) {
-      // Ray passes through startLine endpoint - check obstacles from origin
-      // minT stays 0 so we can detect obstacles blocking the path to the window
-      minT = 0;
+      // Ray passes through startLine endpoint - use t = 1/scale (target position)
+      // This means we only check for obstacles PAST the window, not between origin and window.
+      // This is correct for cone boundary rays that find what's behind the window.
+      minT = 1 / scale;
     } else {
       const lineHit = lineLineIntersection(origin, rayEnd, startLine.start, startLine.end);
       if (lineHit.valid && lineHit.s >= 0 && lineHit.s <= 1 && lineHit.t > 0) {
@@ -1107,94 +1108,11 @@ export function projectConeV2(
     }
   }
 
-  // For windowed cones, add window endpoints to polygon ONLY IF NOT OBSTRUCTED.
-  // Window endpoints define the cone boundaries, but if an obstacle blocks the ray
-  // to a window endpoint, we need to:
-  // 1. NOT add the obstructed window endpoint
-  // 2. Add the SHADOW BOUNDARY POINT on the window surface (where the obstacle's shadow
-  //    starts on the window)
+  // For windowed cones, add window endpoints to polygon.
+  // These define the cone boundaries and are always included.
   if (isWindowed && startLine) {
-    // Helper to compute shadow boundary point on window
-    const computeShadowBoundaryOnWindow = (
-      obstructingSurface: Surface
-    ): Vector2 | null => {
-      // The shadow boundary is cast by one of the obstructing surface's endpoints.
-      // Find which endpoint casts the shadow onto the window.
-      // Cast ray from origin through each endpoint and find intersection with window.
-      for (const which of ["start", "end"] as const) {
-        const surfaceEndpoint =
-          which === "start"
-            ? obstructingSurface.segment.start
-            : obstructingSurface.segment.end;
-
-        // Direction from origin to surface endpoint
-        const dx = surfaceEndpoint.x - origin.x;
-        const dy = surfaceEndpoint.y - origin.y;
-
-        // Find intersection with window surface (startLine)
-        // Window is a line from startLine.start to startLine.end
-        // Parametric: P = origin + t * (surfaceEndpoint - origin)
-        // Window: Q = startLine.start + s * (startLine.end - startLine.start)
-        const windowDx = startLine.end.x - startLine.start.x;
-        const windowDy = startLine.end.y - startLine.start.y;
-
-        // Solve for t and s
-        const denom = dx * windowDy - dy * windowDx;
-        if (Math.abs(denom) < 0.0001) continue; // Parallel
-
-        const originToWindowStart = {
-          x: startLine.start.x - origin.x,
-          y: startLine.start.y - origin.y,
-        };
-
-        const t = (originToWindowStart.x * windowDy - originToWindowStart.y * windowDx) / denom;
-        const s = (originToWindowStart.x * dy - originToWindowStart.y * dx) / denom;
-
-        // Check if intersection is on the window segment (0 <= s <= 1) and in correct direction (t > 0)
-        if (t > 0 && s >= 0 && s <= 1) {
-          const intersectionX = origin.x + t * dx;
-          const intersectionY = origin.y + t * dy;
-          return { x: intersectionX, y: intersectionY };
-        }
-      }
-      return null;
-    };
-
-    // Check if startLine.start is obstructed
-    const startHit = castRayToTarget(origin, startLine.start, effectiveObstacles, null);
-    const startObstructed =
-      startHit &&
-      isHitPoint(startHit) &&
-      Math.hypot(startHit.computeXY().x - origin.x, startHit.computeXY().y - origin.y) <
-        Math.hypot(startLine.start.x - origin.x, startLine.start.y - origin.y) - 0.1;
-
-    if (!startObstructed) {
-      vertices.push(new OriginPoint(startLine.start));
-    } else if (startHit && isHitPoint(startHit)) {
-      // Window endpoint is obstructed - compute shadow boundary on window
-      const shadowBoundary = computeShadowBoundaryOnWindow(startHit.hitSurface);
-      if (shadowBoundary) {
-        vertices.push(new OriginPoint(shadowBoundary));
-      }
-    }
-
-    // Check if startLine.end is obstructed
-    const endHit = castRayToTarget(origin, startLine.end, effectiveObstacles, null);
-    const endObstructed =
-      endHit &&
-      isHitPoint(endHit) &&
-      Math.hypot(endHit.computeXY().x - origin.x, endHit.computeXY().y - origin.y) <
-        Math.hypot(startLine.end.x - origin.x, startLine.end.y - origin.y) - 0.1;
-
-    if (!endObstructed) {
-      vertices.push(new OriginPoint(startLine.end));
-    } else if (endHit && isHitPoint(endHit)) {
-      // Window endpoint is obstructed - compute shadow boundary on window
-      const shadowBoundary = computeShadowBoundaryOnWindow(endHit.hitSurface);
-      if (shadowBoundary) {
-        vertices.push(new OriginPoint(shadowBoundary));
-      }
-    }
+    vertices.push(new OriginPoint(startLine.start));
+    vertices.push(new OriginPoint(startLine.end));
   }
 
   // Track ray pairs: endpoint + continuation that share the same ray
@@ -1444,20 +1362,10 @@ export function projectConeV2(
   // Always cast these rays - even if the window endpoint is obstructed, the hit point
   // will be added and the sorting algorithm will correctly order them.
   if (!isFullCone(source)) {
-    const leftHit = castRayToTarget(
-      origin,
-      source.leftBoundary,
-      effectiveObstacles,
-      startLine
-    );
+    const leftHit = castRayToTarget(origin, source.leftBoundary, effectiveObstacles, startLine);
     if (leftHit) vertices.push(leftHit);
 
-    const rightHit = castRayToTarget(
-      origin,
-      source.rightBoundary,
-      effectiveObstacles,
-      startLine
-    );
+    const rightHit = castRayToTarget(origin, source.rightBoundary, effectiveObstacles, startLine);
     if (rightHit) vertices.push(rightHit);
   }
 
