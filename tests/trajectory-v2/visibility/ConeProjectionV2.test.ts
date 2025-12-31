@@ -135,23 +135,23 @@ describe("ConeProjectionV2 - Full 360° Cone", () => {
       }
     });
 
-    it("screen corners are JunctionPoints from screen boundary chain", () => {
+    it("screen corners are Endpoints from screen boundary surfaces", () => {
       const player = { x: 400, y: 300 };
       const cone = createFullCone(player);
 
       const points = projectConeV2(cone, toChains([]), bounds);
 
-      // All corner points should be JunctionPoints from the screen boundary chain
+      // All corner points should be Endpoints from screen boundary surfaces
+      // JunctionPoints are currently ignored in the simplified algorithm
       const corners = points.filter((p) => {
         const xy = p.computeXY();
         return (xy.x === 0 || xy.x === 800) && (xy.y === 0 || xy.y === 600);
       });
 
-      // With the SurfaceChain refactor, screen corners are JunctionPoints
-      // They are directly added to vertices (not as HitPoints from ray casting)
+      // Screen corners appear as Endpoints from screen boundary surfaces
       expect(corners.length).toBe(4);
       for (const corner of corners) {
-        expect(isJunctionPoint(corner)).toBe(true);
+        expect(isEndpoint(corner)).toBe(true);
       }
     });
   });
