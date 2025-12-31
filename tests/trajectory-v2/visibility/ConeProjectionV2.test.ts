@@ -13,6 +13,7 @@ import {
   isEndpoint,
   isHitPoint,
 } from "@/trajectory-v2/geometry/SourcePoint";
+import { type SurfaceChain, createSingleSurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import {
   createConeThroughWindow,
@@ -41,6 +42,11 @@ function createTestSurface(id: string, start: Vector2, end: Vector2): Surface {
   } as Surface;
 }
 
+/** Wrap an array of surfaces in chains for testing */
+function toChains(surfaces: Surface[]): SurfaceChain[] {
+  return surfaces.map((s) => createSingleSurfaceChain(s));
+}
+
 function hasVertexNear(vertices: Vector2[], target: Vector2, tolerance = 1): boolean {
   return vertices.some(
     (v) => Math.abs(v.x - target.x) < tolerance && Math.abs(v.y - target.y) < tolerance
@@ -59,7 +65,7 @@ describe("ConeProjectionV2 - Full 360° Cone", () => {
       const player = { x: 400, y: 300 };
       const cone = createFullCone(player);
 
-      const points = projectConeV2(cone, [], bounds);
+      const points = projectConeV2(cone, toChains([]), bounds);
       const vertices = toVector2Array(points);
 
       // Should have 4 screen corners
@@ -77,7 +83,7 @@ describe("ConeProjectionV2 - Full 360° Cone", () => {
       const obstacle = createTestSurface("wall", { x: 300, y: 200 }, { x: 500, y: 200 });
       const cone = createFullCone(player);
 
-      const points = projectConeV2(cone, [obstacle], bounds);
+      const points = projectConeV2(cone, toChains([obstacle]), bounds);
       const vertices = toVector2Array(points);
 
       // Should include obstacle endpoints
@@ -90,7 +96,7 @@ describe("ConeProjectionV2 - Full 360° Cone", () => {
       const obstacle = createTestSurface("wall", { x: 350, y: 200 }, { x: 450, y: 200 });
       const cone = createFullCone(player);
 
-      const points = projectConeV2(cone, [obstacle], bounds);
+      const points = projectConeV2(cone, toChains([obstacle]), bounds);
 
       // Count Endpoints and HitPoints
       const endpoints = points.filter(isEndpoint);
@@ -108,7 +114,7 @@ describe("ConeProjectionV2 - Full 360° Cone", () => {
       const obstacle = createTestSurface("platform", { x: 300, y: 200 }, { x: 500, y: 200 });
       const cone = createFullCone(player);
 
-      const points = projectConeV2(cone, [obstacle], bounds);
+      const points = projectConeV2(cone, toChains([obstacle]), bounds);
 
       // Find points near obstacle endpoints
       const obstaclePoints = points.filter((p) => {
@@ -129,7 +135,7 @@ describe("ConeProjectionV2 - Full 360° Cone", () => {
       const player = { x: 400, y: 300 };
       const cone = createFullCone(player);
 
-      const points = projectConeV2(cone, [], bounds);
+      const points = projectConeV2(cone, toChains([]), bounds);
 
       // All corner points should be HitPoints (rays cast to JunctionPoints result in HitPoints)
       const corners = points.filter((p) => {
@@ -163,7 +169,7 @@ describe("ConeProjectionV2 - Windowed Cone", () => {
       const windowEnd = { x: 500, y: 300 };
       const cone = createConeThroughWindow(origin, windowStart, windowEnd);
 
-      const points = projectConeV2(cone, [], bounds);
+      const points = projectConeV2(cone, toChains([]), bounds);
       const vertices = toVector2Array(points);
 
       expect(hasVertexNear(vertices, windowStart)).toBe(true);
@@ -176,7 +182,7 @@ describe("ConeProjectionV2 - Windowed Cone", () => {
       const windowEnd = { x: 500, y: 300 };
       const cone = createConeThroughWindow(origin, windowStart, windowEnd);
 
-      const points = projectConeV2(cone, [], bounds);
+      const points = projectConeV2(cone, toChains([]), bounds);
       const vertices = toVector2Array(points);
 
       // Should form a 4-point trapezoid:
@@ -194,7 +200,7 @@ describe("ConeProjectionV2 - Windowed Cone", () => {
 
       // Without exclusion, the window would block rays
       // With exclusion, rays pass through
-      const pointsWithExclusion = projectConeV2(cone, [window], bounds, "window");
+      const pointsWithExclusion = projectConeV2(cone, toChains([window]), bounds, "window");
 
       // Should produce valid polygon
       expect(pointsWithExclusion.length).toBeGreaterThanOrEqual(4);
@@ -229,7 +235,7 @@ describe("ConeProjectionV2 - Exact Matching", () => {
       const obstruction = createTestSurface("obs", { x: -10, y: 50 }, { x: 10, y: 50 });
       const cone = createFullCone(player);
 
-      const points = projectConeV2(cone, [obstruction], bounds);
+      const points = projectConeV2(cone, toChains([obstruction]), bounds);
       const vertices = toVector2Array(points);
 
       // Expected vertices:
@@ -255,7 +261,7 @@ describe("ConeProjectionV2 - Exact Matching", () => {
       const obstruction = createTestSurface("obs", { x: -50, y: 50 }, { x: 50, y: 50 });
       const cone = createFullCone(player);
 
-      const points = projectConeV2(cone, [obstruction], bounds);
+      const points = projectConeV2(cone, toChains([obstruction]), bounds);
       const vertices = toVector2Array(points);
 
       // Expected vertices:
@@ -274,7 +280,7 @@ describe("ConeProjectionV2 - Exact Matching", () => {
       const player = { x: 0, y: 0 };
       const cone = createFullCone(player);
 
-      const points = projectConeV2(cone, [], bounds);
+      const points = projectConeV2(cone, toChains([]), bounds);
 
       // Each point should be unique by equals()
       for (let i = 0; i < points.length; i++) {
@@ -291,7 +297,7 @@ describe("ConeProjectionV2 - Exact Matching", () => {
       const obstacle = createTestSurface("wall", { x: 50, y: 50 }, { x: 50, y: 100 });
       const cone = createFullCone(player);
 
-      const points = projectConeV2(cone, [obstacle], bounds);
+      const points = projectConeV2(cone, toChains([obstacle]), bounds);
 
       // Find a point at the obstacle start - could be Endpoint or HitPoint depending on sort order
       const obstacleStartPoints = points.filter((p) => {
@@ -365,7 +371,7 @@ describe("ConeProjectionV2 - Vertical Surface Sorting", () => {
       );
       const cone = createFullCone(player);
 
-      const points = projectConeV2(cone, [verticalSurface], bounds);
+      const points = projectConeV2(cone, toChains([verticalSurface]), bounds);
       const vertices = toVector2Array(points);
 
       // Find the two vertices on the vertical surface
@@ -410,7 +416,7 @@ describe("ConeProjectionV2 - Vertical Surface Sorting", () => {
 
       for (const player of positions) {
         const cone = createFullCone(player);
-        const points = projectConeV2(cone, [verticalSurface], bounds);
+        const points = projectConeV2(cone, toChains([verticalSurface]), bounds);
         const vertices = toVector2Array(points);
 
         // Find the two surface endpoints
@@ -429,7 +435,7 @@ describe("ConeProjectionV2 - Vertical Surface Sorting", () => {
       // All positions should produce adjacent vertices
       for (const { pos } of orders) {
         const cone = createFullCone(pos);
-        const points = projectConeV2(cone, [verticalSurface], bounds);
+        const points = projectConeV2(cone, toChains([verticalSurface]), bounds);
         const vertices = toVector2Array(points);
 
         const idx350 = vertices.findIndex(
@@ -456,7 +462,7 @@ describe("ConeProjectionV2 - Vertical Surface Sorting", () => {
       );
       const cone = createFullCone(player);
 
-      const points = projectConeV2(cone, [verticalSurface], bounds);
+      const points = projectConeV2(cone, toChains([verticalSurface]), bounds);
       const vertices = toVector2Array(points);
 
       // Find surface vertices
@@ -494,7 +500,7 @@ describe("ConeProjectionV2 - Vertical Surface Sorting", () => {
       );
 
       const cone = createFullCone(player);
-      const points = projectConeV2(cone, [verticalSurface, diagonalSurface], bounds);
+      const points = projectConeV2(cone, toChains([verticalSurface, diagonalSurface]), bounds);
       const vertices = toVector2Array(points);
 
       // Find the two surface endpoints

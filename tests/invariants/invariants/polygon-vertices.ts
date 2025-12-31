@@ -51,7 +51,9 @@ function isPointOnAnySurface(
   point: Vector2,
   context: InvariantContext
 ): boolean {
-  for (const surface of context.scene.allSurfaces) {
+  // Extract all surfaces from all chains
+  const allSurfaces = context.scene.allChains.flatMap((c) => c.getSurfaces());
+  for (const surface of allSurfaces) {
     if (isPointOnSegment(point, surface.segment.start, surface.segment.end)) {
       return true;
     }

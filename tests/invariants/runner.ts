@@ -6,6 +6,7 @@
  */
 
 import type { Surface } from "@/surfaces/Surface";
+import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
 import {
@@ -61,7 +62,7 @@ function isPointInPolygon(point: Vector2, polygon: Vector2[]): boolean {
  */
 function computeVisibilityStage(
   origin: Vector2,
-  allSurfaces: readonly Surface[],
+  allChains: readonly SurfaceChain[],
   screenBounds: ScreenBounds,
   excludeSurfaceId: string | null,
   stageIndex: number,
@@ -74,15 +75,21 @@ function computeVisibilityStage(
   if (windowStart && windowEnd) {
     // Windowed cone through a surface
     const cone = createConeThroughWindow(origin, windowStart, windowEnd);
-    sourcePoints = projectConeV2(cone, allSurfaces, screenBounds, excludeSurfaceId ?? undefined);
+    sourcePoints = projectConeV2(cone, allChains, screenBounds, excludeSurfaceId ?? undefined);
   } else {
     // Full 360° cone
     const cone = createFullCone(origin);
-    sourcePoints = projectConeV2(cone, allSurfaces, screenBounds, excludeSurfaceId ?? undefined);
+    sourcePoints = projectConeV2(cone, allChains, screenBounds, excludeSurfaceId ?? undefined);
   }
 
   const rawPolygon = toVector2Array(sourcePoints);
   const polygon = preparePolygonForRendering(rawPolygon);
+
+  // Debug logging for investigation
+  if (process.env.DEBUG_POLYGON === '1') {
+    console.log(`\nStage ${stageIndex}: ${polygon.length} vertices`);
+    polygon.forEach((v, i) => console.log(`  ${i}: (${v.x.toFixed(2)}, ${v.y.toFixed(2)})`));
+  }
 
   return {
     origin,
@@ -108,7 +115,7 @@ function computeVisibilityStages(
   stages.push(
     computeVisibilityStage(
       player,
-      scene.allSurfaces,
+      scene.allChains,
       screenBounds,
       null,
       0,
@@ -132,7 +139,7 @@ function computeVisibilityStages(
     stages.push(
       computeVisibilityStage(
         reflectedOrigin,
-        scene.allSurfaces,
+        scene.allChains,
         screenBounds,
         surface.id,
         i + 1,

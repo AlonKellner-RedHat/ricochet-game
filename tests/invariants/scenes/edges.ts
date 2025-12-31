@@ -5,9 +5,12 @@
  */
 
 import { RicochetSurface } from "@/surfaces/RicochetSurface";
-import { WallSurface } from "@/surfaces/WallSurface";
+import {
+  type SurfaceChain,
+  createRicochetChain,
+  createWallChain,
+} from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Scene } from "../types";
-import { SCREEN } from "../positions";
 
 /**
  * Edge case scenes.
@@ -17,47 +20,45 @@ export const EDGE_SCENES: Scene[] = [
   {
     name: "surface-behind-surface",
     description: "One surface directly behind another (bypass test)",
-    allSurfaces: [
+    allChains: [
       // Front surface
-      new RicochetSurface("front", {
-        start: { x: 500, y: 350 },
-        end: { x: 700, y: 350 },
-      }),
+      createRicochetChain("front", [
+        { x: 500, y: 350 },
+        { x: 700, y: 350 },
+      ]),
       // Back surface (behind front, same orientation)
-      new RicochetSurface("back", {
-        start: { x: 520, y: 250 },
-        end: { x: 680, y: 250 },
-      }),
+      createRicochetChain("back", [
+        { x: 520, y: 250 },
+        { x: 680, y: 250 },
+      ]),
     ],
     plannedSurfaces: [
       // Only the back surface is planned - front might cause bypass
-      new RicochetSurface("back", {
+      new RicochetSurface("back-0", {
         start: { x: 520, y: 250 },
         end: { x: 680, y: 250 },
       }),
     ],
   },
 
-  // Scene 11: Collinear endpoints (two surfaces sharing an endpoint)
+  // Scene 11: Collinear endpoints - NOW A TRUE CHAIN (shared endpoint = JunctionPoint)
   {
     name: "collinear-endpoints",
-    description: "Two surfaces sharing an endpoint",
-    allSurfaces: [
-      new RicochetSurface("s1", {
-        start: { x: 400, y: 300 },
-        end: { x: 600, y: 300 },
-      }),
-      new RicochetSurface("s2", {
-        start: { x: 600, y: 300 },
-        end: { x: 600, y: 500 },
-      }),
+    description: "Two surfaces sharing an endpoint (as a chain)",
+    allChains: [
+      // TRUE chain: s1 -> shared endpoint -> s2
+      createRicochetChain("L-shape", [
+        { x: 400, y: 300 },
+        { x: 600, y: 300 }, // Shared endpoint = JunctionPoint
+        { x: 600, y: 500 },
+      ]),
     ],
     plannedSurfaces: [
-      new RicochetSurface("s1", {
+      new RicochetSurface("L-shape-0", {
         start: { x: 400, y: 300 },
         end: { x: 600, y: 300 },
       }),
-      new RicochetSurface("s2", {
+      new RicochetSurface("L-shape-1", {
         start: { x: 600, y: 300 },
         end: { x: 600, y: 500 },
       }),
@@ -68,18 +69,18 @@ export const EDGE_SCENES: Scene[] = [
   {
     name: "near-parallel",
     description: "Two almost parallel surfaces",
-    allSurfaces: [
-      new RicochetSurface("p1", {
-        start: { x: 400, y: 300 },
-        end: { x: 600, y: 300 },
-      }),
-      new RicochetSurface("p2", {
-        start: { x: 400, y: 302 }, // 2 pixels apart, nearly parallel
-        end: { x: 600, y: 298 },
-      }),
+    allChains: [
+      createRicochetChain("p1", [
+        { x: 400, y: 300 },
+        { x: 600, y: 300 },
+      ]),
+      createRicochetChain("p2", [
+        { x: 400, y: 302 }, // 2 pixels apart, nearly parallel
+        { x: 600, y: 298 },
+      ]),
     ],
     plannedSurfaces: [
-      new RicochetSurface("p1", {
+      new RicochetSurface("p1-0", {
         start: { x: 400, y: 300 },
         end: { x: 600, y: 300 },
       }),
@@ -90,27 +91,26 @@ export const EDGE_SCENES: Scene[] = [
   {
     name: "wall-with-gap",
     description: "Surface with wall obstacle that has a gap",
-    allSurfaces: [
-      new RicochetSurface("target", {
-        start: { x: 500, y: 200 },
-        end: { x: 700, y: 200 },
-      }),
-      // Wall with gap in the middle
-      new WallSurface("wall-left", {
-        start: { x: 300, y: 400 },
-        end: { x: 550, y: 400 },
-      }),
-      new WallSurface("wall-right", {
-        start: { x: 650, y: 400 },
-        end: { x: 900, y: 400 },
-      }),
+    allChains: [
+      createRicochetChain("target", [
+        { x: 500, y: 200 },
+        { x: 700, y: 200 },
+      ]),
+      // Wall with gap in the middle (two separate chains)
+      createWallChain("wall-left", [
+        { x: 300, y: 400 },
+        { x: 550, y: 400 },
+      ]),
+      createWallChain("wall-right", [
+        { x: 650, y: 400 },
+        { x: 900, y: 400 },
+      ]),
     ],
     plannedSurfaces: [
-      new RicochetSurface("target", {
+      new RicochetSurface("target-0", {
         start: { x: 500, y: 200 },
         end: { x: 700, y: 200 },
       }),
     ],
   },
 ];
-

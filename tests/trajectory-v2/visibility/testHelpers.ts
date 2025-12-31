@@ -4,9 +4,27 @@
  * Helper functions for testing the visibility/shadow system.
  */
 
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
-import type { ValidRegionOutline } from "@/trajectory-v2/visibility/OutlineBuilder";
 import type { Surface } from "@/surfaces/Surface";
+import { type SurfaceChain, createSingleSurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import type { Vector2 } from "@/trajectory-v2/geometry/types";
+
+/**
+ * Outline vertex type (simplified from deleted OutlineBuilder).
+ */
+interface OutlineVertex {
+  position: Vector2;
+  type: string;
+  sourceId?: string;
+}
+
+/**
+ * Valid region outline (simplified from deleted OutlineBuilder).
+ */
+interface ValidRegionOutline {
+  vertices: OutlineVertex[];
+  origin: Vector2;
+  isValid: boolean;
+}
 
 /**
  * Check if a point is inside a polygon using ray casting algorithm.
@@ -273,5 +291,12 @@ export function percentInValidRegion(
   
   const inRegion = points.filter((p) => isPointInValidRegion(p, outline)).length;
   return (inRegion / points.length) * 100;
+}
+
+/**
+ * Wrap an array of surfaces in single-surface chains for testing.
+ */
+export function toChains(surfaces: Surface[]): SurfaceChain[] {
+  return surfaces.map((s) => createSingleSurfaceChain(s));
 }
 

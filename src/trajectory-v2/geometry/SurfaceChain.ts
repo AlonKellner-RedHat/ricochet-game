@@ -13,7 +13,10 @@
  * - Lazy Computation: Surfaces are computed once on first access
  */
 
+import { RicochetSurface } from "@/surfaces/RicochetSurface";
 import type { Surface } from "@/surfaces/Surface";
+import { WallSurface } from "@/surfaces/WallSurface";
+import { Endpoint } from "./SourcePoint";
 import type { Vector2 } from "./types";
 
 // =============================================================================
@@ -50,49 +53,6 @@ export interface ChainVertex {
 }
 
 // =============================================================================
-// CHAIN ENDPOINT (for open chains)
-// =============================================================================
-
-/**
- * Represents an exposed endpoint of an open chain.
- * This is a temporary class that will be merged with SourcePoint.Endpoint later.
- */
-export class ChainEndpoint {
-  readonly type = "chain-endpoint" as const;
-
-  constructor(
-    readonly chain: SurfaceChain,
-    readonly which: "start" | "end"
-  ) {}
-
-  /**
-   * Compute the actual coordinates of this endpoint.
-   */
-  computeXY(): Vector2 {
-    if (this.which === "start") {
-      return this.chain.getVertex(0).position;
-    } else {
-      return this.chain.getVertex(this.chain.vertexCount - 1).position;
-    }
-  }
-
-  /**
-   * Get the surface this endpoint is attached to.
-   */
-  get surface(): Surface {
-    const surfaces = this.chain.getSurfaces();
-    return this.which === "start" ? surfaces[0] : surfaces[surfaces.length - 1];
-  }
-
-  /**
-   * Get a unique key for this endpoint.
-   */
-  getKey(): string {
-    return `chain-endpoint:${this.chain.id}:${this.which}`;
-  }
-}
-
-// =============================================================================
 // JUNCTION POINT (for connected vertices)
 // =============================================================================
 
@@ -120,14 +80,17 @@ export class JunctionPoint {
    */
   getSurfaceBefore(): Surface {
     const surfaces = this.chain.getSurfaces();
+    let surface: Surface | undefined;
     if (this.chain.isClosed) {
       // In closed chain, vertex 0's "before" is the last surface
       const beforeIndex = (this.vertexIndex - 1 + surfaces.length) % surfaces.length;
-      return surfaces[beforeIndex];
+      surface = surfaces[beforeIndex];
     } else {
       // In open chain, the before surface is at index (vertexIndex - 1)
-      return surfaces[this.vertexIndex - 1];
+      surface = surfaces[this.vertexIndex - 1];
     }
+    if (!surface) throw new Error("Junction has no surface before");
+    return surface;
   }
 
   /**
@@ -135,13 +98,16 @@ export class JunctionPoint {
    */
   getSurfaceAfter(): Surface {
     const surfaces = this.chain.getSurfaces();
+    let surface: Surface | undefined;
     if (this.chain.isClosed) {
       // In closed chain, wrap around
-      return surfaces[this.vertexIndex % surfaces.length];
+      surface = surfaces[this.vertexIndex % surfaces.length];
     } else {
       // In open chain, the after surface is at index (vertexIndex)
-      return surfaces[this.vertexIndex];
+      surface = surfaces[this.vertexIndex];
     }
+    if (!surface) throw new Error("Junction has no surface after");
+    return surface;
   }
 
   /**
@@ -184,7 +150,7 @@ export class SurfaceChain {
   /** Cached junction points */
   private _junctionPoints: readonly JunctionPoint[] | null = null;
   /** Cached endpoints (null for closed chains) */
-  private _endpoints: readonly [ChainEndpoint, ChainEndpoint] | null | undefined = undefined;
+  private _endpoints: readonly [Endpoint, Endpoint] | null | undefined = undefined;
 
   constructor(config: ChainConfig) {
     if (config.vertices.length < 2) {
@@ -214,10 +180,11 @@ export class SurfaceChain {
    * Get a vertex by index.
    */
   getVertex(index: number): ChainVertex {
-    if (index < 0 || index >= this._vertices.length) {
+    const vertex = this._vertices[index];
+    if (!vertex) {
       throw new Error(`Vertex index ${index} out of bounds [0, ${this._vertices.length - 1}]`);
     }
-    return this._vertices[index];
+    return vertex;
   }
 
   /**
@@ -242,9 +209,12 @@ export class SurfaceChain {
     const surfaceCount = this.isClosed ? n : n - 1;
 
     for (let i = 0; i < surfaceCount; i++) {
-      const start = this._vertices[i].position;
-      const end = this._vertices[(i + 1) % n].position;
-      surfaces.push(this._surfaceFactory(i, start, end));
+      const startVertex = this._vertices[i];
+      const endVertex = this._vertices[(i + 1) % n];
+      if (!startVertex || !endVertex) {
+        throw new Error("Invalid vertex index in chain");
+      }
+      surfaces.push(this._surfaceFactory(i, startVertex.position, endVertex.position));
     }
 
     return surfaces;
@@ -253,16 +223,24 @@ export class SurfaceChain {
   /**
    * Get the endpoints of this chain.
    * Returns null for closed chains (no endpoints).
-   * Returns [startEndpoint, endEndpoint] for open chains.
+   * Returns [startEndpoint, endEndpoint] for open chains, using Endpoint from SourcePoint.
    */
-  getEndpoints(): readonly [ChainEndpoint, ChainEndpoint] | null {
+  getEndpoints(): readonly [Endpoint, Endpoint] | null {
     if (this._endpoints === undefined) {
       if (this.isClosed) {
         this._endpoints = null;
       } else {
+        const surfaces = this.getSurfaces();
+        const firstSurface = surfaces[0];
+        const lastSurface = surfaces[surfaces.length - 1];
+        if (!firstSurface || !lastSurface) {
+          throw new Error("Chain has no surfaces for endpoints");
+        }
+        // Chain start = first surface's start endpoint
+        // Chain end = last surface's end endpoint
         this._endpoints = [
-          new ChainEndpoint(this, "start"),
-          new ChainEndpoint(this, "end"),
+          new Endpoint(firstSurface, "start"),
+          new Endpoint(lastSurface, "end"),
         ];
       }
     }
@@ -315,10 +293,65 @@ export function isJunctionPoint(point: unknown): point is JunctionPoint {
   return point instanceof JunctionPoint;
 }
 
+// ChainEndpoint has been removed - use Endpoint from SourcePoint instead
+
+// =============================================================================
+// FACTORY FUNCTIONS
+// =============================================================================
+
 /**
- * Type guard for ChainEndpoint.
+ * Create a chain of RicochetSurfaces from vertices.
+ * All surfaces in the chain will be reflective.
+ *
+ * @param id - Base ID for the chain (surfaces will be named `${id}-0`, `${id}-1`, etc.)
+ * @param vertices - Array of vertex positions (minimum 2)
+ * @param isClosed - If true, the chain loops back (default: false)
  */
-export function isChainEndpoint(point: unknown): point is ChainEndpoint {
-  return point instanceof ChainEndpoint;
+export function createRicochetChain(
+  id: string,
+  vertices: Vector2[],
+  isClosed = false
+): SurfaceChain {
+  return new SurfaceChain({
+    vertices,
+    isClosed,
+    surfaceFactory: (index, start, end) =>
+      new RicochetSurface(`${id}-${index}`, { start, end }),
+  });
+}
+
+/**
+ * Create a chain of WallSurfaces from vertices.
+ * All surfaces in the chain will be blocking (non-reflective).
+ *
+ * @param id - Base ID for the chain (surfaces will be named `${id}-0`, `${id}-1`, etc.)
+ * @param vertices - Array of vertex positions (minimum 2)
+ * @param isClosed - If true, the chain loops back (default: false)
+ */
+export function createWallChain(
+  id: string,
+  vertices: Vector2[],
+  isClosed = false
+): SurfaceChain {
+  return new SurfaceChain({
+    vertices,
+    isClosed,
+    surfaceFactory: (index, start, end) =>
+      new WallSurface(`${id}-${index}`, { start, end }),
+  });
+}
+
+/**
+ * Create a single-surface chain from a Surface.
+ * Convenience wrapper for existing Surface objects.
+ *
+ * @param surface - The surface to wrap in a chain
+ */
+export function createSingleSurfaceChain(surface: Surface): SurfaceChain {
+  return new SurfaceChain({
+    vertices: [surface.segment.start, surface.segment.end],
+    isClosed: false,
+    surfaceFactory: () => surface,
+  });
 }
 

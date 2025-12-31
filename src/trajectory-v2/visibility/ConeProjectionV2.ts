@@ -29,12 +29,10 @@ import {
   HitPoint,
   OriginPoint,
   type SourcePoint,
-  endOf,
   isEndpoint,
   isHitPoint,
-  startOf,
 } from "@/trajectory-v2/geometry/SourcePoint";
-import { type JunctionPoint, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
+import { type JunctionPoint, type SurfaceChain, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Ray, Vector2 } from "@/trajectory-v2/geometry/types";
 
 // =============================================================================
@@ -608,12 +606,35 @@ function isEndpointOnOtherSurface(
   // should still have continuation rays
   for (const surface of obstacles) {
     if (surface.id === ownSurfaceId) continue;
-    if (isPointOnSegment(point, surface.segment.start, surface.segment.end, EPSILON)) {
+    const isOnSegment = isPointOnSegment(point, surface.segment.start, surface.segment.end, EPSILON);
+    const isSharedEndpoint = isPointAtEndpoint(point, surface.segment.start, surface.segment.end, EPSILON);
+    
+    // #region agent log
+    if (isOnSegment || isSharedEndpoint) {
+      fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:isEndpointOnOtherSurface',message:'Corner detection',data:{endpointSurface:ownSurfaceId,endpointWhich:endpoint.which,point:{x:point.x,y:point.y},otherSurface:surface.id,isOnSegment,isSharedEndpoint},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1-H5'})}).catch(()=>{});
+    }
+    // #endregion
+    
+    if (isOnSegment || isSharedEndpoint) {
       return true;
     }
   }
 
   return false;
+}
+
+/**
+ * Check if a point is at an endpoint of a segment (shared endpoint / joint point).
+ */
+function isPointAtEndpoint(
+  point: Vector2,
+  segStart: Vector2,
+  segEnd: Vector2,
+  epsilon: number
+): boolean {
+  const distToStart = Math.hypot(point.x - segStart.x, point.y - segStart.y);
+  const distToEnd = Math.hypot(point.x - segEnd.x, point.y - segEnd.y);
+  return distToStart < epsilon || distToEnd < epsilon;
 }
 
 /**
@@ -637,8 +658,10 @@ function isPointOnSegment(
   // Project point onto line and get parameter t
   const t = ((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lenSq;
 
-  // Check if t is within segment bounds
-  if (t < -epsilon || t > 1 + epsilon) {
+  // Check if t is within segment bounds (STRICTLY interior, not at endpoints)
+  // For corner detection, we only care about points that are IN the middle of another segment,
+  // not at the endpoints. Two surfaces sharing an endpoint is NOT the same as a corner.
+  if (t < epsilon || t > 1 - epsilon) {
     return false;
   }
 
@@ -723,6 +746,17 @@ function castRayToEndpoint(
 
       const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
+        // PROVENANCE CHECK: If the hit point is exactly at the target endpoint's coordinates,
+        // this is NOT a blocking hit - they share the same point (shared endpoint between surfaces)
+        if (hit.s === 0 || hit.s === 1) {
+          const hitX = obstacle.segment.start.x + hit.s * (obstacle.segment.end.x - obstacle.segment.start.x);
+          const hitY = obstacle.segment.start.y + hit.s * (obstacle.segment.end.y - obstacle.segment.start.y);
+          const targetXY = targetEndpoint.computeXY();
+          if (hitX === targetXY.x && hitY === targetXY.y) {
+            // Hit is at the same point as target - not a block
+            continue;
+          }
+        }
         closestT = hit.t;
         closestSurface = obstacle;
         closestS = hit.s;
@@ -934,10 +968,15 @@ type RayTarget = Endpoint | JunctionPoint;
  * Project a cone through obstacles to create a visibility polygon.
  *
  * Returns SourcePoint[] for exact operations, with computeXY() for rendering.
+ *
+ * @param source - The cone source (origin and optional window)
+ * @param chains - All surface chains (game surfaces)
+ * @param bounds - Screen boundaries configuration
+ * @param excludeSurfaceId - Optional surface ID to exclude (for reflection cones)
  */
 export function projectConeV2(
   source: ConeSource,
-  obstacles: readonly Surface[],
+  chains: readonly SurfaceChain[],
   bounds: ScreenBoundsConfig,
   excludeSurfaceId?: string
 ): SourcePoint[] {
@@ -949,18 +988,28 @@ export function projectConeV2(
   const screenBoundaries = createScreenBoundaries(bounds);
   const screenChain = createScreenBoundaryChain(bounds);
 
+  // Extract all surfaces from chains for ray-casting
+  const allSurfaces = chains.flatMap((c) => c.getSurfaces());
+
   // Filter out excluded surface
   const effectiveObstacles = excludeSurfaceId
-    ? obstacles.filter((o) => o.id !== excludeSurfaceId)
-    : obstacles;
+    ? allSurfaces.filter((o) => o.id !== excludeSurfaceId)
+    : allSurfaces;
 
-  // Collect all ray targets
+  // Collect all ray targets from chains
   const rayTargets: RayTarget[] = [];
 
-  // Add game surface endpoints (using Endpoint from SourcePoint)
-  for (const obstacle of obstacles) {
-    rayTargets.push(startOf(obstacle));
-    rayTargets.push(endOf(obstacle));
+  // Add chain endpoints (Endpoint objects) - these get continuation rays
+  for (const chain of chains) {
+    const endpoints = chain.getEndpoints();
+    if (endpoints) {
+      rayTargets.push(endpoints[0]); // Chain start endpoint
+      rayTargets.push(endpoints[1]); // Chain end endpoint
+    }
+    // Add junction points (internal joints) - NO continuation rays
+    for (const junction of chain.getJunctionPoints()) {
+      rayTargets.push(junction);
+    }
   }
 
   // Add screen boundary corners as JunctionPoints (from SurfaceChain)
@@ -1046,6 +1095,11 @@ export function projectConeV2(
           screenBoundaries
         );
 
+        // #region agent log
+        const epXY = targetEndpoint.computeXY();
+        fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:projectConeV2',message:'Continuation decision',data:{endpoint:{surface:targetEndpoint.surface.id,which:targetEndpoint.which,x:epXY.x,y:epXY.y},isAtCorner,willCastContinuation:!isAtCorner},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
+        // #endregion
+
         if (!isAtCorner) {
           // Cast continuation ray - may need to recursively continue if it hits another endpoint
           let currentEndpoint = targetEndpoint;
@@ -1063,6 +1117,12 @@ export function projectConeV2(
             );
             
             if (!continuation) break;
+            
+            // #region agent log
+            const contXY = continuation.computeXY();
+            const curXY = currentEndpoint.computeXY();
+            fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:projectConeV2',message:'Continuation cast',data:{from:{surface:currentEndpoint.surface.id,which:currentEndpoint.which,x:curXY.x,y:curXY.y},to:{x:contXY.x,y:contXY.y},continuationType:continuation.constructor.name},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
+            // #endregion
             
             vertices.push(continuation);
             
@@ -1113,6 +1173,11 @@ export function projectConeV2(
     if (rightHit) vertices.push(rightHit);
   }
 
+  // #region agent log
+  const rawVerts = vertices.map(v => {const xy = v.computeXY(); return {type:v.constructor.name,x:xy.x.toFixed(2),y:xy.y.toFixed(2)};});
+  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:projectConeV2',message:'Raw vertices before dedup',data:{count:vertices.length,vertices:rawVerts.slice(0,20)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+  // #endregion
+
   // Remove duplicate points using equals()
   const uniqueVertices = removeDuplicatesSourcePoint(vertices);
 
@@ -1142,15 +1207,11 @@ function removeDuplicatesSourcePoint(points: SourcePoint[]): SourcePoint[] {
     }
     if (isDuplicate) continue;
 
-    // For screen corners (shared between boundaries), dedupe by coordinates
-    // But for game surface endpoints at corners, keep BOTH even if same coords
-    const isScreenBoundary = isEndpoint(p) && p.surface.id.startsWith("screen-");
-
-    if (isScreenBoundary) {
-      const coordKey = `${xy.x},${xy.y}`;
-      if (seenScreenCornerCoords.has(coordKey)) continue;
-      seenScreenCornerCoords.add(coordKey);
-    }
+    // For all endpoints at the same coordinates, keep only one
+    // Two surfaces sharing an endpoint (like at a corner) should produce only one polygon vertex
+    const coordKey = `${xy.x},${xy.y}`;
+    if (seenScreenCornerCoords.has(coordKey)) continue;
+    seenScreenCornerCoords.add(coordKey);
 
     result.push(p);
   }

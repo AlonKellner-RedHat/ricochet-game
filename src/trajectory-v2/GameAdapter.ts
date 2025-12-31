@@ -7,6 +7,7 @@
  */
 
 import type { Surface } from "@/surfaces/Surface";
+import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { AlignmentResult, DualTrajectoryResult } from "@/types";
 import type Phaser from "phaser";
@@ -64,7 +65,6 @@ export class GameAdapter {
 
   // Cached state for visibility rendering
   private lastPlayer: Vector2 = { x: 0, y: 0 };
-  private lastAllSurfaces: readonly Surface[] = [];
   private lastWindowConfig: WindowConfig | null = null;
 
   constructor(scene: Phaser.Scene, config: GameAdapterConfig = {}) {
@@ -182,7 +182,7 @@ export class GameAdapter {
    * @param player - Player position
    * @param cursor - Cursor position
    * @param plannedSurfaces - Surfaces in the plan
-   * @param allSurfaces - All surfaces in the scene
+   * @param allChains - All surface chains in the scene
    * @param windowConfig - Optional window configuration for cone projection (single or multi-window)
    */
   update(
@@ -190,13 +190,15 @@ export class GameAdapter {
     player: Vector2,
     cursor: Vector2,
     plannedSurfaces: readonly Surface[],
-    allSurfaces: readonly Surface[],
+    allChains: readonly SurfaceChain[],
     windowConfig: WindowConfig | null = null
   ): void {
     // Cache for visibility rendering
     this.lastPlayer = player;
-    this.lastAllSurfaces = allSurfaces;
     this.lastWindowConfig = windowConfig;
+
+    // Extract all surfaces from chains for the engine
+    const allSurfaces = allChains.flatMap((c) => c.getSurfaces());
 
     // Update engine inputs
     this.engine.setPlayer(player);
@@ -212,7 +214,7 @@ export class GameAdapter {
 
     // Render valid region overlay
     if (this.validRegionRenderer && this.showValidRegion) {
-      this.validRegionRenderer.render(player, plannedSurfaces, allSurfaces, windowConfig);
+      this.validRegionRenderer.render(player, plannedSurfaces, allChains, windowConfig);
     }
   }
 

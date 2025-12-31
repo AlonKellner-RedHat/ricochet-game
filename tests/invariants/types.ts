@@ -10,6 +10,7 @@
  */
 
 import type { Surface } from "@/surfaces/Surface";
+import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 /**
@@ -22,8 +23,8 @@ export interface Scene {
   /** Human-readable description */
   readonly description: string;
 
-  /** All surfaces in the scene */
-  readonly allSurfaces: Surface[];
+  /** All surface chains in the scene */
+  readonly allChains: SurfaceChain[];
 
   /** Surfaces that are part of the aiming plan */
   readonly plannedSurfaces: Surface[];

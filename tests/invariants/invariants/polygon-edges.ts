@@ -55,7 +55,9 @@ function isEdgeAlongSurface(
   p2: Vector2,
   context: InvariantContext
 ): boolean {
-  for (const surface of context.scene.allSurfaces) {
+  // Extract all surfaces from all chains
+  const allSurfaces = context.scene.allChains.flatMap((c) => c.getSurfaces());
+  for (const surface of allSurfaces) {
     const seg = surface.segment;
 
     // Check if both points are on the surface's line

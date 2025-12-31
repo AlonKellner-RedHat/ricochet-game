@@ -15,7 +15,7 @@
 import { describe, it, expect } from "vitest";
 import { createFullCone, projectConeV2, toVector2Array } from "@/trajectory-v2/visibility/ConeProjectionV2";
 import type { ScreenBoundsConfig } from "@/trajectory-v2/geometry/ScreenBoundaries";
-import { createTestSurface } from "./testHelpers";
+import { createTestSurface, toChains } from "./testHelpers";
 
 const SCREEN_BOUNDS: ScreenBoundsConfig = {
   minX: 0,
@@ -33,7 +33,7 @@ describe("Vertical Surface Collinear Bug", () => {
     const player = { x: 849.9112183200014, y: 666 };
     const cone = createFullCone(player);
 
-    const points = projectConeV2(cone, [verticalSurface], SCREEN_BOUNDS);
+    const points = projectConeV2(cone, toChains([verticalSurface]), SCREEN_BOUNDS);
     const vertices = toVector2Array(points);
 
     console.log("Vertices around vertical surface:");
@@ -73,7 +73,7 @@ describe("Vertical Surface Collinear Bug", () => {
     const player = { x: 850.865661985002, y: 666 };
     const cone = createFullCone(player);
 
-    const points = projectConeV2(cone, [verticalSurface], SCREEN_BOUNDS);
+    const points = projectConeV2(cone, toChains([verticalSurface]), SCREEN_BOUNDS);
     const vertices = toVector2Array(points);
 
     const idx350 = vertices.findIndex((v) => Math.abs(v.x - 850) < 0.1 && Math.abs(v.y - 350) < 0.1);
@@ -98,13 +98,13 @@ describe("Vertical Surface Collinear Bug", () => {
     // LEFT case (x < 850)
     const playerLeft = { x: 849.9112183200014, y: 666 };
     const coneLeft = createFullCone(playerLeft);
-    const pointsLeft = projectConeV2(coneLeft, [verticalSurface], SCREEN_BOUNDS);
+    const pointsLeft = projectConeV2(coneLeft, toChains([verticalSurface]), SCREEN_BOUNDS);
     const verticesLeft = toVector2Array(pointsLeft);
 
     // RIGHT case (x > 850)
     const playerRight = { x: 850.865661985002, y: 666 };
     const coneRight = createFullCone(playerRight);
-    const pointsRight = projectConeV2(coneRight, [verticalSurface], SCREEN_BOUNDS);
+    const pointsRight = projectConeV2(coneRight, toChains([verticalSurface]), SCREEN_BOUNDS);
     const verticesRight = toVector2Array(pointsRight);
 
     // Find order in both cases
@@ -154,8 +154,8 @@ describe("Vertical Surface Collinear Bug", () => {
     const coneLeft = createFullCone(playerLeft);
     const coneRight = createFullCone(playerRight);
 
-    const pointsLeft = projectConeV2(coneLeft, [surfaceA, surfaceB], SCREEN_BOUNDS);
-    const pointsRight = projectConeV2(coneRight, [surfaceA, surfaceB], SCREEN_BOUNDS);
+    const pointsLeft = projectConeV2(coneLeft, toChains([surfaceA, surfaceB]), SCREEN_BOUNDS);
+    const pointsRight = projectConeV2(coneRight, toChains([surfaceA, surfaceB]), SCREEN_BOUNDS);
 
     const verticesLeft = toVector2Array(pointsLeft);
     const verticesRight = toVector2Array(pointsRight);
@@ -217,8 +217,8 @@ describe("Vertical Surface Collinear Bug", () => {
     const coneAbove = createFullCone(playerAbove);
     const coneBelow = createFullCone(playerBelow);
 
-    const pointsAbove = projectConeV2(coneAbove, [horizontalSurface], SCREEN_BOUNDS);
-    const pointsBelow = projectConeV2(coneBelow, [horizontalSurface], SCREEN_BOUNDS);
+    const pointsAbove = projectConeV2(coneAbove, toChains([horizontalSurface]), SCREEN_BOUNDS);
+    const pointsBelow = projectConeV2(coneBelow, toChains([horizontalSurface]), SCREEN_BOUNDS);
 
     const verticesAbove = toVector2Array(pointsAbove);
     const verticesBelow = toVector2Array(pointsBelow);

@@ -1,9 +1,14 @@
 import { DebugView, InputManager } from "@/core";
 import { Player } from "@/player";
-import { RicochetSurface, WallSurface } from "@/surfaces";
+// RicochetSurface and WallSurface now created via chain factories
 import type { Surface } from "@/surfaces";
 import { GameAdapter } from "@/trajectory-v2/GameAdapter";
 import { TrajectoryDebugLogger } from "@/trajectory-v2/TrajectoryDebugLogger";
+import {
+  type SurfaceChain,
+  createRicochetChain,
+  createWallChain,
+} from "@/trajectory-v2/geometry/SurfaceChain";
 import {
   type Segment,
   type WindowConfig,
@@ -37,12 +42,19 @@ export class GameScene extends Phaser.Scene {
   // Arrow graphics (separate from trajectory graphics)
   private arrowGraphics!: Phaser.GameObjects.Graphics;
 
-  // Demo surfaces
-  private surfaces: Surface[] = [];
+  // Demo surfaces - stored as chains, surfaces derived from chains
+  private surfaceChains: SurfaceChain[] = [];
   private surfaceGraphics!: Phaser.GameObjects.Graphics;
 
   // Hover state
   private hoveredSurface: Surface | null = null;
+
+  /**
+   * Get all surfaces from all chains (for hover detection, plan checking, etc.)
+   */
+  private get surfaces(): readonly Surface[] {
+    return this.surfaceChains.flatMap((c) => c.getSurfaces());
+  }
 
   // Player (movement only)
   private player!: Player;
@@ -230,7 +242,7 @@ export class GameScene extends Phaser.Scene {
       this.player.bowPosition,
       pointer,
       this.trajectoryAdapter.getPlannedSurfaces(),
-      this.surfaces,
+      this.surfaceChains,
       windowConfig
     );
 
@@ -461,60 +473,60 @@ export class GameScene extends Phaser.Scene {
 
     // === 1. BOUNDARIES ===
     // Floor (non-reflective)
-    this.surfaces.push(
-      new WallSurface("floor", {
-        start: { x: 0, y: height - 20 },
-        end: { x: width, y: height - 20 },
-      })
+    this.surfaceChains.push(
+      createWallChain("floor", [
+        { x: 0, y: height - 20 },
+        { x: width, y: height - 20 },
+      ])
     );
 
     // Ceiling (reflective, normal pointing down - segment goes left-to-right)
-    this.surfaces.push(
-      new RicochetSurface("ceiling", {
-        start: { x: 0, y: 80 },
-        end: { x: width, y: 80 },
-      })
+    this.surfaceChains.push(
+      createRicochetChain("ceiling", [
+        { x: 0, y: 80 },
+        { x: width, y: 80 },
+      ])
     );
 
     // Left wall (reflective, normal pointing right - segment goes bottom-to-top)
-    this.surfaces.push(
-      new RicochetSurface("left-wall", {
-        start: { x: 20, y: height - 20 },
-        end: { x: 20, y: 80 },
-      })
+    this.surfaceChains.push(
+      createRicochetChain("left-wall", [
+        { x: 20, y: height - 20 },
+        { x: 20, y: 80 },
+      ])
     );
 
     // Right wall (non-reflective)
-    this.surfaces.push(
-      new WallSurface("right-wall", {
-        start: { x: width - 20, y: 80 },
-        end: { x: width - 20, y: height - 20 },
-      })
+    this.surfaceChains.push(
+      createWallChain("right-wall", [
+        { x: width - 20, y: 80 },
+        { x: width - 20, y: height - 20 },
+      ])
     );
 
     // Simple platform for player to stand on
-    this.surfaces.push(
-      new WallSurface("platform", {
-        start: { x: 50, y: height - 100 },
-        end: { x: 200, y: height - 100 },
-      })
+    this.surfaceChains.push(
+      createWallChain("platform", [
+        { x: 50, y: height - 100 },
+        { x: 200, y: height - 100 },
+      ])
     );
 
     // === 2. TWO TALL VERTICAL SURFACES FACING EACH OTHER ===
     // Left mirror (normal pointing right - segment goes bottom-to-top)
-    this.surfaces.push(
-      new RicochetSurface("mirror-left", {
-        start: { x: 250, y: 550 },
-        end: { x: 250, y: 150 },
-      })
+    this.surfaceChains.push(
+      createRicochetChain("mirror-left", [
+        { x: 250, y: 550 },
+        { x: 250, y: 150 },
+      ])
     );
 
     // Right mirror (normal pointing left - segment goes top-to-bottom)
-    this.surfaces.push(
-      new RicochetSurface("mirror-right", {
-        start: { x: 550, y: 150 },
-        end: { x: 550, y: 550 },
-      })
+    this.surfaceChains.push(
+      createRicochetChain("mirror-right", [
+        { x: 550, y: 150 },
+        { x: 550, y: 550 },
+      ])
     );
 
     // === 3. INVERTED PYRAMID (stacked horizontal surfaces, shortest at bottom, longest at top) ===
@@ -524,36 +536,30 @@ export class GameScene extends Phaser.Scene {
     const pyramidBaseY = 500;
     const pyramidSpacing = 40;
 
-    // Bottom (shortest) - 40px wide
-    this.surfaces.push(
-      new RicochetSurface("pyramid-1", {
-        start: { x: pyramidCenterX - 20, y: pyramidBaseY },
-        end: { x: pyramidCenterX + 20, y: pyramidBaseY },
-      })
+    // Each pyramid level is a separate chain (no shared endpoints)
+    this.surfaceChains.push(
+      createRicochetChain("pyramid-1", [
+        { x: pyramidCenterX - 20, y: pyramidBaseY },
+        { x: pyramidCenterX + 20, y: pyramidBaseY },
+      ])
     );
-
-    // Second level - 70px wide
-    this.surfaces.push(
-      new RicochetSurface("pyramid-2", {
-        start: { x: pyramidCenterX - 35, y: pyramidBaseY - pyramidSpacing },
-        end: { x: pyramidCenterX + 35, y: pyramidBaseY - pyramidSpacing },
-      })
+    this.surfaceChains.push(
+      createRicochetChain("pyramid-2", [
+        { x: pyramidCenterX - 35, y: pyramidBaseY - pyramidSpacing },
+        { x: pyramidCenterX + 35, y: pyramidBaseY - pyramidSpacing },
+      ])
     );
-
-    // Third level - 100px wide
-    this.surfaces.push(
-      new RicochetSurface("pyramid-3", {
-        start: { x: pyramidCenterX - 50, y: pyramidBaseY - pyramidSpacing * 2 },
-        end: { x: pyramidCenterX + 50, y: pyramidBaseY - pyramidSpacing * 2 },
-      })
+    this.surfaceChains.push(
+      createRicochetChain("pyramid-3", [
+        { x: pyramidCenterX - 50, y: pyramidBaseY - pyramidSpacing * 2 },
+        { x: pyramidCenterX + 50, y: pyramidBaseY - pyramidSpacing * 2 },
+      ])
     );
-
-    // Top (longest) - 130px wide
-    this.surfaces.push(
-      new RicochetSurface("pyramid-4", {
-        start: { x: pyramidCenterX - 65, y: pyramidBaseY - pyramidSpacing * 3 },
-        end: { x: pyramidCenterX + 65, y: pyramidBaseY - pyramidSpacing * 3 },
-      })
+    this.surfaceChains.push(
+      createRicochetChain("pyramid-4", [
+        { x: pyramidCenterX - 65, y: pyramidBaseY - pyramidSpacing * 3 },
+        { x: pyramidCenterX + 65, y: pyramidBaseY - pyramidSpacing * 3 },
+      ])
     );
 
     // === 4. 4x4 GRID OF SMALL REFLECTIVE SURFACES ===
@@ -590,7 +596,7 @@ export class GameScene extends Phaser.Scene {
 
         // Pick random direction from 8 options
         const dirIndex = Math.floor(seededRandom() * 8);
-        const angle = directions[dirIndex];
+        const angle = directions[dirIndex] ?? 0;
 
         // Calculate surface endpoints (surface is perpendicular to facing direction)
         // The surface line is perpendicular to the normal direction
@@ -604,66 +610,52 @@ export class GameScene extends Phaser.Scene {
         const endX = centerX - Math.cos(surfaceAngle) * halfLen;
         const endY = centerY - Math.sin(surfaceAngle) * halfLen;
 
-        this.surfaces.push(
-          new RicochetSurface(`grid-${row}-${col}`, {
-            start: { x: startX, y: startY },
-            end: { x: endX, y: endY },
-      })
-    );
+        this.surfaceChains.push(
+          createRicochetChain(`grid-${row}-${col}`, [
+            { x: startX, y: startY },
+            { x: endX, y: endY },
+          ])
+        );
       }
     }
 
     // === 5. THREE TWO-SURFACE CHAINS (^-shapes with apex pointing UP, reflective side facing DOWN) ===
     // Apex at top, arms extend downward. Reflective sides face down (toward ground).
+    // These are TRUE chains with 3 vertices - the apex is a JunctionPoint (no continuation rays)
     const chainLength = 60;
     const chainApexY = 250; // Apex Y position (top of the ^)
 
     // Chain 1: 120 degrees between surfaces (each arm 60 degrees from vertical)
     const chain1X = 650;
     const angle1 = (60 * Math.PI) / 180;
-    this.surfaces.push(
-      // Left arm: from bottom-left to apex (normal points down-right)
-      new RicochetSurface("chain1-left", {
-        start: { x: chain1X - Math.sin(angle1) * chainLength, y: chainApexY + Math.cos(angle1) * chainLength },
-        end: { x: chain1X, y: chainApexY },
-      }),
-      // Right arm: from apex to bottom-right (normal points down-left)
-      new RicochetSurface("chain1-right", {
-        start: { x: chain1X, y: chainApexY },
-        end: { x: chain1X + Math.sin(angle1) * chainLength, y: chainApexY + Math.cos(angle1) * chainLength },
-      })
+    this.surfaceChains.push(
+      createRicochetChain("chain1", [
+        { x: chain1X - Math.sin(angle1) * chainLength, y: chainApexY + Math.cos(angle1) * chainLength }, // Left arm outer end
+        { x: chain1X, y: chainApexY }, // Apex (JunctionPoint)
+        { x: chain1X + Math.sin(angle1) * chainLength, y: chainApexY + Math.cos(angle1) * chainLength }, // Right arm outer end
+      ])
     );
 
     // Chain 2: 90 degrees between surfaces (each arm 45 degrees from vertical)
     const chain2X = 750;
     const angle2 = (45 * Math.PI) / 180;
-    this.surfaces.push(
-      // Left arm: from bottom-left to apex (normal points down-right)
-      new RicochetSurface("chain2-left", {
-        start: { x: chain2X - Math.sin(angle2) * chainLength, y: chainApexY + Math.cos(angle2) * chainLength },
-        end: { x: chain2X, y: chainApexY },
-      }),
-      // Right arm: from apex to bottom-right (normal points down-left)
-      new RicochetSurface("chain2-right", {
-        start: { x: chain2X, y: chainApexY },
-        end: { x: chain2X + Math.sin(angle2) * chainLength, y: chainApexY + Math.cos(angle2) * chainLength },
-      })
+    this.surfaceChains.push(
+      createRicochetChain("chain2", [
+        { x: chain2X - Math.sin(angle2) * chainLength, y: chainApexY + Math.cos(angle2) * chainLength },
+        { x: chain2X, y: chainApexY },
+        { x: chain2X + Math.sin(angle2) * chainLength, y: chainApexY + Math.cos(angle2) * chainLength },
+      ])
     );
 
     // Chain 3: 60 degrees between surfaces (each arm 30 degrees from vertical)
     const chain3X = 850;
     const angle3 = (30 * Math.PI) / 180;
-    this.surfaces.push(
-      // Left arm: from bottom-left to apex (normal points down-right)
-      new RicochetSurface("chain3-left", {
-        start: { x: chain3X - Math.sin(angle3) * chainLength, y: chainApexY + Math.cos(angle3) * chainLength },
-        end: { x: chain3X, y: chainApexY },
-      }),
-      // Right arm: from apex to bottom-right (normal points down-left)
-      new RicochetSurface("chain3-right", {
-        start: { x: chain3X, y: chainApexY },
-        end: { x: chain3X + Math.sin(angle3) * chainLength, y: chainApexY + Math.cos(angle3) * chainLength },
-      })
+    this.surfaceChains.push(
+      createRicochetChain("chain3", [
+        { x: chain3X - Math.sin(angle3) * chainLength, y: chainApexY + Math.cos(angle3) * chainLength },
+        { x: chain3X, y: chainApexY },
+        { x: chain3X + Math.sin(angle3) * chainLength, y: chainApexY + Math.cos(angle3) * chainLength },
+      ])
     );
   }
 

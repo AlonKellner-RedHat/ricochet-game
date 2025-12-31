@@ -12,6 +12,7 @@
 import type { Surface } from "@/surfaces/Surface";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
 import { type SourcePoint, isEndpoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
+import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { TrajectoryDebugLogger, type VisibilityDebugInfo } from "../TrajectoryDebugLogger";
 import {
@@ -366,13 +367,13 @@ export class ValidRegionRenderer {
    *
    * @param player Player position
    * @param plannedSurfaces Planned surfaces (windows)
-   * @param allSurfaces All surfaces in the scene
+   * @param allChains All surface chains in the scene
    * @param windowConfig Optional window configuration for cone projection (single or multi-window)
    */
   render(
     player: Vector2,
     plannedSurfaces: readonly Surface[],
-    allSurfaces: readonly Surface[],
+    allChains: readonly SurfaceChain[],
     windowConfig: WindowConfig | null = null
   ): void {
     // Unified ConeProjection algorithm for all cases:
@@ -401,7 +402,7 @@ export class ValidRegionRenderer {
       const umbrellaWindows = getWindowSegments(windowConfig);
       for (const window of umbrellaWindows) {
         const cone = createConeThroughWindow(player, window.start, window.end);
-        const sourcePoints = projectConeV2(cone, allSurfaces, this.screenBounds);
+        const sourcePoints = projectConeV2(cone, allChains, this.screenBounds);
         stage1SourcePoints.push(...sourcePoints);
         const rawPolygon = toVector2Array(sourcePoints);
         const polygon = preparePolygonForRendering(rawPolygon);
@@ -412,7 +413,7 @@ export class ValidRegionRenderer {
     } else {
       // Full 360° visibility from player
       const cone = createFullCone(player);
-      const sourcePoints = projectConeV2(cone, allSurfaces, this.screenBounds);
+      const sourcePoints = projectConeV2(cone, allChains, this.screenBounds);
       stage1SourcePoints.push(...sourcePoints);
       const rawPolygon = toVector2Array(sourcePoints);
       const polygon = preparePolygonForRendering(rawPolygon);
@@ -478,7 +479,7 @@ export class ValidRegionRenderer {
           const cone = createConeThroughWindow(currentOrigin, window.start, window.end);
           const sourcePoints = projectConeV2(
             cone,
-            allSurfaces,
+            allChains,
             this.screenBounds,
             currentSurface.id // Exclude the current reflection surface
           );
