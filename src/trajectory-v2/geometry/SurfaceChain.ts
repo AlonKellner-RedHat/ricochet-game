@@ -238,10 +238,7 @@ export class SurfaceChain {
         }
         // Chain start = first surface's start endpoint
         // Chain end = last surface's end endpoint
-        this._endpoints = [
-          new Endpoint(firstSurface, "start"),
-          new Endpoint(lastSurface, "end"),
-        ];
+        this._endpoints = [new Endpoint(firstSurface, "start"), new Endpoint(lastSurface, "end")];
       }
     }
     return this._endpoints;
@@ -315,8 +312,7 @@ export function createRicochetChain(
   return new SurfaceChain({
     vertices,
     isClosed,
-    surfaceFactory: (index, start, end) =>
-      new RicochetSurface(`${id}-${index}`, { start, end }),
+    surfaceFactory: (index, start, end) => new RicochetSurface(`${id}-${index}`, { start, end }),
   });
 }
 
@@ -328,16 +324,11 @@ export function createRicochetChain(
  * @param vertices - Array of vertex positions (minimum 2)
  * @param isClosed - If true, the chain loops back (default: false)
  */
-export function createWallChain(
-  id: string,
-  vertices: Vector2[],
-  isClosed = false
-): SurfaceChain {
+export function createWallChain(id: string, vertices: Vector2[], isClosed = false): SurfaceChain {
   return new SurfaceChain({
     vertices,
     isClosed,
-    surfaceFactory: (index, start, end) =>
-      new WallSurface(`${id}-${index}`, { start, end }),
+    surfaceFactory: (index, start, end) => new WallSurface(`${id}-${index}`, { start, end }),
   });
 }
 
@@ -354,4 +345,3 @@ export function createSingleSurfaceChain(surface: Surface): SurfaceChain {
     surfaceFactory: () => surface,
   });
 }
-

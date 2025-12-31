@@ -996,6 +996,13 @@ export function projectConeV2(
     ? allSurfaces.filter((o) => o.id !== excludeSurfaceId)
     : allSurfaces;
 
+  // Pre-calculate surface orientations for all surfaces
+  // Used for: endpoint ordering, shadow boundaries, junction ray-pass-through checks
+  const surfaceOrientations = new Map<string, SurfaceOrientation>();
+  for (const surface of allSurfaces) {
+    surfaceOrientations.set(surface.id, computeSurfaceOrientation(surface, origin));
+  }
+
   // Collect all ray targets from chains
   const rayTargets: RayTarget[] = [];
 
@@ -1054,9 +1061,17 @@ export function projectConeV2(
       if (!isPointPastWindow(origin, targetXY, startLine)) continue;
     }
 
-    // Handle JunctionPoints (corners) - never cast continuation rays
+    // Handle JunctionPoints (internal joints in chains)
     if (isJunctionPoint(target)) {
-      // Cast ray to junction point (treated as a regular target, no continuation)
+      // Get the two surfaces meeting at this junction
+      const surfaceBefore = target.getSurfaceBefore();
+      const surfaceAfter = target.getSurfaceAfter();
+
+      // Create an Endpoint representation of the junction for proper sorting
+      // Use surfaceBefore's end (which IS the junction) - this enables rayPairs tracking
+      const junctionAsEndpoint = new Endpoint(surfaceBefore, "end");
+
+      // Cast ray to junction point
       const hit = castRayToTarget(
         origin,
         targetXY,
@@ -1065,7 +1080,48 @@ export function projectConeV2(
         startLine
       );
       if (hit) {
-        vertices.push(hit);
+        // Use the Endpoint for the junction instead of the raw HitPoint
+        // This enables proper shadow boundary ordering via rayPairs
+        vertices.push(junctionAsEndpoint);
+
+        // Check if continuation ray is needed based on pre-calculated surface orientations
+        // Use pre-calculated orientations (crossProduct sign indicates which side origin is on)
+        const orientBefore = surfaceOrientations.get(surfaceBefore.id);
+        const orientAfter = surfaceOrientations.get(surfaceAfter.id);
+
+        if (orientBefore && orientAfter) {
+          // crossProduct > 0: origin is on the "left" (reflective) side of the surface
+          // crossProduct < 0: origin is on the "right" (back) side of the surface
+          // crossProduct = 0: origin is collinear with the surface
+          const originOnReflectiveSideBefore = orientBefore.crossProduct > 0;
+          const originOnReflectiveSideAfter = orientAfter.crossProduct > 0;
+
+          // Ray can pass through if origin is on DIFFERENT sides of the two surfaces
+          // (one reflective, one back) - this means the surfaces "open up" toward origin
+          const canPassThrough = originOnReflectiveSideBefore !== originOnReflectiveSideAfter;
+
+          if (canPassThrough) {
+            // Ray can pass through the junction - cast continuation ray
+            // Use the endpoint-based continuation logic for proper rayPairs tracking
+            const continuation = castContinuationRay(
+              origin,
+              junctionAsEndpoint,
+              [...effectiveObstacles, ...screenBoundaries.all],
+              screenBoundaries,
+              startLine,
+              undefined // Don't exclude any surface
+            );
+
+            if (continuation) {
+              vertices.push(continuation);
+              // Track the pair for proper shadow boundary sorting
+              rayPairs.set(junctionAsEndpoint.getKey(), {
+                endpoint: junctionAsEndpoint,
+                continuation,
+              });
+            }
+          }
+        }
       }
       continue;
     }
@@ -1182,7 +1238,8 @@ export function projectConeV2(
   const uniqueVertices = removeDuplicatesSourcePoint(vertices);
 
   // Sort by angle from origin, using ray pairs for tie-breaking
-  return sortPolygonVerticesSourcePoint(uniqueVertices, origin, startLine, rayPairs);
+  // Pass pre-calculated surfaceOrientations to avoid recalculating
+  return sortPolygonVerticesSourcePoint(uniqueVertices, origin, startLine, rayPairs, surfaceOrientations);
 }
 
 /**
@@ -1240,7 +1297,8 @@ function sortPolygonVerticesSourcePoint(
   points: SourcePoint[],
   origin: Vector2,
   startLine: Segment | null,
-  rayPairs: RayPairMap
+  rayPairs: RayPairMap,
+  surfaceOrientations: Map<string, SurfaceOrientation>
 ): SourcePoint[] {
   if (points.length === 0) return [];
 
@@ -1252,20 +1310,11 @@ function sortPolygonVerticesSourcePoint(
     }
   }
 
-  // PRE-COMPUTE SURFACE ORIENTATIONS (Single Source of Truth)
-  // This is THE calculation that drives all sorting decisions for each surface.
-  // By computing it once per surface, we guarantee consistency between:
+  // SURFACE ORIENTATIONS: Passed in from projectConeV2 (calculated once)
+  // This guarantees consistency between:
   // - Endpoint ordering (which endpoint comes first in CCW)
   // - Shadow boundary (whether continuation comes before/after endpoint)
-  const surfaceOrientations = new Map<string, SurfaceOrientation>();
-  for (const p of points) {
-    if (isEndpoint(p)) {
-      const surfaceId = p.surface.id;
-      if (!surfaceOrientations.has(surfaceId)) {
-        surfaceOrientations.set(surfaceId, computeSurfaceOrientation(p.surface, origin));
-      }
-    }
-  }
+  // - Junction ray-pass-through checks
 
   // Build sortable point data for each point
   // Note: We no longer use atan2 angles for sorting - the unified cross-product
