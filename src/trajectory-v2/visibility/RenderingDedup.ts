@@ -11,13 +11,13 @@
  * - This separation keeps the math exact while allowing practical rendering
  */
 
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { type SourcePoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
+import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 /**
  * Default visual tolerance in pixels.
  * Points closer than this are considered visually identical.
- * 
+ *
  * @deprecated No longer used - deduplication is now exact (provenance-based).
  * Tolerance-based deduplication caused bugs where geometrically distinct
  * vertices from different sources were incorrectly merged.
@@ -28,11 +28,11 @@ export const VISUAL_TOLERANCE_PIXELS = 0.5;
  * Remove duplicate points from a polygon for rendering.
  *
  * IMPORTANT: Uses EXACT equality only - no tolerance/epsilon.
- * 
+ *
  * The core visibility algorithm (projectConeV2) already performs provenance-based
  * deduplication using SourcePoint.equals(). This function only removes points
  * that are EXACTLY identical (same x and y coordinates).
- * 
+ *
  * Tolerance-based deduplication was removed because it caused bugs where
  * geometrically distinct vertices from different sources (e.g., a window
  * endpoint at (1000, 420) and a computed hit at (1000.46, 420)) were
@@ -209,4 +209,3 @@ export function preparePolygonForRendering(points: SourcePoint[]): Vector2[] {
   const vectors = deduped.map((p) => p.computeXY());
   return dedupeForRendering(vectors);
 }
-

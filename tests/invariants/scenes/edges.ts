@@ -10,7 +10,10 @@ import {
   createRicochetChain,
   createWallChain,
 } from "@/trajectory-v2/geometry/SurfaceChain";
-import type { Scene } from "../types";
+import type { Scene, PlannedSequence } from "../types";
+
+/** Empty sequence baseline */
+const EMPTY_SEQUENCE: PlannedSequence = { name: "empty", surfaces: [] };
 
 /**
  * Edge case scenes.
@@ -39,6 +42,18 @@ export const EDGE_SCENES: Scene[] = [
         end: { x: 680, y: 250 },
       }),
     ],
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      {
+        name: "back-only",
+        surfaces: [
+          new RicochetSurface("back-0", {
+            start: { x: 520, y: 250 },
+            end: { x: 680, y: 250 },
+          }),
+        ],
+      },
+    ],
   },
 
   // Scene 11: Collinear endpoints - NOW A TRUE CHAIN (shared endpoint = JunctionPoint)
@@ -63,6 +78,27 @@ export const EDGE_SCENES: Scene[] = [
         end: { x: 600, y: 500 },
       }),
     ],
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      {
+        name: "L-shape-first",
+        surfaces: [
+          new RicochetSurface("L-shape-0", {
+            start: { x: 400, y: 300 },
+            end: { x: 600, y: 300 },
+          }),
+        ],
+      },
+      {
+        name: "L-shape-second",
+        surfaces: [
+          new RicochetSurface("L-shape-1", {
+            start: { x: 600, y: 300 },
+            end: { x: 600, y: 500 },
+          }),
+        ],
+      },
+    ],
   },
 
   // Scene 12: Near-parallel surfaces (numerical stability test)
@@ -84,6 +120,18 @@ export const EDGE_SCENES: Scene[] = [
         start: { x: 400, y: 300 },
         end: { x: 600, y: 300 },
       }),
+    ],
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      {
+        name: "p1-only",
+        surfaces: [
+          new RicochetSurface("p1-0", {
+            start: { x: 400, y: 300 },
+            end: { x: 600, y: 300 },
+          }),
+        ],
+      },
     ],
   },
 
@@ -111,6 +159,18 @@ export const EDGE_SCENES: Scene[] = [
         start: { x: 500, y: 200 },
         end: { x: 700, y: 200 },
       }),
+    ],
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      {
+        name: "target-only",
+        surfaces: [
+          new RicochetSurface("target-0", {
+            start: { x: 500, y: 200 },
+            end: { x: 700, y: 200 },
+          }),
+        ],
+      },
     ],
   },
 ];

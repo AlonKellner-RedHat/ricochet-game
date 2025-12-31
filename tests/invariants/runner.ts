@@ -20,6 +20,7 @@ import { preparePolygonForRendering } from "@/trajectory-v2/visibility/Rendering
 import { SCREEN } from "./positions";
 import type {
   InvariantContext,
+  PlannedSequence,
   PlanValidityResult,
   Scene,
   ScreenBounds,
@@ -193,13 +194,22 @@ function computeVisibilityStageWithSources(
  * 1. Compute visibility from player
  * 2. Extract visible segments on each planned surface from previous stage
  * 3. For each visible segment, compute reflected visibility
+ *
+ * @param player The player position
+ * @param scene The scene configuration
+ * @param screenBounds The screen bounds
+ * @param plannedSurfaces Optional list of planned surfaces (overrides scene.plannedSurfaces)
  */
 function computeVisibilityStages(
   player: Vector2,
   scene: Scene,
-  screenBounds: ScreenBounds
+  screenBounds: ScreenBounds,
+  plannedSurfaces?: Surface[]
 ): VisibilityStage[] {
   const stages: VisibilityStage[] = [];
+
+  // Use provided planned surfaces or scene's default
+  const surfaces = plannedSurfaces ?? scene.plannedSurfaces;
 
   // Stage 0: Direct visibility from player
   const stage0Result = computeVisibilityStageWithSources(
@@ -217,8 +227,8 @@ function computeVisibilityStages(
   let currentOrigin = player;
 
   // Stages 1+: Visibility through each planned surface
-  for (let i = 0; i < scene.plannedSurfaces.length; i++) {
-    const surface = scene.plannedSurfaces[i]!;
+  for (let i = 0; i < surfaces.length; i++) {
+    const surface = surfaces[i]!;
 
     // Extract visible segments on this surface from the PREVIOUS stage's source points
     const visibleSegments = extractVisibleSurfaceSegments(surface.id, currentSourcePoints);
@@ -314,14 +324,22 @@ function checkLightReachesCursor(cursor: Vector2, stages: VisibilityStage[]): bo
 
 /**
  * Compute the full context for invariant testing.
+ *
+ * @param scene The scene configuration
+ * @param player The player position
+ * @param cursor The cursor position
+ * @param screenBounds The screen bounds
+ * @param plannedSequence Optional planned sequence (overrides scene.plannedSurfaces)
  */
 export function computeContext(
   scene: Scene,
   player: Vector2,
   cursor: Vector2,
-  screenBounds: ScreenBounds = DEFAULT_SCREEN_BOUNDS
+  screenBounds: ScreenBounds = DEFAULT_SCREEN_BOUNDS,
+  plannedSequence?: PlannedSequence
 ): InvariantContext {
-  const visibilityStages = computeVisibilityStages(player, scene, screenBounds);
+  const plannedSurfaces = plannedSequence?.surfaces ?? scene.plannedSurfaces;
+  const visibilityStages = computeVisibilityStages(player, scene, screenBounds, plannedSurfaces);
   const planValidity = evaluatePlanValidity(player, cursor, scene);
   const lightReachesCursor = checkLightReachesCursor(cursor, visibilityStages);
 

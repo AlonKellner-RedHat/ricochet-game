@@ -14,6 +14,18 @@ import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 /**
+ * A planned surface sequence for testing reflections.
+ * Each sequence represents a chain of surfaces the player intends to use.
+ */
+export interface PlannedSequence {
+  /** Unique identifier for the sequence */
+  readonly name: string;
+
+  /** Surfaces in this sequence (can be empty for "no plan" baseline) */
+  readonly surfaces: Surface[];
+}
+
+/**
  * A scene defines a surface configuration to test.
  */
 export interface Scene {
@@ -26,8 +38,15 @@ export interface Scene {
   /** All surface chains in the scene */
   readonly allChains: SurfaceChain[];
 
-  /** Surfaces that are part of the aiming plan */
+  /** Surfaces that are part of the aiming plan (default sequence) */
   readonly plannedSurfaces: Surface[];
+
+  /**
+   * Multiple planned surface sequences to test.
+   * Each scene should include at least [{ name: "empty", surfaces: [] }].
+   * Chain scenes should include sequences for each chain surface.
+   */
+  readonly plannedSequences?: PlannedSequence[];
 }
 
 /**

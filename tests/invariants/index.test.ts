@@ -31,8 +31,11 @@ import { ALL_SCENES } from "./scenes";
 import { ALL_POSITIONS, positionKey } from "./positions";
 import { ALL_INVARIANTS } from "./invariants";
 import { computeContext, DEFAULT_SCREEN_BOUNDS } from "./runner";
-import type { Scene, Invariant, InvariantContext } from "./types";
+import type { Scene, InvariantContext, PlannedSequence } from "./types";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
+
+/** Default sequence for scenes without plannedSequences */
+const EMPTY_SEQUENCE: PlannedSequence = { name: "empty", surfaces: [] };
 
 // =============================================================================
 // CONFIGURATION
@@ -57,12 +60,13 @@ const FOCUS = {
   player: parsePosition(process.env.INVARIANT_FOCUS_PLAYER),
   cursor: parsePosition(process.env.INVARIANT_FOCUS_CURSOR),
   invariant: process.env.INVARIANT_FOCUS_INVARIANT,
+  sequence: process.env.INVARIANT_FOCUS_SEQUENCE,
 };
 
 /**
  * Whether we're in focused mode (any focus variable is set).
  */
-const IS_FOCUSED = !!(FOCUS.scene || FOCUS.player || FOCUS.cursor || FOCUS.invariant);
+const IS_FOCUSED = !!(FOCUS.scene || FOCUS.player || FOCUS.cursor || FOCUS.invariant || FOCUS.sequence);
 
 /**
  * Whether to run full test suite (all positions) or sampled.
@@ -123,6 +127,7 @@ function formatViolationCommand(
   scene: string,
   player: Vector2,
   cursor: Vector2,
+  sequence: string,
   invariantId?: string
 ): string {
   const px = Math.round(player.x);
@@ -130,7 +135,8 @@ function formatViolationCommand(
   const cx = Math.round(cursor.x);
   const cy = Math.round(cursor.y);
   const invPart = invariantId ? ` INVARIANT_FOCUS_INVARIANT=${invariantId}` : "";
-  return `INVARIANT_FOCUS_SCENE=${scene} INVARIANT_FOCUS_PLAYER=${px},${py} INVARIANT_FOCUS_CURSOR=${cx},${cy}${invPart} npm test -- tests/invariants/`;
+  const seqPart = sequence !== "empty" ? ` INVARIANT_FOCUS_SEQUENCE=${sequence}` : "";
+  return `INVARIANT_FOCUS_SCENE=${scene} INVARIANT_FOCUS_PLAYER=${px},${py} INVARIANT_FOCUS_CURSOR=${cx},${cy}${seqPart}${invPart} npm test -- tests/invariants/`;
 }
 
 /**
@@ -138,10 +144,22 @@ function formatViolationCommand(
  */
 interface Violation {
   scene: string;
+  sequence: string;
   player: Vector2;
   cursor: Vector2;
   invariantId: string;
   message: string;
+}
+
+// =============================================================================
+// HELPERS FOR SEQUENCES
+// =============================================================================
+
+/**
+ * Get sequences to test for a scene.
+ */
+function getSequencesToTest(scene: Scene): PlannedSequence[] {
+  return scene.plannedSequences ?? [EMPTY_SEQUENCE];
 }
 
 // =============================================================================
@@ -151,113 +169,126 @@ interface Violation {
 function runBatchedTests(): void {
   const positions = getPositionsToTest();
 
+  // Count total sequences
+  let totalSequences = 0;
+  for (const scene of ALL_SCENES) {
+    totalSequences += getSequencesToTest(scene).length;
+  }
+
   console.log("=== Invariant Tests (Batched Mode) ===");
   console.log(`Scenes: ${ALL_SCENES.length}`);
+  console.log(`Total sequences: ${totalSequences}`);
   console.log(`Positions: ${positions.length} (sampled from ${ALL_POSITIONS.length})`);
   console.log(`Invariants: ${ALL_INVARIANTS.length}`);
-  console.log(`Total test cases: ${ALL_SCENES.length * positions.length * positions.length * ALL_INVARIANTS.length}`);
+  console.log(`Total test cases: ~${totalSequences * positions.length * positions.length * ALL_INVARIANTS.length}`);
   console.log("");
 
   describe("Invariant Tests", () => {
     for (const scene of ALL_SCENES) {
       describe(`Scene: ${scene.name}`, () => {
-        it("should satisfy all invariants at all tested positions", () => {
-          const violations: Violation[] = [];
-          let testedCount = 0;
-          let skippedCount = 0;
+        const sequences = getSequencesToTest(scene);
 
-          for (const player of positions) {
-            if (!isWithinBounds(player)) {
-              skippedCount++;
-              continue;
-            }
+        for (const sequence of sequences) {
+          it(`${scene.name}/${sequence.name}: should satisfy all invariants`, () => {
+            const violations: Violation[] = [];
+            let testedCount = 0;
+            let skippedCount = 0;
 
-            for (const cursor of positions) {
-              if (!isWithinBounds(cursor)) {
+            for (const player of positions) {
+              if (!isWithinBounds(player)) {
                 skippedCount++;
                 continue;
               }
 
-              if (arePositionsTooClose(player, cursor)) {
-                skippedCount++;
-                continue;
-              }
+              for (const cursor of positions) {
+                if (!isWithinBounds(cursor)) {
+                  skippedCount++;
+                  continue;
+                }
 
-              testedCount++;
+                if (arePositionsTooClose(player, cursor)) {
+                  skippedCount++;
+                  continue;
+                }
 
-              // Compute context once per position pair
-              let context: InvariantContext;
-              try {
-                context = computeContext(scene, player, cursor);
-              } catch (error) {
-                violations.push({
-                  scene: scene.name,
-                  player,
-                  cursor,
-                  invariantId: "context",
-                  message: `Context computation failed: ${error}`,
-                });
-                continue;
-              }
+                testedCount++;
 
-              // Check all invariants
-              for (const invariant of ALL_INVARIANTS) {
+                // Compute context once per position pair
+                let context: InvariantContext;
                 try {
-                  invariant.assert(context);
+                  context = computeContext(scene, player, cursor, DEFAULT_SCREEN_BOUNDS, sequence);
                 } catch (error) {
-                  const message = error instanceof Error ? error.message : String(error);
                   violations.push({
                     scene: scene.name,
+                    sequence: sequence.name,
                     player,
                     cursor,
-                    invariantId: invariant.id,
-                    message,
+                    invariantId: "context",
+                    message: `Context computation failed: ${error}`,
                   });
+                  continue;
+                }
+
+                // Check all invariants
+                for (const invariant of ALL_INVARIANTS) {
+                  try {
+                    invariant.assert(context);
+                  } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    violations.push({
+                      scene: scene.name,
+                      sequence: sequence.name,
+                      player,
+                      cursor,
+                      invariantId: invariant.id,
+                      message,
+                    });
+                  }
                 }
               }
             }
-          }
 
-          // Report results
-          console.log(`  ${scene.name}: ${testedCount} tested, ${skippedCount} skipped`);
+            // Report results
+            console.log(`  ${scene.name}/${sequence.name}: ${testedCount} tested, ${skippedCount} skipped`);
 
-          if (violations.length > 0) {
-            // Group by invariant
-            const byInvariant = new Map<string, Violation[]>();
-            for (const v of violations) {
-              const list = byInvariant.get(v.invariantId) ?? [];
-              list.push(v);
-              byInvariant.set(v.invariantId, list);
-            }
+            if (violations.length > 0) {
+              // Group by invariant
+              const byInvariant = new Map<string, Violation[]>();
+              for (const v of violations) {
+                const list = byInvariant.get(v.invariantId) ?? [];
+                list.push(v);
+                byInvariant.set(v.invariantId, list);
+              }
 
-            console.log(`  Found ${violations.length} violations:`);
-            for (const [invariantId, invViolations] of byInvariant) {
-              console.log(`    [${invariantId}]: ${invViolations.length} violations`);
-            }
+              console.log(`  Found ${violations.length} violations:`);
+              for (const [invariantId, invViolations] of byInvariant) {
+                console.log(`    [${invariantId}]: ${invViolations.length} violations`);
+              }
 
-            // Print first few as copy-paste commands
-            console.log("\n  To investigate, run:");
-            const uniquePositions = new Map<string, Violation>();
-            for (const v of violations) {
-              const key = `${positionKey(v.player)}-${positionKey(v.cursor)}`;
-              if (!uniquePositions.has(key)) {
-                uniquePositions.set(key, v);
+              // Print first few as copy-paste commands
+              console.log("\n  To investigate, run:");
+              const uniquePositions = new Map<string, Violation>();
+              for (const v of violations) {
+                const key = `${positionKey(v.player)}-${positionKey(v.cursor)}-${v.sequence}`;
+                if (!uniquePositions.has(key)) {
+                  uniquePositions.set(key, v);
+                }
+              }
+              const toShow = Array.from(uniquePositions.values()).slice(0, 5);
+              for (const v of toShow) {
+                console.log(`    ${formatViolationCommand(v.scene, v.player, v.cursor, v.sequence)}`);
+              }
+              if (uniquePositions.size > 5) {
+                console.log(`    ... and ${uniquePositions.size - 5} more position pairs`);
               }
             }
-            const toShow = Array.from(uniquePositions.values()).slice(0, 5);
-            for (const v of toShow) {
-              console.log(`    ${formatViolationCommand(v.scene, v.player, v.cursor)}`);
-            }
-            if (uniquePositions.size > 5) {
-              console.log(`    ... and ${uniquePositions.size - 5} more position pairs`);
-            }
-          }
 
-          expect(
-            violations.length,
-            `Found ${violations.length} invariant violations in scene "${scene.name}"`
-          ).toBe(0);
-        });
+            expect(
+              violations.length,
+              `Found ${violations.length} invariant violations in "${scene.name}/${sequence.name}"`
+            ).toBe(0);
+          });
+        }
       });
     }
   });
@@ -284,8 +315,24 @@ function runFocusedTests(): void {
   const players = positions.filter((p) => positionMatches(p, FOCUS.player));
   const cursors = positions.filter((c) => positionMatches(c, FOCUS.cursor));
 
+  // Get sequences (optionally filtered)
+  const getFilteredSequences = (scene: Scene): PlannedSequence[] => {
+    const allSeqs = getSequencesToTest(scene);
+    if (FOCUS.sequence) {
+      return allSeqs.filter((s) => s.name === FOCUS.sequence);
+    }
+    return allSeqs;
+  };
+
+  // Count total sequences for display
+  let totalSequences = 0;
+  for (const s of scenes) {
+    totalSequences += getFilteredSequences(s).length;
+  }
+
   console.log("=== Invariant Tests (Focused Mode) ===");
   console.log(`Scenes: ${scenes.length} (${scenes.map((s) => s.name).join(", ")})`);
+  console.log(`Sequences: ${totalSequences}${FOCUS.sequence ? ` (filtered to: ${FOCUS.sequence})` : ""}`);
   console.log(`Players: ${players.length}`);
   console.log(`Cursors: ${cursors.length}`);
   console.log(`Invariants: ${invariants.length} (${invariants.map((i) => i.id).join(", ")})`);
@@ -293,38 +340,42 @@ function runFocusedTests(): void {
 
   describe("Invariant Tests (Focused)", () => {
     for (const scene of scenes) {
-      describe(`Scene: ${scene.name}`, () => {
-        for (const player of players) {
-          if (!isWithinBounds(player)) continue;
+      const sequences = getFilteredSequences(scene);
 
-          for (const cursor of cursors) {
-            if (!isWithinBounds(cursor)) continue;
-            if (arePositionsTooClose(player, cursor)) continue;
+      for (const sequence of sequences) {
+        describe(`Scene: ${scene.name}/${sequence.name}`, () => {
+          for (const player of players) {
+            if (!isWithinBounds(player)) continue;
 
-            describe(`player=${positionKey(player)} cursor=${positionKey(cursor)}`, () => {
-              // Compute context once per position pair
-              let context: InvariantContext;
+            for (const cursor of cursors) {
+              if (!isWithinBounds(cursor)) continue;
+              if (arePositionsTooClose(player, cursor)) continue;
 
-              // Use a single test for context computation errors
-              it("should compute context successfully", () => {
-                context = computeContext(scene, player, cursor);
-                expect(context).toBeDefined();
-              });
+              describe(`player=${positionKey(player)} cursor=${positionKey(cursor)}`, () => {
+                // Compute context once per position pair
+                let context: InvariantContext;
 
-              // Individual test for each invariant
-              for (const invariant of invariants) {
-                it(`${invariant.id}: ${invariant.name}`, () => {
-                  // Skip if context failed
-                  if (!context) {
-                    throw new Error("Context computation failed in previous test");
-                  }
-                  invariant.assert(context);
+                // Use a single test for context computation errors
+                it("should compute context successfully", () => {
+                  context = computeContext(scene, player, cursor, DEFAULT_SCREEN_BOUNDS, sequence);
+                  expect(context).toBeDefined();
                 });
-              }
-            });
+
+                // Individual test for each invariant
+                for (const invariant of invariants) {
+                  it(`${invariant.id}: ${invariant.name}`, () => {
+                    // Skip if context failed
+                    if (!context) {
+                      throw new Error("Context computation failed in previous test");
+                    }
+                    invariant.assert(context);
+                  });
+                }
+              });
+            }
           }
-        }
-      });
+        });
+      }
     }
   });
 }

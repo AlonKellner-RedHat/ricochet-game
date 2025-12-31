@@ -64,6 +64,9 @@ export const SPECIAL_POSITIONS: Vector2[] = [
   { x: 130.86070971272358, y: 522.6601108399797 }, // CORRECT player - (20,80) present
   { x: 82.90155440414507, y: 209.11917098445593 }, // cursor for buggy
   { x: 66.32124352331606, y: 200.82901554404143 }, // cursor for correct
+  // Chain reflection bug - reflected polygon truncated (only 3 vertices)
+  { x: 799.5532401600012, y: 666 }, // player for chain1-0 reflection bug
+  { x: 640, y: 283.7305699481865 }, // cursor for chain1-0 reflection bug
 ];
 
 /**

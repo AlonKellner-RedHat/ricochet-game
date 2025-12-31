@@ -10,7 +10,7 @@ import {
   createRicochetChain,
   createWallChain,
 } from "@/trajectory-v2/geometry/SurfaceChain";
-import type { Scene } from "../types";
+import type { Scene, PlannedSequence } from "../types";
 import { SCREEN } from "../positions";
 
 /**
@@ -124,6 +124,9 @@ function diagonalSurface(
   });
 }
 
+/** Empty sequence baseline */
+const EMPTY_SEQUENCE: PlannedSequence = { name: "empty", surfaces: [] };
+
 /**
  * Basic scenes: empty, single surfaces.
  */
@@ -134,6 +137,7 @@ export const BASIC_SCENES: Scene[] = [
     description: "No surfaces - baseline test",
     allChains: [],
     plannedSurfaces: [],
+    plannedSequences: [EMPTY_SEQUENCE],
   },
 
   // Scene 2: Single horizontal surface (facing down)
@@ -145,6 +149,10 @@ export const BASIC_SCENES: Scene[] = [
     ],
     plannedSurfaces: [
       horizontalSurface("h1-0", SCREEN.width / 2, 300, 200, true),
+    ],
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      { name: "h1-0", surfaces: [horizontalSurface("h1-0", SCREEN.width / 2, 300, 200, true)] },
     ],
   },
 
@@ -158,6 +166,10 @@ export const BASIC_SCENES: Scene[] = [
     plannedSurfaces: [
       verticalSurface("v1-0", 400, SCREEN.height / 2, 200, true),
     ],
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      { name: "v1-0", surfaces: [verticalSurface("v1-0", 400, SCREEN.height / 2, 200, true)] },
+    ],
   },
 
   // Scene 4: Single diagonal surface (45 degrees)
@@ -169,6 +181,10 @@ export const BASIC_SCENES: Scene[] = [
     ],
     plannedSurfaces: [
       diagonalSurface("d1-0", SCREEN.width / 2, SCREEN.height / 2, 200, 45),
+    ],
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      { name: "d1-0", surfaces: [diagonalSurface("d1-0", SCREEN.width / 2, SCREEN.height / 2, 200, 45)] },
     ],
   },
 
@@ -185,6 +201,10 @@ export const BASIC_SCENES: Scene[] = [
     ],
     plannedSurfaces: [
       horizontalSurface("h1-0", SCREEN.width / 2, 300, 200, true),
+    ],
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      { name: "h1-0", surfaces: [horizontalSurface("h1-0", SCREEN.width / 2, 300, 200, true)] },
     ],
   },
 ];

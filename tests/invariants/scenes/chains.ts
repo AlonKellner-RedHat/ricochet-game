@@ -7,7 +7,10 @@
 import { RicochetSurface } from "@/surfaces/RicochetSurface";
 import { type SurfaceChain, createRicochetChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import { SCREEN } from "../positions";
-import type { Scene } from "../types";
+import type { Scene, PlannedSequence } from "../types";
+
+/** Empty sequence baseline */
+const EMPTY_SEQUENCE: PlannedSequence = { name: "empty", surfaces: [] };
 
 /**
  * Create a V-shape chain (apex is a JunctionPoint - no continuation rays).
@@ -175,6 +178,11 @@ export const CHAIN_SCENES: Scene[] = [
     description: "Two vertical surfaces facing each other",
     allChains: createParallelMirrorChains(300, 600, 200, 500),
     plannedSurfaces: createParallelMirrorSurfaces(300, 600, 200, 500),
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      { name: "mirror-left", surfaces: [createParallelMirrorSurfaces(300, 600, 200, 500)[0]] },
+      { name: "mirror-right", surfaces: [createParallelMirrorSurfaces(300, 600, 200, 500)[1]] },
+    ],
   },
 
   // Scene 7: V-shape at 90 degrees (TRUE chain - apex is JunctionPoint)
@@ -183,6 +191,12 @@ export const CHAIN_SCENES: Scene[] = [
     description: "Two surfaces meeting at 90 degrees (as a chain)",
     allChains: [createVShapeChain("v90", SCREEN.width / 2, 250, 80, 90)],
     plannedSurfaces: createVShapeSurfaces("v90", SCREEN.width / 2, 250, 80, 90),
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      { name: "v90-left", surfaces: [createVShapeSurfaces("v90", SCREEN.width / 2, 250, 80, 90)[0]] },
+      { name: "v90-right", surfaces: [createVShapeSurfaces("v90", SCREEN.width / 2, 250, 80, 90)[1]] },
+      { name: "v90-both", surfaces: createVShapeSurfaces("v90", SCREEN.width / 2, 250, 80, 90) },
+    ],
   },
 
   // Scene 8: V-shape at 60 degrees (TRUE chain - apex is JunctionPoint)
@@ -191,6 +205,12 @@ export const CHAIN_SCENES: Scene[] = [
     description: "Two surfaces meeting at 60 degrees (as a chain)",
     allChains: [createVShapeChain("v60", SCREEN.width / 2, 250, 80, 60)],
     plannedSurfaces: createVShapeSurfaces("v60", SCREEN.width / 2, 250, 80, 60),
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      { name: "v60-left", surfaces: [createVShapeSurfaces("v60", SCREEN.width / 2, 250, 80, 60)[0]] },
+      { name: "v60-right", surfaces: [createVShapeSurfaces("v60", SCREEN.width / 2, 250, 80, 60)[1]] },
+      { name: "v60-both", surfaces: createVShapeSurfaces("v60", SCREEN.width / 2, 250, 80, 60) },
+    ],
   },
 
   // Scene 9: Pyramid (4 stacked horizontal surfaces - separate chains)
@@ -199,10 +219,17 @@ export const CHAIN_SCENES: Scene[] = [
     description: "Four stacked horizontal surfaces (inverted pyramid)",
     allChains: createPyramidChains(SCREEN.width / 2, 500, 40, 4),
     plannedSurfaces: createPyramidSurfaces(SCREEN.width / 2, 500, 40, 4),
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      ...createPyramidSurfaces(SCREEN.width / 2, 500, 40, 4).map((s, i) => ({
+        name: `pyramid-${i + 1}`,
+        surfaces: [s],
+      })),
+    ],
   },
 
   // Scene 10: V-shape at 120 degrees (from demo - exact coords)
-  // This is the scene that exhibits the pixel-perfect junction bug
+  // This is the scene that exhibits the pixel-perfect junction bug and chain reflection bug
   {
     name: "v-shape-120",
     description: "Two surfaces meeting at 120 degrees (chain1 from demo)",
@@ -222,6 +249,43 @@ export const CHAIN_SCENES: Scene[] = [
         start: { x: 650, y: 250 },
         end: { x: 701.9615242270663, y: 280 },
       }),
+    ],
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      // LEFT ARM ONLY - this is the chain reflection bug scenario
+      {
+        name: "chain1-left-only",
+        surfaces: [
+          new RicochetSurface("chain1-0", {
+            start: { x: 598.0384757729337, y: 280 },
+            end: { x: 650, y: 250 },
+          }),
+        ],
+      },
+      // Right arm only
+      {
+        name: "chain1-right-only",
+        surfaces: [
+          new RicochetSurface("chain1-1", {
+            start: { x: 650, y: 250 },
+            end: { x: 701.9615242270663, y: 280 },
+          }),
+        ],
+      },
+      // Both arms
+      {
+        name: "chain1-both",
+        surfaces: [
+          new RicochetSurface("chain1-0", {
+            start: { x: 598.0384757729337, y: 280 },
+            end: { x: 650, y: 250 },
+          }),
+          new RicochetSurface("chain1-1", {
+            start: { x: 650, y: 250 },
+            end: { x: 701.9615242270663, y: 280 },
+          }),
+        ],
+      },
     ],
   },
 
@@ -247,15 +311,69 @@ export const CHAIN_SCENES: Scene[] = [
         end: { x: 880, y: 301.9615242270663 },
       }),
     ],
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      {
+        name: "chain3-left-only",
+        surfaces: [
+          new RicochetSurface("chain3-0", {
+            start: { x: 820, y: 301.9615242270663 },
+            end: { x: 850, y: 250 },
+          }),
+        ],
+      },
+      {
+        name: "chain3-right-only",
+        surfaces: [
+          new RicochetSurface("chain3-1", {
+            start: { x: 850, y: 250 },
+            end: { x: 880, y: 301.9615242270663 },
+          }),
+        ],
+      },
+    ],
   },
 
   // Scene 12: Full demo scene (all surfaces from GameScene)
-  // This reproduces the pyramid sorting bug
+  // This reproduces the pyramid sorting bug AND chain reflection bug
   {
     name: "full-demo",
     description: "Complete demo scene with all surfaces",
     allChains: createFullDemoChains(),
     plannedSurfaces: [],
+    plannedSequences: [
+      EMPTY_SEQUENCE,
+      // Chain1 left arm only - the chain reflection bug
+      {
+        name: "chain1-left-only",
+        surfaces: [
+          new RicochetSurface("chain1-0", {
+            start: { x: 598.0384757729337, y: 280 },
+            end: { x: 650, y: 250 },
+          }),
+        ],
+      },
+      // Chain2 left arm
+      {
+        name: "chain2-left-only",
+        surfaces: [
+          new RicochetSurface("chain2-0", {
+            start: { x: 707.5735931288071, y: 292.42640687119285 },
+            end: { x: 750, y: 250 },
+          }),
+        ],
+      },
+      // Chain3 left arm
+      {
+        name: "chain3-left-only",
+        surfaces: [
+          new RicochetSurface("chain3-0", {
+            start: { x: 820, y: 301.9615242270663 },
+            end: { x: 850, y: 250 },
+          }),
+        ],
+      },
+    ],
   },
 ];
 
