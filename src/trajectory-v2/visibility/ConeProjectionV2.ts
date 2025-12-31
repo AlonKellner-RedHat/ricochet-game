@@ -822,37 +822,35 @@ function castRayToEndpoint(
   let closestS = 0;
 
   // Check game obstacles
-  // SKIP ALL blocking checks for window endpoints - the ray to a window endpoint
-  // is definitionally valid (we're going TO the window, it can't be blocked)
-  if (!windowSurfaceId || targetEndpoint.surface.id !== windowSurfaceId) {
-    for (const obstacle of obstacles) {
-      // Skip the surface that the endpoint belongs to
-      if (targetEndpoint.surface.id === obstacle.id) continue;
+  // NOTE: We DO check obstacles for window endpoints too - an obstacle between
+  // the reflected origin and the window can block the path to the window endpoint.
+  for (const obstacle of obstacles) {
+    // Skip the surface that the endpoint belongs to
+    if (targetEndpoint.surface.id === obstacle.id) continue;
 
-      const hit = lineLineIntersection(
-        origin,
-        rayEnd,
-        obstacle.segment.start,
-        obstacle.segment.end
-      );
-      if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
-        // PROVENANCE CHECK: If the hit point is exactly at the target endpoint's coordinates,
-        // this is NOT a blocking hit - they share the same point (shared endpoint between surfaces)
-        if (hit.s === 0 || hit.s === 1) {
-          const hitX =
-            obstacle.segment.start.x + hit.s * (obstacle.segment.end.x - obstacle.segment.start.x);
-          const hitY =
-            obstacle.segment.start.y + hit.s * (obstacle.segment.end.y - obstacle.segment.start.y);
-          const targetXY = targetEndpoint.computeXY();
-          if (hitX === targetXY.x && hitY === targetXY.y) {
-            // Hit is at the same point as target - not a block
-            continue;
-          }
+    const hit = lineLineIntersection(
+      origin,
+      rayEnd,
+      obstacle.segment.start,
+      obstacle.segment.end
+    );
+    if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
+      // PROVENANCE CHECK: If the hit point is exactly at the target endpoint's coordinates,
+      // this is NOT a blocking hit - they share the same point (shared endpoint between surfaces)
+      if (hit.s === 0 || hit.s === 1) {
+        const hitX =
+          obstacle.segment.start.x + hit.s * (obstacle.segment.end.x - obstacle.segment.start.x);
+        const hitY =
+          obstacle.segment.start.y + hit.s * (obstacle.segment.end.y - obstacle.segment.start.y);
+        const targetXY = targetEndpoint.computeXY();
+        if (hitX === targetXY.x && hitY === targetXY.y) {
+          // Hit is at the same point as target - not a block
+          continue;
         }
-        closestT = hit.t;
-        closestSurface = obstacle;
-        closestS = hit.s;
       }
+      closestT = hit.t;
+      closestSurface = obstacle;
+      closestS = hit.s;
     }
   }
 
@@ -1114,9 +1112,40 @@ export function projectConeV2(
   }
 
   // For windowed cones, add window endpoints to polygon
+  // But first check if they're obstructed by obstacles
   if (isWindowed && startLine) {
-    vertices.push(new OriginPoint(startLine.start));
-    vertices.push(new OriginPoint(startLine.end));
+    // Check if startLine.start is obstructed
+    const startHit = castRayToTarget(origin, startLine.start, effectiveObstacles, null);
+    if (startHit) {
+      const hitXY = startHit.computeXY();
+      const distToHit = Math.hypot(hitXY.x - origin.x, hitXY.y - origin.y);
+      const distToStart = Math.hypot(startLine.start.x - origin.x, startLine.start.y - origin.y);
+      if (distToHit >= distToStart - 0.1) {
+        // Not obstructed - add the window endpoint
+        vertices.push(new OriginPoint(startLine.start));
+      }
+      // If obstructed, the hit point will be added later when processing ray targets
+    } else {
+      // No hit means ray goes to infinity - this shouldn't happen for valid scenes
+      // Add the window endpoint anyway as fallback
+      vertices.push(new OriginPoint(startLine.start));
+    }
+
+    // Check if startLine.end is obstructed
+    const endHit = castRayToTarget(origin, startLine.end, effectiveObstacles, null);
+    if (endHit) {
+      const hitXY = endHit.computeXY();
+      const distToHit = Math.hypot(hitXY.x - origin.x, hitXY.y - origin.y);
+      const distToEnd = Math.hypot(startLine.end.x - origin.x, startLine.end.y - origin.y);
+      if (distToHit >= distToEnd - 0.1) {
+        // Not obstructed - add the window endpoint
+        vertices.push(new OriginPoint(startLine.end));
+      }
+      // If obstructed, the hit point will be added later when processing ray targets
+    } else {
+      // No hit means ray goes to infinity - fallback
+      vertices.push(new OriginPoint(startLine.end));
+    }
   }
 
   // Track ray pairs: endpoint + continuation that share the same ray
@@ -1363,32 +1392,42 @@ export function projectConeV2(
 
   // For windowed cones, cast rays to cone boundaries to find screen/obstacle hits
   // These rays extend from origin THROUGH the window boundaries to find what's behind
+  // But only if the window endpoint itself is visible (not obstructed)
   if (!isFullCone(source)) {
-    const leftHit = castRayToTarget(
-      origin,
-      source.leftBoundary,
-      effectiveObstacles, // Already includes screen boundary surfaces
-      startLine
-    );
-    // #region agent log
-    if (process.env.DEBUG_POLYGON === "1") {
-      console.log(`  leftBoundaryRay: leftBoundary=(${source.leftBoundary.x}, ${source.leftBoundary.y}), leftHitXY=${leftHit?.computeXY() ? `(${leftHit.computeXY().x.toFixed(2)}, ${leftHit.computeXY().y.toFixed(2)})` : 'null'}, leftHitType=${leftHit?.type}`);
-    }
-    // #endregion
-    // Only add if the hit is within the cone AND past the window (for windowed cones)
-    if (leftHit) {
-      const hitXY = leftHit.computeXY();
-      const leftInCone = isPointInCone(hitXY, source);
-      const leftPastWindow = !startLine || isPointPastWindow(origin, hitXY, startLine);
+    // First check if leftBoundary endpoint is obstructed
+    const leftBoundaryObstruction = castRayToTarget(origin, source.leftBoundary, effectiveObstacles, null);
+    const leftBoundaryObstructed = leftBoundaryObstruction
+      ? Math.hypot(leftBoundaryObstruction.computeXY().x - origin.x, leftBoundaryObstruction.computeXY().y - origin.y) <
+        Math.hypot(source.leftBoundary.x - origin.x, source.leftBoundary.y - origin.y) - 0.1
+      : false;
+
+    // Only cast continuation ray if left boundary is NOT obstructed
+    if (!leftBoundaryObstructed) {
+      const leftHit = castRayToTarget(
+        origin,
+        source.leftBoundary,
+        effectiveObstacles, // Already includes screen boundary surfaces
+        startLine
+      );
       // #region agent log
       if (process.env.DEBUG_POLYGON === "1") {
-        console.log(`  leftBoundaryFiltering: hitXY=(${hitXY.x.toFixed(2)}, ${hitXY.y.toFixed(2)}), leftInCone=${leftInCone}, leftPastWindow=${leftPastWindow}, willAdd=${leftInCone && leftPastWindow}`);
+        console.log(`  leftBoundaryRay: leftBoundary=(${source.leftBoundary.x}, ${source.leftBoundary.y}), leftHitXY=${leftHit?.computeXY() ? `(${leftHit.computeXY().x.toFixed(2)}, ${leftHit.computeXY().y.toFixed(2)})` : 'null'}, leftHitType=${leftHit?.type}`);
       }
       // #endregion
-      // For windowed cones, we now track cone boundary hits in rayPairs properly,
-      // so we can include ALL hits (screen or game surface).
-      const shouldAddLeft = leftInCone && leftPastWindow;
-      if (shouldAddLeft) {
+      // Only add if the hit is within the cone AND past the window (for windowed cones)
+      if (leftHit) {
+        const hitXY = leftHit.computeXY();
+        const leftInCone = isPointInCone(hitXY, source);
+        const leftPastWindow = !startLine || isPointPastWindow(origin, hitXY, startLine);
+        // #region agent log
+        if (process.env.DEBUG_POLYGON === "1") {
+          console.log(`  leftBoundaryFiltering: hitXY=(${hitXY.x.toFixed(2)}, ${hitXY.y.toFixed(2)}), leftInCone=${leftInCone}, leftPastWindow=${leftPastWindow}, willAdd=${leftInCone && leftPastWindow}`);
+        }
+        // #endregion
+        // For windowed cones, we now track cone boundary hits in rayPairs properly,
+        // so we can include ALL hits (screen or game surface).
+        const shouldAddLeft = leftInCone && leftPastWindow;
+        if (shouldAddLeft) {
         vertices.push(leftHit);
         // Track in rayPairs for proper sorting
         // Find the OriginPoint or Endpoint that corresponds to the left boundary
@@ -1414,7 +1453,17 @@ export function projectConeV2(
         }
       }
     }
+    } // End of: if (!leftBoundaryObstructed)
 
+    // First check if rightBoundary endpoint is obstructed
+    const rightBoundaryObstruction = castRayToTarget(origin, source.rightBoundary, effectiveObstacles, null);
+    const rightBoundaryObstructed = rightBoundaryObstruction
+      ? Math.hypot(rightBoundaryObstruction.computeXY().x - origin.x, rightBoundaryObstruction.computeXY().y - origin.y) <
+        Math.hypot(source.rightBoundary.x - origin.x, source.rightBoundary.y - origin.y) - 0.1
+      : false;
+
+    // Only cast continuation ray if right boundary is NOT obstructed
+    if (!rightBoundaryObstructed) {
     const rightHit = castRayToTarget(
       origin,
       source.rightBoundary,
@@ -1446,6 +1495,7 @@ export function projectConeV2(
         }
       }
     }
+    } // End of: if (!rightBoundaryObstructed)
   }
 
   // Remove duplicate points using equals()
