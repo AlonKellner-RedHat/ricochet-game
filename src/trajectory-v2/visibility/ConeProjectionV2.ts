@@ -35,8 +35,8 @@ import {
   startOf,
 } from "@/trajectory-v2/geometry/SourcePoint";
 import {
-  type SurfaceChain,
   type JunctionPoint,
+  type SurfaceChain,
   isJunctionPoint,
 } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Ray, Vector2 } from "@/trajectory-v2/geometry/types";
@@ -906,20 +906,8 @@ export function projectConeV2(
 
     // Handle JunctionPoints - junction can block its own ray
     if (isJunctionPoint(target)) {
-      // #region agent log
-      fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:888',message:'JunctionPoint processing',data:{junctionXY:targetXY,originXY:origin,isJunction:true},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1-H2'})}).catch(()=>{});
-      // #endregion
-
       // Check if junction blocks its own ray using pre-computed orientations
       const canPass = target.canLightPassWithOrientations(surfaceOrientations);
-
-      // #region agent log
-      const beforeId = target.getSurfaceBefore()?.id;
-      const afterId = target.getSurfaceAfter()?.id;
-      const beforeOrient = beforeId ? surfaceOrientations.get(beforeId) : null;
-      const afterOrient = afterId ? surfaceOrientations.get(afterId) : null;
-      fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:895',message:'Junction canPass check',data:{junctionXY:targetXY,canPass,beforeId,afterId,beforeOrient,afterOrient},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4-H5'})}).catch(()=>{});
-      // #endregion
 
       // Get the junction's surfaces for provenance-based checks
       const beforeSurface = target.getSurfaceBefore();
@@ -965,16 +953,18 @@ export function projectConeV2(
         }
       }
 
-      // #region agent log
-      fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:920',message:'Junction reachability',data:{junctionXY:targetXY,blockingHit:blockingHit?{xy:blockingHit.computeXY(),t:isHitPoint(blockingHit)?blockingHit.t:'N/A'}:null,reachesJunction,canPass},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3-H4'})}).catch(()=>{});
-      // #endregion
-
       if (reachesJunction) {
         // Ray reaches the junction - create HitPoint with EXACT coordinates
         // Use the afterSurface at s=0 as canonical representation
         const junctionSurface = afterSurface ?? beforeSurface;
         if (junctionSurface) {
-          const junctionRay = { from: origin, to: { x: origin.x + (targetXY.x - origin.x) * 10, y: origin.y + (targetXY.y - origin.y) * 10 } };
+          const junctionRay = {
+            from: origin,
+            to: {
+              x: origin.x + (targetXY.x - origin.x) * 10,
+              y: origin.y + (targetXY.y - origin.y) * 10,
+            },
+          };
           const exactS = afterSurface ? 0 : 1;
           const exactHit = new HitPoint(junctionRay, junctionSurface, 0.1, exactS);
           vertices.push(exactHit);
@@ -1064,28 +1054,8 @@ export function projectConeV2(
     if (rightHit) vertices.push(rightHit);
   }
 
-  // #region agent log
-  const junctionVertices = vertices.filter(v => {
-    const xy = v.computeXY();
-    return Math.abs(xy.x - 650) < 1 && Math.abs(xy.y - 250) < 1;
-  });
-  if (junctionVertices.length > 0 || vertices.some(v => { const xy = v.computeXY(); return Math.abs(xy.x - 650) < 100 && Math.abs(xy.y - 250) < 100; })) {
-    fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:1009',message:'Vertices before dedup (near junction)',data:{totalCount:vertices.length,junctionVertices:junctionVertices.map(v=>({xy:v.computeXY(),type:v.type})),nearJunction:vertices.filter(v=>{const xy=v.computeXY();return Math.abs(xy.x-650)<100&&Math.abs(xy.y-250)<100;}).map(v=>({xy:v.computeXY(),type:v.type}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H6-dedup'})}).catch(()=>{});
-  }
-  // #endregion
-
   // Remove duplicate points using equals()
   const uniqueVertices = removeDuplicatesSourcePoint(vertices);
-
-  // #region agent log
-  const junctionUnique = uniqueVertices.filter(v => {
-    const xy = v.computeXY();
-    return Math.abs(xy.x - 650) < 1 && Math.abs(xy.y - 250) < 1;
-  });
-  if (junctionUnique.length > 0 || uniqueVertices.some(v => { const xy = v.computeXY(); return Math.abs(xy.x - 650) < 100 && Math.abs(xy.y - 250) < 100; })) {
-    fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:1015',message:'Vertices after dedup (near junction)',data:{uniqueCount:uniqueVertices.length,junctionUnique:junctionUnique.map(v=>({xy:v.computeXY(),type:v.type})),nearJunction:uniqueVertices.filter(v=>{const xy=v.computeXY();return Math.abs(xy.x-650)<100&&Math.abs(xy.y-250)<100;}).map(v=>({xy:v.computeXY(),type:v.type}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H6-dedup'})}).catch(()=>{});
-  }
-  // #endregion
 
   // Sort by angle from origin, using ray pairs for tie-breaking
   return sortPolygonVerticesSourcePoint(uniqueVertices, origin, startLine, rayPairs);
@@ -1127,7 +1097,10 @@ function removeDuplicatesSourcePoint(points: SourcePoint[]): SourcePoint[] {
 /**
  * Ray pair info tracked during ray casting.
  */
-type RayPairMap = Map<string, { endpoint: Endpoint | JunctionPoint; continuation: SourcePoint | null }>;
+type RayPairMap = Map<
+  string,
+  { endpoint: Endpoint | JunctionPoint; continuation: SourcePoint | null }
+>;
 
 /**
  * Sort polygon vertices by direction from origin.
