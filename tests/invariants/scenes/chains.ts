@@ -227,4 +227,28 @@ export const CHAIN_SCENES: Scene[] = [
       }),
     ],
   },
+
+  // Scene 11: V-shape at 60 degrees (chain3 from demo - exact coords)
+  // This scene has a sorting bug with the junction
+  {
+    name: "v-shape-60-demo",
+    description: "Two surfaces meeting at 60 degrees (chain3 from demo)",
+    allChains: [
+      createRicochetChain("chain3", [
+        { x: 820, y: 301.9615242270663 },
+        { x: 850, y: 250 }, // apex (junction)
+        { x: 880, y: 301.9615242270663 },
+      ]),
+    ],
+    plannedSurfaces: [
+      new RicochetSurface("chain3-0", {
+        start: { x: 820, y: 301.9615242270663 },
+        end: { x: 850, y: 250 },
+      }),
+      new RicochetSurface("chain3-1", {
+        start: { x: 850, y: 250 },
+        end: { x: 880, y: 301.9615242270663 },
+      }),
+    ],
+  },
 ];

@@ -149,7 +149,7 @@ export function getShadowBoundaryOrderFromOrientation(
 interface SortablePoint {
   point: SourcePoint;
   xy: Vector2;
-  pairedEndpoint: Endpoint | null;
+  pairedEndpoint: Endpoint | JunctionPoint | null;
 }
 
 /**
@@ -168,7 +168,7 @@ function comparePointsCCW(
   origin: Vector2,
   refDirection: Vector2,
   surfaceOrientations: Map<string, SurfaceOrientation>,
-  continuationToEndpoint: Map<string, Endpoint>,
+  continuationToEndpoint: Map<string, Endpoint | JunctionPoint>,
   endpointToContinuation: Map<string, SourcePoint>
 ): number {
   // Get effective coordinates for comparison
@@ -247,7 +247,7 @@ function handleCollinearPoints(
   b: SortablePoint,
   origin: Vector2,
   surfaceOrientations: Map<string, SurfaceOrientation>,
-  continuationToEndpoint: Map<string, Endpoint>,
+  continuationToEndpoint: Map<string, Endpoint | JunctionPoint>,
   endpointToContinuation: Map<string, SourcePoint>
 ): number {
   const p1 = a.point;
@@ -273,18 +273,45 @@ function handleCollinearPoints(
         return -getShadowBoundaryOrderFromOrientation(ep2, orientation);
       }
     }
+
+    // Handle junction pairs: if one is a junction's continuation, the other is a junction hit
+    // For junctions that allow pass-through, continuation comes FIRST (like "entering" shadow)
+    // This is because we traverse from ceiling to junction, not junction to ceiling
+    const jp1 = isJunctionPoint(p1) ? p1 : null;
+    const jp2 = isJunctionPoint(p2) ? p2 : null;
+
+    if (jp1 && isHitPoint(p2)) {
+      // p1 is junction, p2 is its continuation → continuation (p2) should come first
+      return 1; // p2 before p1
+    }
+    if (jp2 && isHitPoint(p1)) {
+      // p2 is junction, p1 is its continuation → continuation (p1) should come first
+      return -1; // p1 before p2
+    }
+
+    // Check if pairedEndpoint is a JunctionPoint
+    if (a.pairedEndpoint && isJunctionPoint(a.pairedEndpoint)) {
+      // a.point is a continuation of a junction → junction should come after
+      return -1; // continuation (a) before junction
+    }
+    if (b.pairedEndpoint && isJunctionPoint(b.pairedEndpoint)) {
+      // b.point is a continuation of a junction → junction should come after
+      return 1; // continuation (b) before junction
+    }
   }
 
-  // Get surface info for both points
-  const aSurface = a.pairedEndpoint ? a.pairedEndpoint.surface : isEndpoint(p1) ? p1.surface : null;
-  const bSurface = b.pairedEndpoint ? b.pairedEndpoint.surface : isEndpoint(p2) ? p2.surface : null;
+  // Get surface info for both points (only for Endpoints, not JunctionPoints)
+  const aEndpoint = a.pairedEndpoint && isEndpoint(a.pairedEndpoint) ? a.pairedEndpoint : isEndpoint(p1) ? p1 : null;
+  const bEndpoint = b.pairedEndpoint && isEndpoint(b.pairedEndpoint) ? b.pairedEndpoint : isEndpoint(p2) ? p2 : null;
+  const aSurface = aEndpoint ? aEndpoint.surface : null;
+  const bSurface = bEndpoint ? bEndpoint.surface : null;
 
   // Same surface: use orientation to determine order
   if (aSurface && bSurface && aSurface.id === bSurface.id) {
     const orientation = surfaceOrientations.get(aSurface.id);
     if (orientation) {
-      const aWhich = a.pairedEndpoint ? a.pairedEndpoint.which : isEndpoint(p1) ? p1.which : null;
-      const bWhich = b.pairedEndpoint ? b.pairedEndpoint.which : isEndpoint(p2) ? p2.which : null;
+      const aWhich = aEndpoint ? aEndpoint.which : null;
+      const bWhich = bEndpoint ? bEndpoint.which : null;
 
       if (aWhich && bWhich) {
         if (aWhich !== bWhich) {
@@ -957,6 +984,7 @@ export function projectConeV2(
         // Ray reaches the junction - create HitPoint with EXACT coordinates
         // Use the afterSurface at s=0 as canonical representation
         const junctionSurface = afterSurface ?? beforeSurface;
+        let exactHit: HitPoint | null = null;
         if (junctionSurface) {
           const junctionRay = {
             from: origin,
@@ -966,7 +994,7 @@ export function projectConeV2(
             },
           };
           const exactS = afterSurface ? 0 : 1;
-          const exactHit = new HitPoint(junctionRay, junctionSurface, 0.1, exactS);
+          exactHit = new HitPoint(junctionRay, junctionSurface, 0.1, exactS);
           vertices.push(exactHit);
         }
 
@@ -979,9 +1007,11 @@ export function projectConeV2(
             screenBoundaries,
             startLine
           );
-          if (continuation) {
+          if (continuation && exactHit) {
             vertices.push(continuation);
-            rayPairs.set(target.getKey(), { endpoint: target, continuation });
+            // Key by the HitPoint's key so sorting can find the pairing
+            // Store the JunctionPoint so we can determine shadow boundary order
+            rayPairs.set(exactHit.getKey(), { endpoint: target, continuation });
           }
         }
         // If junction blocks (!canPass), we still add the junction but no continuation
@@ -1113,14 +1143,14 @@ function sortPolygonVerticesSourcePoint(
 ): SourcePoint[] {
   if (points.length === 0) return [];
 
-  // Build a map from continuation point key to its paired endpoint
-  const continuationToEndpoint = new Map<string, Endpoint>();
+  // Build a map from continuation point key to its paired endpoint/junction
+  const continuationToEndpoint = new Map<string, Endpoint | JunctionPoint>();
   for (const pair of rayPairs.values()) {
     if (pair.continuation) {
       continuationToEndpoint.set(pair.continuation.getKey(), pair.endpoint);
     }
   }
-
+  
   // PRE-COMPUTE SURFACE ORIENTATIONS
   const surfaceOrientations = new Map<string, SurfaceOrientation>();
   for (const p of points) {
@@ -1136,7 +1166,7 @@ function sortPolygonVerticesSourcePoint(
   const pointsWithData = points.map((p) => {
     const xy = p.computeXY();
 
-    let pairedEndpoint: Endpoint | null = null;
+    let pairedEndpoint: Endpoint | JunctionPoint | null = null;
     if (isHitPoint(p)) {
       pairedEndpoint = continuationToEndpoint.get(p.getKey()) ?? null;
     }
@@ -1144,11 +1174,16 @@ function sortPolygonVerticesSourcePoint(
     return { point: p, xy, pairedEndpoint };
   });
 
-  // Build reverse map: endpoint key → its continuation
+  // Build reverse map: endpoint/junction HitPoint key → its continuation
+  // For endpoints: key is endpoint.getKey()
+  // For junctions: key is the HitPoint's key (same as rayPairs key)
   const endpointToContinuation = new Map<string, SourcePoint>();
-  for (const pair of rayPairs.values()) {
+  for (const [key, pair] of rayPairs.entries()) {
     if (pair.continuation) {
-      endpointToContinuation.set(pair.endpoint.getKey(), pair.continuation);
+      // Use the rayPairs key directly, which is either:
+      // - endpoint.getKey() for regular endpoints
+      // - exactHit.getKey() for junction HitPoints
+      endpointToContinuation.set(key, pair.continuation);
     }
   }
 
@@ -1191,7 +1226,7 @@ function sortPolygonVerticesSourcePoint(
 function checkIfPairedPoints(
   p1: SourcePoint,
   p2: SourcePoint,
-  continuationToEndpoint: Map<string, Endpoint>,
+  continuationToEndpoint: Map<string, Endpoint | JunctionPoint>,
   endpointToContinuation: Map<string, SourcePoint>
 ): boolean {
   if (isHitPoint(p1)) {
@@ -1208,18 +1243,16 @@ function checkIfPairedPoints(
     }
   }
 
-  if (isEndpoint(p1)) {
-    const cont = endpointToContinuation.get(p1.getKey());
-    if (cont && cont.getKey() === p2.getKey()) {
-      return true;
-    }
+  // Check if p1 has a continuation (endpoint or junction HitPoint)
+  const cont1 = endpointToContinuation.get(p1.getKey());
+  if (cont1 && cont1.getKey() === p2.getKey()) {
+    return true;
   }
 
-  if (isEndpoint(p2)) {
-    const cont = endpointToContinuation.get(p2.getKey());
-    if (cont && cont.getKey() === p1.getKey()) {
-      return true;
-    }
+  // Check if p2 has a continuation (endpoint or junction HitPoint)
+  const cont2 = endpointToContinuation.get(p2.getKey());
+  if (cont2 && cont2.getKey() === p1.getKey()) {
+    return true;
   }
 
   return false;
@@ -1232,7 +1265,7 @@ function arrangeWindowedCone(
   sortedPoints: Array<{
     point: SourcePoint;
     xy: Vector2;
-    pairedEndpoint: Endpoint | null;
+    pairedEndpoint: Endpoint | JunctionPoint | null;
   }>,
   origin: Vector2,
   startLine: Segment

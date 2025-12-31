@@ -51,6 +51,9 @@ export const SPECIAL_POSITIONS: Vector2[] = [
   // Corresponding cursor positions
   { x: 649.1646778042959, y: 268.35322195704055 }, // cursor for invalid
   { x: 655.2744630071599, y: 269.88066825775655 }, // cursor for valid
+  // Chain3 60-degree V junction sorting bug
+  { x: 595.2037203000001, y: 666 }, // player position for chain3 bug
+  { x: 905.7756563245823, y: 120.1909307875895 }, // cursor position for chain3 bug
 ];
 
 /**
