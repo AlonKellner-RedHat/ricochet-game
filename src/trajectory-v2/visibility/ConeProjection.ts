@@ -198,7 +198,7 @@ function castRay(
   const dx = target.x - origin.x;
   const dy = target.y - origin.y;
   const len = Math.sqrt(dx * dx + dy * dy);
-  if (len < 0.0001) return null;
+  if (len === 0) return null;
 
   // Extend ray far beyond target
   const scale = 10;
@@ -208,7 +208,7 @@ function castRay(
   };
 
   // Determine minimum t (where the ray starts)
-  let minT = 0.0001;
+  let minT = 0;
 
   if (startLine) {
     // Ray starts from the startLine, not from origin
@@ -277,7 +277,7 @@ function castRayWithContinuation(
   const dx = target.x - origin.x;
   const dy = target.y - origin.y;
   const len = Math.sqrt(dx * dx + dy * dy);
-  if (len < 0.0001) return [];
+  if (len === 0) return [];
 
   // Extend ray far beyond target
   const scale = 10;
@@ -287,7 +287,7 @@ function castRayWithContinuation(
   };
 
   // Determine minimum t (where the ray starts)
-  let minT = 0.0001;
+  let minT = 0;
 
   if (startLine) {
     const lineHit = lineLineIntersection(origin, rayEnd, startLine.start, startLine.end);
@@ -307,7 +307,7 @@ function castRayWithContinuation(
 
     if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1) {
       // Check if this hit is at an endpoint (s = 0 or s = 1)
-      const isEndpoint = hit.s < 0.0001 || hit.s > 0.9999;
+      const isEndpoint = hit.s === 0 || hit.s === 1;
       allHits.push({ t: hit.t, point: hit.point, isEndpoint });
     }
   }
@@ -344,7 +344,7 @@ function castRayWithContinuation(
     for (let i = 1; i < allHits.length; i++) {
       const nextHit = allHits[i]!;
       // Only add if it's significantly further (not the same point)
-      if (nextHit.t > closestHit.t + 0.0001) {
+      if (nextHit.t > closestHit.t) {
         result.push(nextHit.point);
         break;
       }
@@ -420,7 +420,7 @@ export function projectCone(
     // Skip points at origin
     const dx = target.x - origin.x;
     const dy = target.y - origin.y;
-    if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) continue;
+    if (dx === 0 && dy === 0) continue;
 
     // Check if target is in cone
     if (!isPointInCone(target, source)) continue;

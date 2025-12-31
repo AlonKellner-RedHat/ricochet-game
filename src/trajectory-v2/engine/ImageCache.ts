@@ -193,14 +193,13 @@ export function getPlayerImageForSurface(
 
 /**
  * Verify that a reflection is reversible (first principle check).
+ * EXACT check - reflection must be perfectly reversible.
  *
  * @param image The reflected image
- * @param tolerance Maximum allowed error
- * @returns True if reflect(reflect(P)) ≈ P
+ * @returns True if reflect(reflect(P)) === P
  */
 export function verifyReflectionReversibility(
-  image: ReflectedImage,
-  tolerance = 1e-9
+  image: ReflectedImage
 ): boolean {
   if (!image.source.surface) {
     return true; // Original position, nothing to verify
@@ -213,9 +212,8 @@ export function verifyReflectionReversibility(
     segment.end
   );
 
-  const dx = doubleReflected.x - image.source.position.x;
-  const dy = doubleReflected.y - image.source.position.y;
-
-  return dx * dx + dy * dy < tolerance * tolerance;
+  // Exact equality check
+  return doubleReflected.x === image.source.position.x &&
+         doubleReflected.y === image.source.position.y;
 }
 

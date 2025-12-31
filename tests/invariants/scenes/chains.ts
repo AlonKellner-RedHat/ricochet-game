@@ -5,12 +5,9 @@
  */
 
 import { RicochetSurface } from "@/surfaces/RicochetSurface";
-import {
-  type SurfaceChain,
-  createRicochetChain,
-} from "@/trajectory-v2/geometry/SurfaceChain";
-import type { Scene } from "../types";
+import { type SurfaceChain, createRicochetChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import { SCREEN } from "../positions";
+import type { Scene } from "../types";
 
 /**
  * Create a V-shape chain (apex is a JunctionPoint - no continuation rays).
@@ -268,57 +265,73 @@ export const CHAIN_SCENES: Scene[] = [
  */
 function createFullDemoChains(): SurfaceChain[] {
   const chains: SurfaceChain[] = [];
-  
+
   // Ceiling (reflective, facing down)
-  chains.push(createRicochetChain("ceiling", [
-    { x: 0, y: 80 },
-    { x: 1280, y: 80 },
-  ]));
-  
+  chains.push(
+    createRicochetChain("ceiling", [
+      { x: 0, y: 80 },
+      { x: 1280, y: 80 },
+    ])
+  );
+
   // Left wall (reflective)
-  chains.push(createRicochetChain("left-wall", [
-    { x: 20, y: 700 },
-    { x: 20, y: 80 },
-  ]));
-  
+  chains.push(
+    createRicochetChain("left-wall", [
+      { x: 20, y: 700 },
+      { x: 20, y: 80 },
+    ])
+  );
+
   // Parallel mirrors
-  chains.push(createRicochetChain("mirror-left", [
-    { x: 250, y: 550 },
-    { x: 250, y: 150 },
-  ]));
-  chains.push(createRicochetChain("mirror-right", [
-    { x: 550, y: 150 },
-    { x: 550, y: 550 },
-  ]));
-  
+  chains.push(
+    createRicochetChain("mirror-left", [
+      { x: 250, y: 550 },
+      { x: 250, y: 150 },
+    ])
+  );
+  chains.push(
+    createRicochetChain("mirror-right", [
+      { x: 550, y: 150 },
+      { x: 550, y: 550 },
+    ])
+  );
+
   // Pyramid (inverted - shortest at bottom, longest at top)
   const pyramidCenterX = 1050;
   const pyramidBaseY = 500;
   const pyramidSpacing = 40;
-  
-  chains.push(createRicochetChain("pyramid-1", [
-    { x: pyramidCenterX - 20, y: pyramidBaseY },
-    { x: pyramidCenterX + 20, y: pyramidBaseY },
-  ]));
-  chains.push(createRicochetChain("pyramid-2", [
-    { x: pyramidCenterX - 35, y: pyramidBaseY - pyramidSpacing },
-    { x: pyramidCenterX + 35, y: pyramidBaseY - pyramidSpacing },
-  ]));
-  chains.push(createRicochetChain("pyramid-3", [
-    { x: pyramidCenterX - 50, y: pyramidBaseY - pyramidSpacing * 2 },
-    { x: pyramidCenterX + 50, y: pyramidBaseY - pyramidSpacing * 2 },
-  ]));
-  chains.push(createRicochetChain("pyramid-4", [
-    { x: pyramidCenterX - 65, y: pyramidBaseY - pyramidSpacing * 3 },
-    { x: pyramidCenterX + 65, y: pyramidBaseY - pyramidSpacing * 3 },
-  ]));
-  
+
+  chains.push(
+    createRicochetChain("pyramid-1", [
+      { x: pyramidCenterX - 20, y: pyramidBaseY },
+      { x: pyramidCenterX + 20, y: pyramidBaseY },
+    ])
+  );
+  chains.push(
+    createRicochetChain("pyramid-2", [
+      { x: pyramidCenterX - 35, y: pyramidBaseY - pyramidSpacing },
+      { x: pyramidCenterX + 35, y: pyramidBaseY - pyramidSpacing },
+    ])
+  );
+  chains.push(
+    createRicochetChain("pyramid-3", [
+      { x: pyramidCenterX - 50, y: pyramidBaseY - pyramidSpacing * 2 },
+      { x: pyramidCenterX + 50, y: pyramidBaseY - pyramidSpacing * 2 },
+    ])
+  );
+  chains.push(
+    createRicochetChain("pyramid-4", [
+      { x: pyramidCenterX - 65, y: pyramidBaseY - pyramidSpacing * 3 },
+      { x: pyramidCenterX + 65, y: pyramidBaseY - pyramidSpacing * 3 },
+    ])
+  );
+
   // Grid (4x4 array of small surfaces)
   const gridStartX = 900;
   const gridStartY = 200;
   const gridSpacing = 50;
   const gridSurfaceLength = 30;
-  
+
   for (let row = 0; row < 4; row++) {
     for (let col = 0; col < 4; col++) {
       const centerX = gridStartX + col * gridSpacing;
@@ -327,35 +340,43 @@ function createFullDemoChains(): SurfaceChain[] {
       const angle = (direction * Math.PI) / 4;
       const dx = Math.cos(angle) * (gridSurfaceLength / 2);
       const dy = Math.sin(angle) * (gridSurfaceLength / 2);
-      
-      chains.push(createRicochetChain(`grid-${row}-${col}`, [
-        { x: centerX - dx, y: centerY - dy },
-        { x: centerX + dx, y: centerY + dy },
-      ]));
+
+      chains.push(
+        createRicochetChain(`grid-${row}-${col}`, [
+          { x: centerX - dx, y: centerY - dy },
+          { x: centerX + dx, y: centerY + dy },
+        ])
+      );
     }
   }
-  
+
   // V-shape chains (three adjacent, apex pointing up)
   // Chain 1: 120 degrees
-  chains.push(createRicochetChain("chain1", [
-    { x: 598.0384757729337, y: 280 },
-    { x: 650, y: 250 },
-    { x: 701.9615242270663, y: 280 },
-  ]));
-  
+  chains.push(
+    createRicochetChain("chain1", [
+      { x: 598.0384757729337, y: 280 },
+      { x: 650, y: 250 },
+      { x: 701.9615242270663, y: 280 },
+    ])
+  );
+
   // Chain 2: 90 degrees
-  chains.push(createRicochetChain("chain2", [
-    { x: 707.5735931288071, y: 292.42640687119285 },
-    { x: 750, y: 250 },
-    { x: 792.4264068711929, y: 292.42640687119285 },
-  ]));
-  
+  chains.push(
+    createRicochetChain("chain2", [
+      { x: 707.5735931288071, y: 292.42640687119285 },
+      { x: 750, y: 250 },
+      { x: 792.4264068711929, y: 292.42640687119285 },
+    ])
+  );
+
   // Chain 3: 60 degrees
-  chains.push(createRicochetChain("chain3", [
-    { x: 820, y: 301.9615242270663 },
-    { x: 850, y: 250 },
-    { x: 880, y: 301.9615242270663 },
-  ]));
-  
+  chains.push(
+    createRicochetChain("chain3", [
+      { x: 820, y: 301.9615242270663 },
+      { x: 850, y: 250 },
+      { x: 880, y: 301.9615242270663 },
+    ])
+  );
+
   return chains;
 }

@@ -150,8 +150,7 @@ function calculateActualPath(
  */
 function compareRenderSegments(
   a: readonly RenderSegment[],
-  b: readonly RenderSegment[],
-  tolerance: number = 1
+  b: readonly RenderSegment[]
 ): boolean {
   if (a.length !== b.length) {
     return false;
@@ -165,10 +164,9 @@ function compareRenderSegments(
       return false;
     }
 
-    const startDist = Math.hypot(segA.start.x - segB.start.x, segA.start.y - segB.start.y);
-    const endDist = Math.hypot(segA.end.x - segB.end.x, segA.end.y - segB.end.y);
-
-    if (startDist > tolerance || endDist > tolerance) {
+    // Exact equality check
+    if (segA.start.x !== segB.start.x || segA.start.y !== segB.start.y ||
+        segA.end.x !== segB.end.x || segA.end.y !== segB.end.y) {
       return false;
     }
   }

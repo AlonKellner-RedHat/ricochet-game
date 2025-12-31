@@ -142,7 +142,7 @@ export function intersectRaySegment(ray: Ray, segment: Segment): RayHit | null {
   const denominator = d1x * d2y - d1y * d2x;
 
   // Lines are parallel
-  if (Math.abs(denominator) < 1e-12) {
+  if (denominator === 0) {
     return null;
   }
 
@@ -157,7 +157,7 @@ export function intersectRaySegment(ray: Ray, segment: Segment): RayHit | null {
   const minT = ray.startRatio ?? 0;
 
   // Intersection is before the ray's effective start
-  if (t < minT - 1e-9) {
+  if (t < minT) {
     return null;
   }
 
@@ -168,7 +168,7 @@ export function intersectRaySegment(ray: Ray, segment: Segment): RayHit | null {
   };
 
   // Check if intersection is on the segment
-  const onSegment = s >= -1e-9 && s <= 1 + 1e-9;
+  const onSegment = s >= 0 && s <= 1;
 
   return { point, t, s, onSegment };
 }
@@ -283,7 +283,7 @@ export function reflectPointThroughSegment(point: Vector2, segment: Segment): Ve
   // Normal squared: n · n
   const dotNN = nx * nx + ny * ny;
 
-  if (dotNN < 1e-20) {
+  if (dotNN === 0) {
     return point; // Degenerate segment
   }
 
@@ -300,18 +300,17 @@ export function reflectPointThroughSegment(point: Vector2, segment: Segment): Ve
  * Check if a point lies on a ray (in the forward direction).
  *
  * Uses cross-product to check collinearity, then dot-product for direction.
+ * EXACT check - no tolerance.
  *
  * @param ray The ray to check
  * @param point The point to test
- * @param tolerance Maximum perpendicular distance to consider "on ray"
  * @returns True if point is on the ray (forward from source)
  */
 export function isPointOnRay(
   ray: Ray,
-  point: Vector2,
-  tolerance: number = 1e-9
+  point: Vector2
 ): boolean {
-  const result = rayContainsPoint(ray, point, tolerance);
+  const result = rayContainsPoint(ray, point);
   return result !== null;
 }
 
@@ -320,16 +319,15 @@ export function isPointOnRay(
  *
  * Returns { t } where point = source + t * (target - source)
  * Returns null if point is not on the ray (behind source or off-line).
+ * EXACT check - no tolerance.
  *
  * @param ray The ray
  * @param point The point to find
- * @param tolerance Maximum perpendicular distance to consider "on ray"
  * @returns { t } if point is on ray, null otherwise
  */
 export function rayContainsPoint(
   ray: Ray,
-  point: Vector2,
-  tolerance: number = 1e-9
+  point: Vector2
 ): { t: number } | null {
   const { source, target } = ray;
 
@@ -344,17 +342,15 @@ export function rayContainsPoint(
   // Length squared of direction
   const lenSq = dx * dx + dy * dy;
 
-  if (lenSq < 1e-20) {
+  if (lenSq === 0) {
     // Degenerate ray - check if point is at source
-    const distSq = px * px + py * py;
-    return distSq < tolerance * tolerance ? { t: 0 } : null;
+    return (px === 0 && py === 0) ? { t: 0 } : null;
   }
 
-  // Cross product for collinearity check
+  // Cross product for collinearity check (must be exactly zero)
   const cross = dx * py - dy * px;
-  const perpDistance = Math.abs(cross) / Math.sqrt(lenSq);
 
-  if (perpDistance > tolerance) {
+  if (cross !== 0) {
     return null; // Point is off the ray line
   }
 
@@ -362,7 +358,7 @@ export function rayContainsPoint(
   const t = (dx * px + dy * py) / lenSq;
 
   // Point must be in forward direction (t >= 0)
-  if (t < -tolerance / Math.sqrt(lenSq)) {
+  if (t < 0) {
     return null;
   }
 
@@ -393,7 +389,7 @@ export function rayFromDirection(
   length: number = 1000
 ): Ray {
   const len = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
-  if (len < 1e-12) {
+  if (len === 0) {
     return { source, target: source };
   }
   return {

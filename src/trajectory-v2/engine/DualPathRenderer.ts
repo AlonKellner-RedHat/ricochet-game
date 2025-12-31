@@ -141,7 +141,7 @@ function renderAlignedPath(path: RenderablePath, cursor: Vector2): RenderSegment
         });
       }
 
-      if (path.cursorT < 0.99) {
+      if (path.cursorT < 1) {
         // Part after cursor: dashed yellow
         segments.push({
           start: cursorPos,
@@ -162,7 +162,7 @@ function renderAlignedPath(path: RenderablePath, cursor: Vector2): RenderSegment
   }
 
   // If cursor is at the end of path, we still need dashed continuation
-  if (path.cursorIndex === path.waypoints.length - 2 && path.cursorT >= 0.99) {
+  if (path.cursorIndex === path.waypoints.length - 2 && path.cursorT >= 1) {
     // Cursor at end - add minimal segment for visual continuity
   }
 
@@ -272,7 +272,7 @@ function renderDivergedPaths(
         });
       }
 
-      if (planned.cursorT < 0.99) {
+      if (planned.cursorT < 1) {
         segments.push({
           start: cursorPos,
           end,

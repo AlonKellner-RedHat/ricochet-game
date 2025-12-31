@@ -394,11 +394,11 @@ function computeOnSegmentFlags(
     const dy = end.y - start.y;
     const lengthSq = dx * dx + dy * dy;
 
-    if (lengthSq < 1e-20) {
+    if (lengthSq === 0) {
       // Degenerate segment - check if point is at start
       const distSq =
         (point.x - start.x) ** 2 + (point.y - start.y) ** 2;
-      flags.push(distSq < 1e-10);
+      flags.push(distSq === 0);
       continue;
     }
 
@@ -407,10 +407,7 @@ function computeOnSegmentFlags(
       ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSq;
 
     // Exact check: t in [0, 1]
-    // Use small epsilon only to handle floating-point representation,
-    // not geometric tolerance
-    const EPSILON = 1e-10;
-    flags.push(t >= -EPSILON && t <= 1 + EPSILON);
+    flags.push(t >= 0 && t <= 1);
   }
 
   return flags;
@@ -441,7 +438,7 @@ function isOnReflectiveSide(point: Vector2, surface: Surface): boolean {
 
   // Normalize (needed for canReflectFrom)
   const len = Math.sqrt(toSurfaceX * toSurfaceX + toSurfaceY * toSurfaceY);
-  if (len < 1e-10) {
+  if (len === 0) {
     // Point is at surface center - degenerate case
     return true;
   }

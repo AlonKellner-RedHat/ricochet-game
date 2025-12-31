@@ -23,8 +23,8 @@ import type { Surface } from "@/surfaces/Surface";
  * @param tolerance Tolerance for floating-point comparisons
  * @returns True if hit is on the segment
  */
-export function isHitOnSegment(segmentT: number, tolerance = 1e-6): boolean {
-  return isOnSegment(segmentT, tolerance);
+export function isHitOnSegment(segmentT: number): boolean {
+  return isOnSegment(segmentT);
 }
 
 /**
@@ -44,7 +44,7 @@ export function getParametricPosition(
   const dy = segEnd.y - segStart.y;
   const lengthSq = dx * dx + dy * dy;
 
-  if (lengthSq < 1e-10) {
+  if (lengthSq === 0) {
     return 0; // Degenerate segment
   }
 
@@ -88,8 +88,8 @@ export function countObstructions(
 
     // Check if intersection is between from and to (t ∈ (0, 1))
     // and on the segment (s ∈ [0, 1])
-    const isOnPath = result.t > 1e-6 && result.t < 1 - 1e-6;
-    const isOnSeg = isOnSegment(result.s, 1e-6);
+    const isOnPath = result.t > 0 && result.t < 1;
+    const isOnSeg = isOnSegment(result.s);
 
     if (isOnPath && isOnSeg) {
       count++;
@@ -131,8 +131,8 @@ export function findFirstObstruction(
 
     // Check if intersection is between from and to (t ∈ (0, 1))
     // and on the segment (s ∈ [0, 1])
-    const isOnPath = result.t > 1e-6 && result.t < 1 - 1e-6;
-    const isOnSeg = isOnSegment(result.s, 1e-6);
+    const isOnPath = result.t > 0 && result.t < 1;
+    const isOnSeg = isOnSegment(result.s);
 
     if (isOnPath && isOnSeg) {
       if (!closest || result.t < closest.t) {
@@ -349,7 +349,7 @@ export function rayLineIntersect(
   const dist = Math.sqrt(dx * dx + dy * dy);
   
   // Check if intersection is on the actual segment (s is parametric position on segment)
-  const onSegment = result.s >= -0.001 && result.s <= 1.001;
+  const onSegment = result.s >= 0 && result.s <= 1;
   
   return {
     point: intersectionPoint,
@@ -390,7 +390,7 @@ export function raycastForward(
     // 2. In front of the ray origin (t > 0)
     // 3. On the actual segment (not extended line)
     // 4. Closer than previous hit
-    if (result.hit && result.t > 1e-6 && result.t < closestT) {
+    if (result.hit && result.t > 0 && result.t < closestT) {
       // Calculate if surface can be reflected from this direction
       const canReflect = surface.canReflectFrom(direction);
 
@@ -431,7 +431,7 @@ export function reflectDirection(
   // Normal (perpendicular to tangent)
   // Using right-hand perpendicular: (tx, ty) → (-ty, tx)
   const lengthSq = tx * tx + ty * ty;
-  if (lengthSq < 1e-10) {
+  if (lengthSq === 0) {
     return direction; // Degenerate segment
   }
 

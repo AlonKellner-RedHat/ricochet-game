@@ -758,7 +758,7 @@ export class GameScene extends Phaser.Scene {
     const dy = surface.segment.end.y - surface.segment.start.y;
     const length = Math.sqrt(dx * dx + dy * dy);
 
-    if (length < 0.001) return;
+    if (length === 0) return;
 
     const nx = dx / length;
     const ny = dy / length;

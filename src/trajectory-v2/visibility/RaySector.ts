@@ -283,8 +283,8 @@ export function isPointInSector(point: Vector2, sector: RaySector, checkDistance
     const distToLeft = (left.x - origin.x) ** 2 + (left.y - origin.y) ** 2;
     const minBoundaryDist = Math.min(distToRight, distToLeft);
 
-    // Allow a small tolerance (95% of boundary distance)
-    if (distToPoint < minBoundaryDist * 0.9) {
+    // Point must be at or beyond boundary distance
+    if (distToPoint < minBoundaryDist) {
       return false;
     }
   }
@@ -793,7 +793,7 @@ export function projectSectorsThroughObstacles(
     for (const target of criticalPoints) {
       const dx = target.x - origin.x;
       const dy = target.y - origin.y;
-      if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) continue;
+      if (dx === 0 && dy === 0) continue;
 
       // Check if target is inside THIS sector
       if (!isPointInSector(target, sector)) continue;
@@ -819,9 +819,9 @@ export function projectSectorsThroughObstacles(
         }
       }
 
-      // Cast grazing rays
+      // Cast grazing rays (fixed offset, no epsilon)
       const len = Math.sqrt(dx * dx + dy * dy);
-      const grazingOffset = Math.max(0.5, len * 0.001);
+      const grazingOffset = 1; // Fixed 1 pixel offset
       const perpX = (-dy / len) * grazingOffset;
       const perpY = (dx / len) * grazingOffset;
 
@@ -931,7 +931,7 @@ function computeRayStartRatio(origin: Vector2, target: Vector2, sector: RaySecto
   const ldy = lineEnd.y - lineStart.y;
 
   const denom = rdx * ldy - rdy * ldx;
-  if (Math.abs(denom) < 1e-10) return 0;
+  if (denom === 0) return 0;
 
   const t = ((lineStart.x - origin.x) * ldy - (lineStart.y - origin.y) * ldx) / denom;
   return Math.max(0, t);
@@ -969,7 +969,7 @@ function castRayToFirstObstacle(
   // Original ray: P(t) = origin + t * (target - origin), surface at t = startRatio
   // Extended ray: Q(s) = origin + s * 10 * (target - origin), surface at s = startRatio / 10
   const rayScale = 10;
-  const minT = Math.max(startRatio / rayScale, 0.0001);
+  const minT = Math.max(startRatio / rayScale, 0);
 
   // Check all obstacles
   for (const obstacle of obstacles) {
@@ -1098,17 +1098,16 @@ function sortPolygonVertices(
   // Sort by angle from origin, with distance as tiebreaker
   allPoints.sort((a, b) => {
     const angleDiff = a.angle - b.angle;
-    if (Math.abs(angleDiff) < 0.0001) {
+    if (angleDiff === 0) {
       return a.dist - b.dist;
     }
     return angleDiff;
   });
 
   const result: Vector2[] = [];
-  const epsilon = 0.5;
   for (const { point } of allPoints) {
     const isDuplicate = result.some(
-      (p) => Math.abs(p.x - point.x) < epsilon && Math.abs(p.y - point.y) < epsilon
+      (p) => p.x === point.x && p.y === point.y
     );
     if (!isDuplicate) {
       result.push(point);

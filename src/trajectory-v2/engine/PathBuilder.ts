@@ -152,7 +152,7 @@ function calculateForwardProjectionSimple(
   const dy = lastPoint.y - secondToLast.y;
   const len = Math.sqrt(dx * dx + dy * dy);
 
-  if (len < 1e-6) {
+  if (len === 0) {
     return [];
   }
 
@@ -310,7 +310,7 @@ function getDirectionFromPoints(points: readonly Vector2[]): Vector2 | null {
   const dy = lastPoint.y - secondToLast.y;
   const len = Math.sqrt(dx * dx + dy * dy);
 
-  if (len < 1e-6) {
+  if (len === 0) {
     return null;
   }
 
@@ -516,7 +516,7 @@ export function buildActualPath(
     const dx = cursor.x - player.x;
     const dy = cursor.y - player.y;
     const len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 1e-6) {
+    if (len === 0) {
       return {
         points: [player],
         hitInfo: [],
@@ -542,7 +542,7 @@ export function buildActualPath(
     // Degenerate case: player and cursor image coincide
     // This happens when the path is perpendicular to the surface
     // Fall back to direction toward the first surface midpoint, then toward cursor
-    if (len < 1e-6) {
+    if (len === 0) {
       const firstSurface = activeSurfaces[0]!;
       const surfaceMid = {
         x: (firstSurface.segment.start.x + firstSurface.segment.end.x) / 2,
@@ -552,13 +552,13 @@ export function buildActualPath(
       dy = surfaceMid.y - player.y;
       len = Math.sqrt(dx * dx + dy * dy);
 
-      if (len < 1e-6) {
+      if (len === 0) {
         // Still degenerate, use cursor direction
         dx = cursor.x - player.x;
         dy = cursor.y - player.y;
         len = Math.sqrt(dx * dx + dy * dy);
 
-        if (len < 1e-6) {
+        if (len === 0) {
           return {
             points: [player],
             hitInfo: [],
@@ -763,7 +763,7 @@ export function calculateAlignment(
     const plannedLen = Math.sqrt(plannedDx * plannedDx + plannedDy * plannedDy);
     const actualLen = Math.sqrt(actualDx * actualDx + actualDy * actualDy);
 
-    if (plannedLen < 1e-6 || actualLen < 1e-6) {
+    if (plannedLen === 0 || actualLen === 0) {
       divergencePoint = plannedStart;
       break;
     }
@@ -773,7 +773,7 @@ export function calculateAlignment(
       (plannedDx / plannedLen) * (actualDx / actualLen) +
       (plannedDy / plannedLen) * (actualDy / actualLen);
 
-    if (dotProduct < 0.999) {
+    if (dotProduct < 1) {
       divergencePoint = plannedStart;
       break;
     }
@@ -874,7 +874,7 @@ export function tracePhysicalPath(
     const dx = cursor.x - player.x;
     const dy = cursor.y - player.y;
     const len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 1e-6) {
+    if (len === 0) {
       // Degenerate: player and cursor at same position
       return createDegeneratePath(player, activeSurfaces.length);
     }
@@ -891,7 +891,7 @@ export function tracePhysicalPath(
     let dy = cursorImage.y - playerImage.y;
     let len = Math.sqrt(dx * dx + dy * dy);
 
-    if (len < 1e-6) {
+    if (len === 0) {
       // Fallback: direction toward first surface midpoint
       const firstSurface = activeSurfaces[0]!;
       const mid = {
@@ -902,7 +902,7 @@ export function tracePhysicalPath(
       dy = mid.y - player.y;
       len = Math.sqrt(dx * dx + dy * dy);
 
-      if (len < 1e-6) {
+      if (len === 0) {
         return createDegeneratePath(player, activeSurfaces.length);
       }
     }

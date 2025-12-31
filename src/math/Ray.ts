@@ -65,8 +65,8 @@ export function raySegmentIntersect(ray: Ray, segment: LineSegment): RaySegmentH
 
   const denominator = cross(ray.direction, segmentDir);
 
-  // Parallel or coincident lines (denominator ≈ 0)
-  if (Math.abs(denominator) < 1e-10) {
+  // Parallel or coincident lines
+  if (denominator === 0) {
     return NO_HIT;
   }
 

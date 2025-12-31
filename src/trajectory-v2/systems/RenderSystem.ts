@@ -326,7 +326,7 @@ export class RenderSystem implements ITrajectorySystem {
       const segmentStart = plannedPoints[i]!;
       const segmentEnd = plannedPoints[i + 1]!;
 
-      // Check if divergence point is on this segment (within tolerance)
+      // Check if divergence point is on this segment (exact check)
       if (this.isPointOnSegment(divergencePoint, segmentStart, segmentEnd)) {
         // Return the index of the segment END point
         return i + 1;
@@ -338,22 +338,28 @@ export class RenderSystem implements ITrajectorySystem {
   }
 
   /**
-   * Check if a point lies on a line segment (within tolerance).
+   * Check if a point lies on a line segment (exact check using cross product).
    */
   private isPointOnSegment(
     point: Vector2,
     segmentStart: Vector2,
-    segmentEnd: Vector2,
-    tolerance = 5
+    segmentEnd: Vector2
   ): boolean {
-    // Calculate distances
-    const startToPoint = distance(segmentStart, point);
-    const pointToEnd = distance(point, segmentEnd);
-    const startToEnd = distance(segmentStart, segmentEnd);
+    const dx = segmentEnd.x - segmentStart.x;
+    const dy = segmentEnd.y - segmentStart.y;
+    const lenSq = dx * dx + dy * dy;
 
-    // Point is on segment if distances are approximately additive
-    const delta = Math.abs(startToPoint + pointToEnd - startToEnd);
-    return delta < tolerance;
+    if (lenSq === 0) {
+      return point.x === segmentStart.x && point.y === segmentStart.y;
+    }
+
+    // Cross product for collinearity
+    const cross = (point.x - segmentStart.x) * dy - (point.y - segmentStart.y) * dx;
+    if (cross !== 0) return false;
+
+    // Parametric t for segment position
+    const t = ((point.x - segmentStart.x) * dx + (point.y - segmentStart.y) * dy) / lenSq;
+    return t >= 0 && t <= 1;
   }
 
   /**

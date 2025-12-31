@@ -188,7 +188,7 @@ export function doesObstacleIntersectCone(
   if (leftHit.valid && leftHit.t > 0 && leftHit.s >= 0 && leftHit.s <= 1) {
     // Check if intersection is before the target (t < 1 where target is at t=1)
     const targetT = 1 / rayScale;
-    if (leftHit.t < targetT * rayScale * 0.99) {
+    if (leftHit.t < targetT) {
       return true;
     }
   }
@@ -197,7 +197,7 @@ export function doesObstacleIntersectCone(
   const rightHit = lineLineIntersection(origin, rightRayEnd, obsStart, obsEnd);
   if (rightHit.valid && rightHit.t > 0 && rightHit.s >= 0 && rightHit.s <= 1) {
     const targetT = 1 / rayScale;
-    if (rightHit.t < targetT * rayScale * 0.99) {
+    if (rightHit.t < targetT) {
       return true;
     }
   }
@@ -561,7 +561,7 @@ export function calculateReachingConesFromProvenance(
       const endT = pointsWithT[i + 1]!.t;
       
       // Skip degenerate segments
-      if (endT > startT + 0.001) {
+      if (endT > startT) {
         segments.push({ startT, endT });
       }
     }
@@ -572,7 +572,7 @@ export function calculateReachingConesFromProvenance(
 
   for (const seg of segments) {
     // Skip degenerate segments
-    if (seg.endT - seg.startT < 0.001) {
+    if (seg.endT <= seg.startT) {
       continue;
     }
 

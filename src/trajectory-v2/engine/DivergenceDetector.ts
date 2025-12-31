@@ -52,18 +52,16 @@ function distance(a: Vector2, b: Vector2): number {
  *
  * Algorithm:
  * 1. Compare waypoints sequentially
- * 2. Find first mismatch (using tolerance for floating point)
+ * 2. Find first mismatch (exact comparison)
  * 3. Return the divergence point (last shared waypoint)
  *
  * @param actual The actual physical path
  * @param planned The ideal planned path
- * @param tolerance Maximum distance for points to be considered equal (default 0.5)
  * @returns DivergenceInfo with divergence point
  */
 export function findDivergence(
   actual: PathForComparison,
-  planned: PathForComparison,
-  tolerance: number = 0.5
+  planned: PathForComparison
 ): DivergenceInfo {
   const actualWaypoints = actual.waypoints;
   const plannedWaypoints = planned.waypoints;
@@ -93,9 +91,8 @@ export function findDivergence(
     const actualPoint = actualWaypoints[i]!;
     const plannedPoint = plannedWaypoints[i]!;
 
-    const dist = distance(actualPoint, plannedPoint);
-
-    if (dist > tolerance) {
+    // Exact comparison - points must match exactly
+    if (actualPoint.x !== plannedPoint.x || actualPoint.y !== plannedPoint.y) {
       // Found divergence at waypoint i
       // This means segment (i-1 to i) or (i to i+1) diverges
       // The divergence point is the last SHARED waypoint (i-1)

@@ -116,7 +116,7 @@ export function buildVisibilityPolygon(
     // Skip if target is at origin
     const dx = target.x - origin.x;
     const dy = target.y - origin.y;
-    if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) continue;
+    if (dx === 0 && dy === 0) continue;
 
     // If sector constraint, check if target is inside any sector and get startRatio
     let startRatio = 0;
@@ -140,7 +140,7 @@ export function buildVisibilityPolygon(
     // Use a larger offset that scales with distance to ensure meaningful angular separation
     // even when the target is directly above/below the origin
     const len = Math.sqrt(dx * dx + dy * dy);
-    const grazingOffset = Math.max(0.5, len * 0.001); // At least 0.5 pixels, or 0.1% of distance
+    const grazingOffset = 1; // Fixed 1 pixel offset
     const perpX = (-dy / len) * grazingOffset;
     const perpY = (dx / len) * grazingOffset;
 
@@ -249,25 +249,22 @@ export function buildVisibilityPolygon(
   // This creates a proper closed polygon for both empty and reflected plans
   const startLine = sectorConstraint?.[0]?.startLine;
 
-  // Helper to check if a point is on the startLine
+  // Helper to check if a point is on the startLine (exact check)
   const isOnStartLine = (point: Vector2): boolean => {
     if (!startLine) return false;
     const { start, end } = startLine;
-    // Check if point is on the line segment with small epsilon
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     const lenSq = dx * dx + dy * dy;
-    if (lenSq < 1e-10) return false;
+    if (lenSq === 0) return false;
 
-    // Project point onto line
+    // Cross product for collinearity
+    const cross = (point.x - start.x) * dy - (point.y - start.y) * dx;
+    if (cross !== 0) return false;
+
+    // Parametric t for position on segment
     const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lenSq;
-    if (t < -0.01 || t > 1.01) return false;
-
-    // Check distance to line
-    const projX = start.x + t * dx;
-    const projY = start.y + t * dy;
-    const dist = Math.sqrt((point.x - projX) ** 2 + (point.y - projY) ** 2);
-    return dist < 1.0; // Within 1 pixel of line
+    return t >= 0 && t <= 1;
   };
 
   // Separate hits into off-surface and on-surface
@@ -291,35 +288,31 @@ export function buildVisibilityPolygon(
   // Concatenate: off-surface first, then on-surface
   const sortedHits = [...offSurfaceHits, ...onSurfaceHits];
 
-  // Remove duplicate points (within epsilon) and very close consecutive points
+  // Remove duplicate points (exact match)
   const polygon: Vector2[] = [];
-  const posEpsilon = 0.5;
-  const consecutiveEpsilon = 2.0;
 
   for (const hit of sortedHits) {
-    // Check if this point is too close to ANY existing point
+    // Check if this point already exists (exact match)
     const isDuplicate = polygon.some(
-      (p) => Math.abs(p.x - hit.point.x) < posEpsilon && Math.abs(p.y - hit.point.y) < posEpsilon
+      (p) => p.x === hit.point.x && p.y === hit.point.y
     );
 
     if (isDuplicate) continue;
 
-    // Check if this point is too close to the PREVIOUS point
+    // Check if this point equals the PREVIOUS point
     if (polygon.length > 0) {
       const prev = polygon[polygon.length - 1]!;
-      const dist = Math.sqrt((hit.point.x - prev.x) ** 2 + (hit.point.y - prev.y) ** 2);
-      if (dist < consecutiveEpsilon) continue;
+      if (prev.x === hit.point.x && prev.y === hit.point.y) continue;
     }
 
     polygon.push(hit.point);
   }
 
-  // Check wrap-around: if last point is too close to first
+  // Check wrap-around: if last point equals first
   if (polygon.length > 2) {
     const first = polygon[0]!;
     const last = polygon[polygon.length - 1]!;
-    const wrapDist = Math.sqrt((first.x - last.x) ** 2 + (first.y - last.y) ** 2);
-    if (wrapDist < consecutiveEpsilon) {
+    if (first.x === last.x && first.y === last.y) {
       polygon.pop();
     }
   }
@@ -371,7 +364,7 @@ function computeStartRatioForTarget(origin: Vector2, target: Vector2, sector: Ra
   // Cross product for denominator: ray × line
   // This is zero if ray is parallel to line
   const denom = rdx * ldy - rdy * ldx;
-  if (Math.abs(denom) < 1e-10) {
+  if (denom === 0) {
     // Ray parallel to surface - start at origin
     return 0;
   }
@@ -416,8 +409,7 @@ function castRayToFirstHit(
   let closestPoint: Vector2 | null = null;
 
   // Check all obstacles
-  // Use a small epsilon to avoid self-intersection when origin is on a surface
-  const minT = Math.max(startRatio, 0.001);
+  const minT = Math.max(startRatio, 0);
 
   for (const obstacle of obstacles) {
     const segment: Segment = {
@@ -471,7 +463,7 @@ function findScreenBoundaryHit(ray: Ray, bounds: ScreenBounds): Vector2 | null {
 
   for (const edge of edges) {
     const hit = intersectRaySegment(ray, edge);
-    if (hit && hit.onSegment && hit.t > 0.001 && hit.t < closestT) {
+    if (hit && hit.onSegment && hit.t > 0 && hit.t < closestT) {
       closestT = hit.t;
       closestPoint = hit.point;
     }
@@ -612,7 +604,7 @@ function isOnRightSide(point: Vector2, edgeStart: Vector2, edgeEnd: Vector2): bo
     (edgeEnd.y - edgeStart.y) * (point.x - edgeStart.x);
 
   // Include points exactly on the edge (cross = 0)
-  return cross >= -0.001;
+  return cross >= 0;
 }
 
 /**
@@ -625,7 +617,7 @@ function lineIntersection(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2): V
   const d2y = p4.y - p3.y;
 
   const denom = d1x * d2y - d1y * d2x;
-  if (Math.abs(denom) < 1e-10) {
+  if (denom === 0) {
     return null; // Parallel lines
   }
 
@@ -857,7 +849,7 @@ function reflectPoint(point: Vector2, surface: Surface): Vector2 {
   const dy = end.y - start.y;
   const lenSq = dx * dx + dy * dy;
 
-  if (lenSq < 1e-10) {
+  if (lenSq === 0) {
     return point; // Degenerate surface
   }
 

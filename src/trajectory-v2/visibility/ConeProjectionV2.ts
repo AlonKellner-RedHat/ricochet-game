@@ -185,24 +185,37 @@ function comparePointsCCW(
   const bRef = refDirection.x * bVec.y - refDirection.y * bVec.x;
 
   // Handle points on or very close to the reference ray.
-  const refMagSq = refDirection.x * refDirection.x + refDirection.y * refDirection.y;
+  // Use PROVENANCE to determine if points are on the same ray:
+  // - If two points share the same pairedEndpoint, they're on the same ray
+  // - If a point IS a pairedEndpoint and its continuation is the other, they're on the same ray
   const aMagSq = aVec.x * aVec.x + aVec.y * aVec.y;
   const bMagSq = bVec.x * bVec.x + bVec.y * bVec.y;
 
-  // Relative threshold: cross product should be < sqrt(refMagSq * vecMagSq) * 1e-10
-  const aOnRay = Math.abs(aRef) * Math.abs(aRef) < refMagSq * aMagSq * 1e-20;
-  const bOnRay = Math.abs(bRef) * Math.abs(bRef) < refMagSq * bMagSq * 1e-20;
+  // Check if points are on the same ray via provenance (not recalculation)
+  const aKey = a.point.getKey();
+  const bKey = b.point.getKey();
+  const aPairedEndpoint = continuationToEndpoint.get(aKey);
+  const bPairedEndpoint = continuationToEndpoint.get(bKey);
+  const aContinuation = endpointToContinuation.get(aKey);
+  const bContinuation = endpointToContinuation.get(bKey);
 
-  if (aOnRay && !bOnRay) {
-    return 1;
-  }
-  if (bOnRay && !aOnRay) {
-    return -1;
-  }
-  if (aOnRay && bOnRay) {
+  // Points are on same ray if:
+  // 1. a is continuation of b (or vice versa)
+  // 2. Both are continuations of the same endpoint
+  const sameRay =
+    (aPairedEndpoint && aPairedEndpoint.getKey() === bKey) ||
+    (bPairedEndpoint && bPairedEndpoint.getKey() === aKey) ||
+    (aContinuation && aContinuation.getKey() === bKey) ||
+    (bContinuation && bContinuation.getKey() === aKey) ||
+    (aPairedEndpoint && bPairedEndpoint && aPairedEndpoint.getKey() === bPairedEndpoint.getKey());
+
+  // If points are on the same ray (via provenance), sort by distance
+  if (sameRay) {
     if (aMagSq !== bMagSq) {
       return aMagSq - bMagSq;
     }
+    // Same distance - use shadow boundary ordering
+    return handleCollinearPoints(a, b, origin, surfaceOrientations, continuationToEndpoint, endpointToContinuation);
   }
 
   // Check if points are on opposite sides of the reference ray
@@ -477,11 +490,10 @@ function isEndpointOnOtherSurface(
 ): boolean {
   const point = endpoint.computeXY();
   const ownSurfaceId = endpoint.surface.id;
-  const EPSILON = 0.001;
 
   for (const surface of obstacles) {
     if (surface.id === ownSurfaceId) continue;
-    if (isPointOnSegment(point, surface.segment.start, surface.segment.end, EPSILON)) {
+    if (isPointOnSegmentExact(point, surface.segment.start, surface.segment.end)) {
       return true;
     }
   }
@@ -490,33 +502,34 @@ function isEndpointOnOtherSurface(
 }
 
 /**
- * Check if a point lies on a line segment (within tolerance).
+ * Check if a point lies on a line segment (exact check).
+ * Uses cross product for collinearity and parametric t for segment bounds.
  */
-function isPointOnSegment(
+function isPointOnSegmentExact(
   point: Vector2,
   segStart: Vector2,
-  segEnd: Vector2,
-  epsilon: number
+  segEnd: Vector2
 ): boolean {
   const dx = segEnd.x - segStart.x;
   const dy = segEnd.y - segStart.y;
   const lenSq = dx * dx + dy * dy;
 
   if (lenSq === 0) {
-    return Math.abs(point.x - segStart.x) < epsilon && Math.abs(point.y - segStart.y) < epsilon;
+    // Degenerate segment - point must be exactly at segment start
+    return point.x === segStart.x && point.y === segStart.y;
   }
 
-  const t = ((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lenSq;
-
-  if (t < -epsilon || t > 1 + epsilon) {
+  // Cross product for collinearity check
+  const cross = (point.x - segStart.x) * dy - (point.y - segStart.y) * dx;
+  if (cross !== 0) {
     return false;
   }
 
-  const closestX = segStart.x + t * dx;
-  const closestY = segStart.y + t * dy;
+  // Parametric t for position along segment
+  const t = ((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lenSq;
 
-  const distSq = (point.x - closestX) ** 2 + (point.y - closestY) ** 2;
-  return distSq < epsilon * epsilon;
+  // Point must be strictly inside the segment (not at endpoints)
+  return t > 0 && t < 1;
 }
 
 // =============================================================================
@@ -579,7 +592,6 @@ function castRayToEndpoint(
         obstacle.segment.end
       );
 
-
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
         closestT = hit.t;
         closestSurface = obstacle;
@@ -598,7 +610,6 @@ function castRayToEndpoint(
         boundary.segment.end
       );
 
-
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
         closestT = hit.t;
         closestSurface = boundary;
@@ -606,7 +617,6 @@ function castRayToEndpoint(
       }
     }
   }
-
 
   if (closestSurface) {
     return new HitPoint(ray, closestSurface, closestT, closestS);
@@ -827,7 +837,6 @@ export function projectConeV2(
   bounds: ScreenBoundsConfig,
   excludeSurfaceId?: string
 ): SourcePoint[] {
-
   const { origin, startLine } = source;
   const isWindowed = startLine !== null;
   const vertices: SourcePoint[] = [];
@@ -929,7 +938,6 @@ export function projectConeV2(
   // Cast rays to each target within the cone
   for (const target of rayTargets) {
     const targetXY = target.computeXY();
-
 
     // Skip if target is at origin
     if (targetXY.x === origin.x && targetXY.y === origin.y) continue;
@@ -1054,7 +1062,6 @@ export function projectConeV2(
       excludeSurfaceId
     );
 
-
     if (hit) {
       vertices.push(hit);
 
@@ -1066,7 +1073,6 @@ export function projectConeV2(
           screenBoundaries
         );
 
-
         if (!isAtCorner) {
           const continuation = castContinuationRay(
             origin,
@@ -1076,7 +1082,6 @@ export function projectConeV2(
             startLine,
             excludeSurfaceId
           );
-
 
           if (continuation) {
             vertices.push(continuation);
@@ -1113,7 +1118,6 @@ export function projectConeV2(
 
   // Sort by angle from origin, using ray pairs for tie-breaking
   const sorted = sortPolygonVerticesSourcePoint(uniqueVertices, origin, startLine, rayPairs);
-
 
   return sorted;
 }

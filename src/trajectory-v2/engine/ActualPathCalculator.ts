@@ -293,7 +293,7 @@ export function getInitialDirection(player: Vector2, cursorImage: Vector2): Vect
   const dy = cursorImage.y - player.y;
   const len = Math.sqrt(dx * dx + dy * dy);
 
-  if (len < 1e-6) {
+  if (len === 0) {
     // Degenerate case - return arbitrary direction
     return { x: 1, y: 0 };
   }

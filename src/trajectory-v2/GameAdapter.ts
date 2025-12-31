@@ -351,7 +351,7 @@ export class GameAdapter {
     const dy = cursor.y - player.y;
     const len = Math.sqrt(dx * dx + dy * dy);
 
-    if (len < 0.001) {
+    if (len === 0) {
       return { x: 1, y: 0 };
     }
 
@@ -378,7 +378,7 @@ export class GameAdapter {
           const dx = target.x - arrow.position.x;
           const dy = target.y - arrow.position.y;
           const len = Math.sqrt(dx * dx + dy * dy);
-          if (len > 0.001) {
+          if (len > 0) {
             direction = { x: dx / len, y: dy / len };
           }
         }

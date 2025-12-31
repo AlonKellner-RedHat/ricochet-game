@@ -49,7 +49,7 @@ export function lineLineIntersection(
     (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
 
   // Lines are parallel (or coincident)
-  if (Math.abs(denominator) < 1e-10) {
+  if (denominator === 0) {
     return {
       point: { x: 0, y: 0 },
       t: Number.POSITIVE_INFINITY,
@@ -103,7 +103,7 @@ export function reflectPointThroughLine(
   const lineLengthSq = dx * dx + dy * dy;
 
   // Handle degenerate line (both points same)
-  if (lineLengthSq < 1e-10) {
+  if (lineLengthSq === 0) {
     return { x: point.x, y: point.y };
   }
 
@@ -150,13 +150,13 @@ export function pointSideOfLine(
 
 /**
  * Check if a parametric position is on a segment.
+ * EXACT check - no tolerance.
  *
  * @param t Parametric position (0 = start, 1 = end)
- * @param tolerance Optional tolerance for floating-point comparisons
- * @returns True if t is in [0, 1] within tolerance
+ * @returns True if t is in [0, 1]
  */
-export function isOnSegment(t: number, tolerance = 1e-9): boolean {
-  return t >= -tolerance && t <= 1 + tolerance;
+export function isOnSegment(t: number): boolean {
+  return t >= 0 && t <= 1;
 }
 
 /**
@@ -189,7 +189,7 @@ export function raySegmentIntersect(
 
   // Ray goes forward if t > 0
   // Segment is hit if s ∈ [0, 1]
-  const isForward = result.t > 1e-9;
+  const isForward = result.t > 0;
   const onSegment = isOnSegment(result.s);
   const hit = isForward && onSegment;
 

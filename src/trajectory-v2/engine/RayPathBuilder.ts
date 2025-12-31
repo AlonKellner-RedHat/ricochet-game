@@ -194,7 +194,7 @@ export function buildActualRayPath(
 
       const hit = intersectRaySegment(currentRay, segment);
 
-      if (hit && hit.t > 0.001 && hit.onSegment) {
+      if (hit && hit.t > 0 && hit.onSegment) {
         // Check if this hit is within remaining distance
         const hitDist = computeDistance(currentPoint, hit.point);
         if (hitDist <= remainingDistance) {
@@ -338,7 +338,7 @@ function computeSegmentT(point: Vector2, surface: Surface): number {
   const dy = end.y - start.y;
   const lenSq = dx * dx + dy * dy;
 
-  if (lenSq < 1e-20) {
+  if (lenSq === 0) {
     return 0;
   }
 
@@ -382,7 +382,7 @@ function checkCursorOnRay(ray: Ray, cursor: Vector2): boolean {
   const cross = dx * cy - dy * cx;
   const lenSq = dx * dx + dy * dy;
 
-  if (lenSq < 1e-10) {
+  if (lenSq === 0) {
     return false;
   }
 
@@ -401,7 +401,7 @@ function checkCursorOnRay(ray: Ray, cursor: Vector2): boolean {
  */
 function normalize(v: Vector2): Vector2 {
   const len = Math.sqrt(v.x * v.x + v.y * v.y);
-  if (len < 1e-10) {
+  if (len === 0) {
     return { x: 1, y: 0 };
   }
   return { x: v.x / len, y: v.y / len };

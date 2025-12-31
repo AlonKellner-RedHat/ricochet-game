@@ -660,7 +660,7 @@ export function deriveRender(
       const lastDy = lastSeg.end.y - lastSeg.start.y;
       const lastLen = Math.sqrt(lastDx * lastDx + lastDy * lastDy);
 
-      if (lastLen > 1e-6) {
+      if (lastLen > 0) {
         const lastDir = { x: lastDx / lastLen, y: lastDy / lastLen };
         const projectionSegments = calculatePhysicsProjection(
           lastSeg.end,
@@ -738,7 +738,7 @@ export function deriveRender(
       const actualDy = secondSegment.end.y - secondSegment.start.y;
       const actualLen = Math.sqrt(actualDx * actualDx + actualDy * actualDy);
 
-      if (actualLen > 1e-6) {
+      if (actualLen > 0) {
         const actualDirection = { x: actualDx / actualLen, y: actualDy / actualLen };
 
         // Add the actual path segments after divergence as dashed yellow
@@ -766,7 +766,7 @@ export function deriveRender(
           const lastDy = lastSegment.end.y - lastSegment.start.y;
           const lastLen = Math.sqrt(lastDx * lastDx + lastDy * lastDy);
 
-          if (lastLen > 1e-6) {
+          if (lastLen > 0) {
             const lastDirection = { x: lastDx / lastLen, y: lastDy / lastLen };
             const projectionSegments = calculatePhysicsProjection(
               lastActualPoint,
@@ -829,7 +829,7 @@ export function deriveRender(
   // When cursor is at the end of the last segment and there are no more segments,
   // we need to add a forward projection.
   const cursorAtSegmentEnd =
-    cursorIdx !== -1 && cursorIdx === path.segments.length - 1 && path.cursorT >= 0.99;
+    cursorIdx !== -1 && cursorIdx === path.segments.length - 1 && path.cursorT >= 1;
   const noSegmentsAfterCursor = cursorIdx === path.segments.length - 1;
   const needsForwardProjection =
     (cursorAtSegmentEnd || noSegmentsAfterCursor) &&
@@ -844,7 +844,7 @@ export function deriveRender(
     const dy = lastSeg.end.y - lastSeg.start.y;
     const len = Math.sqrt(dx * dx + dy * dy);
 
-    if (len > 1e-6) {
+    if (len > 0) {
       const direction = { x: dx / len, y: dy / len };
 
       // Calculate physics-based projection from cursor
@@ -1003,7 +1003,7 @@ export function calculatePlannedPathFromPoint(
   let dy = firstCursorImage.y - start.y;
   let len = Math.sqrt(dx * dx + dy * dy);
 
-  if (len < 1e-6) {
+  if (len === 0) {
     return [];
   }
 
@@ -1057,7 +1057,7 @@ export function calculatePlannedPathFromPoint(
       dy = nextCursorImage.y - lineHit.point.y;
       len = Math.sqrt(dx * dx + dy * dy);
 
-      if (len > 1e-6) {
+      if (len > 0) {
         currentDirection = { x: dx / len, y: dy / len };
       } else {
         currentDirection = reflectedDir;
@@ -1068,7 +1068,7 @@ export function calculatePlannedPathFromPoint(
       dy = cursor.y - lineHit.point.y;
       len = Math.sqrt(dx * dx + dy * dy);
 
-      if (len > 1e-6) {
+      if (len > 0) {
         currentDirection = { x: dx / len, y: dy / len };
       } else {
         currentDirection = reflectedDir;
@@ -1094,7 +1094,7 @@ export function calculatePlannedPathFromPoint(
     const projDy = lastSegment.end.y - lastSegment.start.y;
     const projLen = Math.sqrt(projDx * projDx + projDy * projDy);
 
-    if (projLen > 1e-6) {
+    if (projLen > 0) {
       const projDir = { x: projDx / projLen, y: projDy / projLen };
       const projection = calculatePhysicsProjection(cursor, projDir, allSurfaces, 1000, 5);
       segments.push(...projection);
@@ -1116,7 +1116,7 @@ function isPointOnSegment(
   const dy = end.y - start.y;
   const len = Math.sqrt(dx * dx + dy * dy);
 
-  if (len < 1e-6) {
+  if (len === 0) {
     const dist = distance(point, start);
     return { isOnSegment: dist < 1, t: 0 };
   }

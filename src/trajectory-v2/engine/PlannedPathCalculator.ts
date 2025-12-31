@@ -52,9 +52,10 @@ export interface PlannedPath {
 
 /**
  * Check if a parametric value is on the segment [0, 1].
+ * EXACT check.
  */
 function isOnSegment(t: number): boolean {
-  return t >= -0.001 && t <= 1.001;
+  return t >= 0 && t <= 1;
 }
 
 /**
@@ -65,7 +66,7 @@ function getParametricT(point: Vector2, start: Vector2, end: Vector2): number {
   const dy = end.y - start.y;
   const len2 = dx * dx + dy * dy;
 
-  if (len2 < 1e-12) {
+  if (len2 === 0) {
     return 0;
   }
 
