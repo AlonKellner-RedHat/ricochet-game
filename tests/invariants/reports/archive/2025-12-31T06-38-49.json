@@ -1,0 +1,1554 @@
+{
+  "timestamp": "2025-12-31T06:38:49.897Z",
+  "summary": {
+    "totalCases": 7800,
+    "passed": 0,
+    "failed": 7800,
+    "skipped": 325,
+    "durationMs": 134
+  },
+  "byInvariant": {
+    "context": {
+      "count": 7800,
+      "items": [
+        "empty",
+        "single-horizontal",
+        "single-vertical",
+        "single-diagonal",
+        "wall-obstacle",
+        "parallel-mirrors",
+        "v-shape-90",
+        "v-shape-60",
+        "pyramid",
+        "surface-behind-surface",
+        "collinear-endpoints",
+        "near-parallel",
+        "wall-with-gap"
+      ]
+    }
+  },
+  "byScene": {
+    "empty": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    },
+    "single-horizontal": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    },
+    "single-vertical": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    },
+    "single-diagonal": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    },
+    "wall-obstacle": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    },
+    "parallel-mirrors": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    },
+    "v-shape-90": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    },
+    "v-shape-60": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    },
+    "pyramid": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    },
+    "surface-behind-surface": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    },
+    "collinear-endpoints": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    },
+    "near-parallel": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    },
+    "wall-with-gap": {
+      "count": 600,
+      "items": [
+        "context"
+      ]
+    }
+  },
+  "byPattern": {
+    "unknown": {
+      "count": 7800,
+      "items": [
+        "empty",
+        "single-horizontal",
+        "single-vertical",
+        "single-diagonal",
+        "wall-obstacle",
+        "parallel-mirrors",
+        "v-shape-90",
+        "v-shape-60",
+        "pyramid",
+        "surface-behind-surface",
+        "collinear-endpoints",
+        "near-parallel",
+        "wall-with-gap"
+      ]
+    }
+  },
+  "failures": [
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 81
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 81
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 143
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 143
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 205
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 205
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 205
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 267
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 267
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 329
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 329
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 329
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 391
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 391
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 453
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 453
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 453
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 515
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 515
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 577
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 577
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 577
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 639
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 639
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 81
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 81
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 143
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 143
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 205
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 205
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 205
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 267
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 267
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 329
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 329
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 329
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 391
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 391
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 453
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 453
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 453
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 515
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 515
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 577
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 577
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 577
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 639
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 581,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 639
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 81
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 81
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 143
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 143
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 205
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 205
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 205
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 267
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 267
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 329
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 329
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 329
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 391
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 391
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 453
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 453
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 453
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 515
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 515
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 577
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 577
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 577
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 639
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 639
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 81
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 81
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 81
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 143
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 205
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 205
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 205
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 267
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 267
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 329
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 329
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 329
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 391
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 391
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 453
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 453
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 453
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 515
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 515
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 577
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 577
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 577
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 639
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 639
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 81
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 81
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 81
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    },
+    {
+      "scene": "empty",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 143
+      },
+      "invariantId": "context",
+      "stageIndex": 0,
+      "message": "Context computation failed: ReferenceError: debugLog is not defined"
+    }
+  ],
+  "commands": [
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=581,81 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=1053,81 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=345,143 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=817,143 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=109,205 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=581,205 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=1053,205 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=345,267 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=817,267 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=109,329 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=581,329 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=1053,329 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=345,391 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=817,391 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=109,453 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=581,453 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=1053,453 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=345,515 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=817,515 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=empty INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=109,577 npm test -- tests/invariants/"
+  ]
+}

@@ -25,7 +25,7 @@ import {
   createScreenBoundaryChain,
 } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import {
-  type Endpoint,
+  Endpoint,
   HitPoint,
   OriginPoint,
   type SourcePoint,
@@ -313,21 +313,37 @@ function handleCollinearPoints(
   // Check if these are paired points (endpoint + its continuation)
   const arePaired = checkIfPairedPoints(p1, p2, continuationToEndpoint, endpointToContinuation);
 
-  if (arePaired) {
-    // Use shadow boundary order from orientation
-    const ep1 = isEndpoint(p1) ? p1 : null;
-    const ep2 = isEndpoint(p2) ? p2 : null;
-
-    if (ep1) {
-      const orientation = surfaceOrientations.get(ep1.surface.id);
+  // For collinear points, find the root endpoint of each chain
+  // This handles transitive pairing: (endpoint) → (endpoint) → (hitpoint)
+  const rootEndpoint1 = findRootEndpoint(p1, a.pairedEndpoint, continuationToEndpoint);
+  const rootEndpoint2 = findRootEndpoint(p2, b.pairedEndpoint, continuationToEndpoint);
+  
+  // If both are on the same ray (same root endpoint), use shadow boundary order
+  const sameRay = rootEndpoint1 && rootEndpoint2 && 
+                  rootEndpoint1.getKey() === rootEndpoint2.getKey();
+  
+  if (sameRay || arePaired) {
+    // Use shadow boundary order from the root endpoint's orientation
+    const rootEndpoint = rootEndpoint1 ?? rootEndpoint2;
+    
+    if (rootEndpoint) {
+      const orientation = surfaceOrientations.get(rootEndpoint.surface.id);
       if (orientation) {
-        return getShadowBoundaryOrderFromOrientation(ep1, orientation);
-      }
-    }
-    if (ep2) {
-      const orientation = surfaceOrientations.get(ep2.surface.id);
-      if (orientation) {
-        return -getShadowBoundaryOrderFromOrientation(ep2, orientation);
+        const order = getShadowBoundaryOrderFromOrientation(rootEndpoint, orientation);
+        // order > 0: continuation comes BEFORE endpoint (entering shadow)
+        // order < 0: continuation comes AFTER endpoint (exiting shadow)
+        
+        // Determine which point is closer to origin (the endpoint in the chain)
+        const dist1 = Math.hypot(a.xy.x - origin.x, a.xy.y - origin.y);
+        const dist2 = Math.hypot(b.xy.x - origin.x, b.xy.y - origin.y);
+        
+        if (order > 0) {
+          // Continuation before endpoint: further point (larger distance) comes first
+          return dist2 - dist1; // Larger distance first
+        } else {
+          // Continuation after endpoint: closer point (smaller distance) comes first
+          return dist1 - dist2; // Smaller distance first
+        }
       }
     }
   }
@@ -890,6 +906,14 @@ function castContinuationRay(
   }
 
   if (closestSurface) {
+    // PROVENANCE CHECK: If the hit is exactly at s=0 or s=1, this is an endpoint hit!
+    // Return an Endpoint instead of HitPoint for proper type detection.
+    // This enables recursive continuation from endpoints hit via continuation rays.
+    if (closestS === 0) {
+      return new Endpoint(closestSurface, "start");
+    } else if (closestS === 1) {
+      return new Endpoint(closestSurface, "end");
+    }
     return new HitPoint(ray, closestSurface, closestT, closestS);
   }
 
@@ -1023,18 +1047,45 @@ export function projectConeV2(
         );
 
         if (!isAtCorner) {
-          const continuation = castContinuationRay(
-            origin,
-            targetEndpoint,
-            [...effectiveObstacles, ...screenBoundaries.all],
-            screenBoundaries,
-            startLine,
-            excludeSurfaceId
-          );
-          if (continuation) {
+          // Cast continuation ray - may need to recursively continue if it hits another endpoint
+          let currentEndpoint = targetEndpoint;
+          let previousOnRay: Endpoint = targetEndpoint; // Track for ray pair linking
+          const maxIterations = 10; // Prevent infinite loops
+          
+          for (let iter = 0; iter < maxIterations; iter++) {
+            const continuation = castContinuationRay(
+              origin,
+              currentEndpoint,
+              [...effectiveObstacles, ...screenBoundaries.all],
+              screenBoundaries,
+              startLine,
+              excludeSurfaceId
+            );
+            
+            if (!continuation) break;
+            
             vertices.push(continuation);
-            // Track this ray pair for sorting
-            rayPairs.set(targetEndpoint.getKey(), { endpoint: targetEndpoint, continuation });
+            
+            // Track ray pair for sorting: each endpoint on this ray points to its continuation
+            rayPairs.set(previousOnRay.getKey(), { endpoint: previousOnRay, continuation });
+            
+            // If continuation hit another endpoint, we need to continue through it
+            if (isEndpoint(continuation)) {
+              // Check if this endpoint is at a corner
+              const contIsAtCorner = isEndpointOnOtherSurface(
+                continuation,
+                effectiveObstacles,
+                screenBoundaries
+              );
+              if (contIsAtCorner) break;
+              
+              // Continue from this endpoint - update tracking
+              previousOnRay = continuation;
+              currentEndpoint = continuation;
+            } else {
+              // Hit a surface in the middle or screen boundary - done
+              break;
+            }
           }
         }
       }
@@ -1161,10 +1212,12 @@ function sortPolygonVerticesSourcePoint(
   const pointsWithData = points.map((p) => {
     const xy = p.computeXY();
 
-    // Find paired endpoint if this is a continuation (HitPoint)
+    // Find paired endpoint if this is a continuation
+    // A continuation can be either a HitPoint OR an Endpoint (if it hit another endpoint)
     let pairedEndpoint: Endpoint | null = null;
-    if (isHitPoint(p)) {
-      pairedEndpoint = continuationToEndpoint.get(p.getKey()) ?? null;
+    const pairedEp = continuationToEndpoint.get(p.getKey());
+    if (pairedEp) {
+      pairedEndpoint = pairedEp;
     }
 
     return { point: p, xy, pairedEndpoint };
@@ -1201,8 +1254,8 @@ function sortPolygonVerticesSourcePoint(
 
   // Sort using reference-ray based cross-product comparison.
   // This is epsilon-free and guarantees transitivity.
-  pointsWithData.sort((a, b) =>
-    comparePointsCCW(
+  pointsWithData.sort((a, b) => {
+    const result = comparePointsCCW(
       a,
       b,
       origin,
@@ -1210,8 +1263,9 @@ function sortPolygonVerticesSourcePoint(
       surfaceOrientations,
       continuationToEndpoint,
       endpointToContinuation
-    )
-  );
+    );
+    return result;
+  });
 
   // For windowed cones, ensure edge points are at the ends
   if (startLine !== null) {
@@ -1219,6 +1273,37 @@ function sortPolygonVerticesSourcePoint(
   }
 
   return pointsWithData.map((item) => item.point);
+}
+
+/**
+ * Find the root endpoint of a continuation chain.
+ * Follows pairedEndpoint links until reaching the original endpoint.
+ */
+function findRootEndpoint(
+  point: SourcePoint,
+  directPairedEndpoint: Endpoint | null,
+  continuationToEndpoint: Map<string, Endpoint>
+): Endpoint | null {
+  // If the point is an endpoint without a paired endpoint, it IS the root
+  if (isEndpoint(point) && !directPairedEndpoint) {
+    return point;
+  }
+  
+  // Follow the chain to find the root
+  let current: Endpoint | null = directPairedEndpoint;
+  const maxDepth = 10; // Prevent infinite loops
+  
+  for (let i = 0; i < maxDepth && current; i++) {
+    // Check if current has a paired endpoint (it's also a continuation)
+    const nextInChain = continuationToEndpoint.get(current.getKey());
+    if (!nextInChain) {
+      // current is the root endpoint
+      return current;
+    }
+    current = nextInChain;
+  }
+  
+  return current;
 }
 
 /**

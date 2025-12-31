@@ -237,4 +237,3 @@ export function createTestSurface(
     distanceToPoint: () => 0,
   };
 }
-

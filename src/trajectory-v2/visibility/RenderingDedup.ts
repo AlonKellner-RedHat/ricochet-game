@@ -55,7 +55,7 @@ export function dedupeForRendering(vertices: Vector2[], _tolerance?: number): Ve
     }
 
     const prev = result[result.length - 1]!;
-    
+
     // EXACT equality check - no tolerance
     // Different sources can produce very close but distinct vertices
     // that must be preserved for correct polygon shape

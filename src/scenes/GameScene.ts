@@ -608,8 +608,8 @@ export class GameScene extends Phaser.Scene {
           new RicochetSurface(`grid-${row}-${col}`, {
             start: { x: startX, y: startY },
             end: { x: endX, y: endY },
-          })
-        );
+      })
+    );
       }
     }
 
