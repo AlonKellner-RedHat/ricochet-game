@@ -43,11 +43,14 @@ export function generateGridPositions(): Vector2[] {
 /**
  * Special positions to test edge cases.
  * These are added as bugs are discovered.
- * Initially empty - add positions that reproduce bugs.
  */
 export const SPECIAL_POSITIONS: Vector2[] = [
-  // Add positions here as bugs are found, e.g.:
-  // { x: 1089.866172610004, y: 174 }, // Pixel-perfect bug position
+  // Chain1 120-degree V junction pixel-perfect bug (player positions)
+  { x: 952.9123332000011, y: 666 }, // INVALID - junction apex missing
+  { x: 952.9123736006022, y: 666 }, // VALID - junction apex present
+  // Corresponding cursor positions
+  { x: 649.1646778042959, y: 268.35322195704055 }, // cursor for invalid
+  { x: 655.2744630071599, y: 269.88066825775655 }, // cursor for valid
 ];
 
 /**

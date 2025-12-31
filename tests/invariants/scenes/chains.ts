@@ -203,4 +203,28 @@ export const CHAIN_SCENES: Scene[] = [
     allChains: createPyramidChains(SCREEN.width / 2, 500, 40, 4),
     plannedSurfaces: createPyramidSurfaces(SCREEN.width / 2, 500, 40, 4),
   },
+
+  // Scene 10: V-shape at 120 degrees (from demo - exact coords)
+  // This is the scene that exhibits the pixel-perfect junction bug
+  {
+    name: "v-shape-120",
+    description: "Two surfaces meeting at 120 degrees (chain1 from demo)",
+    allChains: [
+      createRicochetChain("chain1", [
+        { x: 598.0384757729337, y: 280 },
+        { x: 650, y: 250 }, // apex (junction)
+        { x: 701.9615242270663, y: 280 },
+      ]),
+    ],
+    plannedSurfaces: [
+      new RicochetSurface("chain1-0", {
+        start: { x: 598.0384757729337, y: 280 },
+        end: { x: 650, y: 250 },
+      }),
+      new RicochetSurface("chain1-1", {
+        start: { x: 650, y: 250 },
+        end: { x: 701.9615242270663, y: 280 },
+      }),
+    ],
+  },
 ];
