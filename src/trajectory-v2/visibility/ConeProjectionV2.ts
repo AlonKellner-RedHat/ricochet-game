@@ -170,9 +170,7 @@ function getSurfaceFromPoint(
   point: SourcePoint
 ): Surface | null {
   if (pairedEndpoint) {
-    return isEndpoint(pairedEndpoint)
-      ? pairedEndpoint.surface
-      : pairedEndpoint.getSurfaceBefore();
+    return isEndpoint(pairedEndpoint) ? pairedEndpoint.surface : pairedEndpoint.getSurfaceBefore();
   }
   if (isEndpoint(point)) {
     return point.surface;
@@ -1067,11 +1065,15 @@ export function projectConeV2(
   const isWindowed = startLine !== null;
   const vertices: SourcePoint[] = [];
 
-  // Create screen boundaries for ray casting
+  // Create screen boundaries as both object (for ray casting) and chain (for endpoints)
   const screenBoundaries = createScreenBoundaries(bounds);
+  const screenChain = createScreenBoundaryChain(bounds);
+
+  // Include screen chain in chains for unified endpoint/junction handling
+  const allChains = [...chains, screenChain];
 
   // Extract all surfaces from chains for ray-casting
-  const allSurfaces = chains.flatMap((c) => c.getSurfaces());
+  const allSurfaces = allChains.flatMap((c) => c.getSurfaces());
 
   // Filter out excluded surface
   const effectiveObstacles = excludeSurfaceId
@@ -1085,26 +1087,22 @@ export function projectConeV2(
     surfaceOrientations.set(surface.id, computeSurfaceOrientation(surface, origin));
   }
 
-  // Collect all ray targets from chains
+  // Collect all ray targets from chains (including screen chain for corners)
   const rayTargets: RayTarget[] = [];
 
-  // Add chain endpoints (Endpoint objects) - these get continuation rays
-  for (const chain of chains) {
+  for (const chain of allChains) {
+    // Add endpoints for open chains
     const endpoints = chain.getEndpoints();
     if (endpoints) {
       rayTargets.push(endpoints[0]); // Chain start endpoint
       rayTargets.push(endpoints[1]); // Chain end endpoint
     }
-    // Add junction points (internal joints) - NO continuation rays
+    // Add junction points (internal joints in chains)
+    // For screen chain, these are the 4 corners
     for (const junction of chain.getJunctionPoints()) {
       rayTargets.push(junction);
     }
   }
-
-  // NOTE: Screen boundary corners are NOT added as ray targets.
-  // Screen corners should only appear in the polygon as HitPoints when
-  // continuation rays naturally hit the screen boundary at corner positions.
-  // Adding them as explicit JunctionPoint targets causes incorrect polygon edges.
 
   // For windowed cones, add window endpoints to polygon
   if (isWindowed && startLine) {
@@ -1114,7 +1112,10 @@ export function projectConeV2(
 
   // Track ray pairs: endpoint + continuation that share the same ray
   // Key: endpoint's unique key, Value: [endpoint, continuation]
-  const rayPairs = new Map<string, { endpoint: Endpoint | JunctionPoint; continuation: SourcePoint | null }>();
+  const rayPairs = new Map<
+    string,
+    { endpoint: Endpoint | JunctionPoint; continuation: SourcePoint | null }
+  >();
 
   // Cast rays to each target within the cone
   for (const target of rayTargets) {
@@ -1155,9 +1156,32 @@ export function projectConeV2(
         startLine
       );
 
+      // CRITICAL: The hit must be at or beyond the target position
+      // If an obstacle blocks the ray BEFORE reaching the target, skip this junction
       if (hit) {
+        const hitXY = hit.computeXY();
+        const distToHit = Math.hypot(hitXY.x - origin.x, hitXY.y - origin.y);
+        const distToTarget = Math.hypot(targetXY.x - origin.x, targetXY.y - origin.y);
+
+        // If hit is closer than target, the junction is blocked - skip it
+        if (distToHit < distToTarget - 0.1) {
+          continue; // Junction is obstructed, don't add it
+        }
+
         // Add the junction directly to vertices (it's now a SourcePoint)
         vertices.push(target);
+
+        // Screen boundary junctions (corners) don't cast continuation rays
+        // Screen edges are boundaries - light doesn't pass through them
+        const surfaceBefore = target.getSurfaceBefore();
+        const surfaceAfter = target.getSurfaceAfter();
+        const isScreenBoundaryJunction =
+          surfaceBefore.id.startsWith("screen-") || surfaceAfter.id.startsWith("screen-");
+
+        if (isScreenBoundaryJunction) {
+          // Screen corners are just vertices, no continuation needed
+          continue;
+        }
 
         // Use provenance-based pass-through check (no recalculation)
         const canPassThrough = target.canLightPassWithOrientations(surfaceOrientations);
@@ -1174,8 +1198,6 @@ export function projectConeV2(
         if (canPassThrough && !isJunctionWindowEndpoint) {
           // Create temporary Endpoint for ray casting (provides surfaceId to exclude)
           // Use surfaceBefore's end (which IS the junction position)
-          const surfaceBefore = target.getSurfaceBefore();
-          const surfaceAfter = target.getSurfaceAfter();
           const tempEndpointForRayCast = new Endpoint(surfaceBefore, "end");
 
           const continuation = castContinuationRay(
@@ -1194,10 +1216,7 @@ export function projectConeV2(
             const pastWindow = startLine ? isPointPastWindow(origin, contXY, startLine) : true;
 
             // Only add continuation if within the cone AND past the window (for windowed cones)
-            if (
-              !isWindowed ||
-              (inCone && pastWindow)
-            ) {
+            if (!isWindowed || (inCone && pastWindow)) {
               vertices.push(continuation);
               // Track the junction (not the temp endpoint) in rayPairs for proper sorting
               rayPairs.set(target.getKey(), {
@@ -1435,7 +1454,10 @@ function removeDuplicatesSourcePoint(points: SourcePoint[]): SourcePoint[] {
  * Ray pair info tracked during ray casting.
  * Maps endpoint key → { endpoint, continuation }
  */
-type RayPairMap = Map<string, { endpoint: Endpoint | JunctionPoint; continuation: SourcePoint | null }>;
+type RayPairMap = Map<
+  string,
+  { endpoint: Endpoint | JunctionPoint; continuation: SourcePoint | null }
+>;
 
 /**
  * Sort polygon vertices by direction from origin.
@@ -1838,7 +1860,7 @@ function arrangeWindowedConeV2(
 
 /**
  * Insert screen corners between consecutive points on different screen boundaries.
- * 
+ *
  * When the polygon transitions from one screen edge to another (e.g., floor to right wall),
  * the shared corner must be inserted to create a valid polygon edge along the screen boundary.
  */
@@ -1857,24 +1879,29 @@ function insertScreenCorners(
   };
 
   // Determine which screen edge a point is on (null if not on screen boundary)
-  function getScreenEdge(xy: Vector2): 'top' | 'bottom' | 'left' | 'right' | null {
+  function getScreenEdge(xy: Vector2): "top" | "bottom" | "left" | "right" | null {
     const eps = 0.01;
-    if (Math.abs(xy.y - screenBounds.minY) < eps) return 'top';
-    if (Math.abs(xy.y - screenBounds.maxY) < eps) return 'bottom';
-    if (Math.abs(xy.x - screenBounds.minX) < eps) return 'left';
-    if (Math.abs(xy.x - screenBounds.maxX) < eps) return 'right';
+    if (Math.abs(xy.y - screenBounds.minY) < eps) return "top";
+    if (Math.abs(xy.y - screenBounds.maxY) < eps) return "bottom";
+    if (Math.abs(xy.x - screenBounds.minX) < eps) return "left";
+    if (Math.abs(xy.x - screenBounds.maxX) < eps) return "right";
     return null;
   }
 
   // Get the corner between two edges
   function getCornerBetween(edge1: string, edge2: string): Vector2 | null {
-    const pair = [edge1, edge2].sort().join('-');
+    const pair = [edge1, edge2].sort().join("-");
     switch (pair) {
-      case 'right-top': return corners.topRight;
-      case 'bottom-right': return corners.bottomRight;
-      case 'bottom-left': return corners.bottomLeft;
-      case 'left-top': return corners.topLeft;
-      default: return null; // Same edge or opposite edges
+      case "right-top":
+        return corners.topRight;
+      case "bottom-right":
+        return corners.bottomRight;
+      case "bottom-left":
+        return corners.bottomLeft;
+      case "left-top":
+        return corners.topLeft;
+      default:
+        return null; // Same edge or opposite edges
     }
   }
 

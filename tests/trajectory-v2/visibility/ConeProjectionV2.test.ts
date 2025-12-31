@@ -13,7 +13,7 @@ import {
   isEndpoint,
   isHitPoint,
 } from "@/trajectory-v2/geometry/SourcePoint";
-import { type SurfaceChain, createSingleSurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import { type SurfaceChain, createSingleSurfaceChain, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import {
   createConeThroughWindow,
@@ -131,25 +131,23 @@ describe("ConeProjectionV2 - Full 360° Cone", () => {
       }
     });
 
-    it("screen corner hits are HitPoints on screen boundaries", () => {
+    it("screen corners are JunctionPoints from screen boundary chain", () => {
       const player = { x: 400, y: 300 };
       const cone = createFullCone(player);
 
       const points = projectConeV2(cone, toChains([]), bounds);
 
-      // All corner points should be HitPoints (rays cast to JunctionPoints result in HitPoints)
+      // All corner points should be JunctionPoints from the screen boundary chain
       const corners = points.filter((p) => {
         const xy = p.computeXY();
         return (xy.x === 0 || xy.x === 800) && (xy.y === 0 || xy.y === 600);
       });
 
       // With the SurfaceChain refactor, screen corners are JunctionPoints
-      // When we cast rays to them, we get HitPoints on screen boundary surfaces
+      // They are directly added to vertices (not as HitPoints from ray casting)
+      expect(corners.length).toBe(4);
       for (const corner of corners) {
-        expect(isHitPoint(corner)).toBe(true);
-        if (isHitPoint(corner)) {
-          expect(corner.hitSurface.id.startsWith("screen-")).toBe(true);
-        }
+        expect(isJunctionPoint(corner)).toBe(true);
       }
     });
   });
