@@ -1409,21 +1409,11 @@ export function projectConeV2(
         effectiveObstacles, // Already includes screen boundary surfaces
         startLine
       );
-      // #region agent log
-      if (process.env.DEBUG_POLYGON === "1") {
-        console.log(`  leftBoundaryRay: leftBoundary=(${source.leftBoundary.x}, ${source.leftBoundary.y}), leftHitXY=${leftHit?.computeXY() ? `(${leftHit.computeXY().x.toFixed(2)}, ${leftHit.computeXY().y.toFixed(2)})` : 'null'}, leftHitType=${leftHit?.type}`);
-      }
-      // #endregion
       // Only add if the hit is within the cone AND past the window (for windowed cones)
       if (leftHit) {
         const hitXY = leftHit.computeXY();
         const leftInCone = isPointInCone(hitXY, source);
         const leftPastWindow = !startLine || isPointPastWindow(origin, hitXY, startLine);
-        // #region agent log
-        if (process.env.DEBUG_POLYGON === "1") {
-          console.log(`  leftBoundaryFiltering: hitXY=(${hitXY.x.toFixed(2)}, ${hitXY.y.toFixed(2)}), leftInCone=${leftInCone}, leftPastWindow=${leftPastWindow}, willAdd=${leftInCone && leftPastWindow}`);
-        }
-        // #endregion
         // For windowed cones, we now track cone boundary hits in rayPairs properly,
         // so we can include ALL hits (screen or game surface).
         const shouldAddLeft = leftInCone && leftPastWindow;
