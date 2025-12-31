@@ -7,17 +7,62 @@
  * - Cursor positions (10x10 grid + special positions)
  * - Invariants (assertions that must always hold)
  *
- * Total combinations: 13 scenes × 100 players × 100 cursors × 4 invariants = 520,000 tests
+ * Total combinations: 13 scenes × 100 players × 100 cursors × 3 invariants = 390,000 tests
  *
- * To manage this, we batch tests by scene and sample positions.
- * For CI, use a reduced set. For full coverage, run with --full flag.
+ * ## Modes
+ *
+ * ### Batched Mode (Default)
+ * Fast execution with one test per scene. Violations are collected and reported
+ * with copy-paste commands for focused investigation.
+ *
+ * ### Focused Mode (Investigation)
+ * Set environment variables to narrow down to specific cases:
+ * - INVARIANT_FOCUS_SCENE=single-horizontal
+ * - INVARIANT_FOCUS_PLAYER=109,81
+ * - INVARIANT_FOCUS_CURSOR=581,81
+ * - INVARIANT_FOCUS_INVARIANT=polygon-edges
+ *
+ * Example:
+ *   INVARIANT_FOCUS_SCENE=single-horizontal INVARIANT_FOCUS_PLAYER=109,81 npm test -- tests/invariants/
  */
 
 import { describe, it, expect } from "vitest";
 import { ALL_SCENES } from "./scenes";
-import { ALL_POSITIONS, positionKey, SCREEN } from "./positions";
+import { ALL_POSITIONS, positionKey } from "./positions";
 import { ALL_INVARIANTS } from "./invariants";
 import { computeContext, DEFAULT_SCREEN_BOUNDS } from "./runner";
+import type { Scene, Invariant, InvariantContext } from "./types";
+import type { Vector2 } from "@/trajectory-v2/geometry/types";
+
+// =============================================================================
+// CONFIGURATION
+// =============================================================================
+
+/**
+ * Parse a position from environment variable (e.g., "109,81" -> {x: 109, y: 81})
+ */
+function parsePosition(value: string | undefined): Vector2 | undefined {
+  if (!value) return undefined;
+  const parts = value.split(",").map((s) => parseFloat(s.trim()));
+  if (parts.length !== 2 || parts.some(isNaN)) return undefined;
+  return { x: parts[0]!, y: parts[1]! };
+}
+
+/**
+ * Focus configuration from environment variables.
+ * When any of these are set, we switch to focused mode.
+ */
+const FOCUS = {
+  scene: process.env.INVARIANT_FOCUS_SCENE,
+  player: parsePosition(process.env.INVARIANT_FOCUS_PLAYER),
+  cursor: parsePosition(process.env.INVARIANT_FOCUS_CURSOR),
+  invariant: process.env.INVARIANT_FOCUS_INVARIANT,
+};
+
+/**
+ * Whether we're in focused mode (any focus variable is set).
+ */
+const IS_FOCUSED = !!(FOCUS.scene || FOCUS.player || FOCUS.cursor || FOCUS.invariant);
 
 /**
  * Whether to run full test suite (all positions) or sampled.
@@ -27,149 +72,269 @@ const FULL_RUN = process.env.INVARIANT_FULL === "1";
 
 /**
  * Sample rate for positions (1 = every position, 4 = every 4th position).
+ * In focused mode, always use all positions.
  */
-const SAMPLE_RATE = FULL_RUN ? 1 : 4;
+const SAMPLE_RATE = IS_FOCUSED || FULL_RUN ? 1 : 4;
+
+// =============================================================================
+// HELPERS
+// =============================================================================
 
 /**
- * Get sampled positions for testing.
+ * Get positions to test, applying sampling if not focused.
  */
-function getSampledPositions() {
+function getPositionsToTest(): Vector2[] {
   return ALL_POSITIONS.filter((_, i) => i % SAMPLE_RATE === 0);
 }
 
 /**
  * Check if player and cursor are too close (skip these).
  */
-function arePositionsTooClose(player: { x: number; y: number }, cursor: { x: number; y: number }) {
+function arePositionsTooClose(player: Vector2, cursor: Vector2): boolean {
   const dx = player.x - cursor.x;
   const dy = player.y - cursor.y;
   return dx * dx + dy * dy < 100; // 10 pixels minimum distance
 }
 
 /**
- * Main cartesian product tests.
- * 
- * These are skipped by default as they find known issues that need investigation.
- * Run with INVARIANT_ENABLE=1 to enable.
+ * Check if a position is within screen bounds.
  */
-const ENABLE_MATRIX_TESTS = process.env.INVARIANT_ENABLE === "1";
+function isWithinBounds(pos: Vector2): boolean {
+  return (
+    pos.x >= DEFAULT_SCREEN_BOUNDS.minX &&
+    pos.x <= DEFAULT_SCREEN_BOUNDS.maxX &&
+    pos.y >= DEFAULT_SCREEN_BOUNDS.minY &&
+    pos.y <= DEFAULT_SCREEN_BOUNDS.maxY
+  );
+}
 
-describe.skipIf(!ENABLE_MATRIX_TESTS)("Invariant Tests (Matrix)", () => {
-  const sampledPositions = getSampledPositions();
-  
-  console.log(`Running invariant tests with ${FULL_RUN ? "FULL" : "SAMPLED"} coverage`);
+/**
+ * Check if a position matches a focus position (within 1 pixel).
+ */
+function positionMatches(pos: Vector2, focus: Vector2 | undefined): boolean {
+  if (!focus) return true; // No focus = match all
+  return Math.abs(pos.x - focus.x) < 1 && Math.abs(pos.y - focus.y) < 1;
+}
+
+/**
+ * Format a violation as a copy-paste command.
+ */
+function formatViolationCommand(
+  scene: string,
+  player: Vector2,
+  cursor: Vector2,
+  invariantId?: string
+): string {
+  const px = Math.round(player.x);
+  const py = Math.round(player.y);
+  const cx = Math.round(cursor.x);
+  const cy = Math.round(cursor.y);
+  const invPart = invariantId ? ` INVARIANT_FOCUS_INVARIANT=${invariantId}` : "";
+  return `INVARIANT_FOCUS_SCENE=${scene} INVARIANT_FOCUS_PLAYER=${px},${py} INVARIANT_FOCUS_CURSOR=${cx},${cy}${invPart} npm test -- tests/invariants/`;
+}
+
+/**
+ * Violation record for tracking.
+ */
+interface Violation {
+  scene: string;
+  player: Vector2;
+  cursor: Vector2;
+  invariantId: string;
+  message: string;
+}
+
+// =============================================================================
+// BATCHED MODE - Fast execution, one test per scene
+// =============================================================================
+
+function runBatchedTests(): void {
+  const positions = getPositionsToTest();
+
+  console.log("=== Invariant Tests (Batched Mode) ===");
   console.log(`Scenes: ${ALL_SCENES.length}`);
-  console.log(`Positions: ${sampledPositions.length} (sampled from ${ALL_POSITIONS.length})`);
+  console.log(`Positions: ${positions.length} (sampled from ${ALL_POSITIONS.length})`);
   console.log(`Invariants: ${ALL_INVARIANTS.length}`);
+  console.log(`Total test cases: ${ALL_SCENES.length * positions.length * positions.length * ALL_INVARIANTS.length}`);
+  console.log("");
 
-  for (const scene of ALL_SCENES) {
-    describe(`Scene: ${scene.name}`, () => {
-      // For each scene, we run a single batched test that checks all invariants
-      // at all position combinations. This is more efficient than individual tests.
-      
-      it("should satisfy all invariants at all tested positions", () => {
-        const violations: string[] = [];
-        let testedCount = 0;
-        let skippedCount = 0;
+  describe("Invariant Tests", () => {
+    for (const scene of ALL_SCENES) {
+      describe(`Scene: ${scene.name}`, () => {
+        it("should satisfy all invariants at all tested positions", () => {
+          const violations: Violation[] = [];
+          let testedCount = 0;
+          let skippedCount = 0;
 
-        for (const player of sampledPositions) {
-          // Skip if player is outside screen bounds
-          if (
-            player.x < DEFAULT_SCREEN_BOUNDS.minX ||
-            player.x > DEFAULT_SCREEN_BOUNDS.maxX ||
-            player.y < DEFAULT_SCREEN_BOUNDS.minY ||
-            player.y > DEFAULT_SCREEN_BOUNDS.maxY
-          ) {
-            skippedCount++;
-            continue;
-          }
-
-          for (const cursor of sampledPositions) {
-            // Skip if cursor is outside screen bounds
-            if (
-              cursor.x < DEFAULT_SCREEN_BOUNDS.minX ||
-              cursor.x > DEFAULT_SCREEN_BOUNDS.maxX ||
-              cursor.y < DEFAULT_SCREEN_BOUNDS.minY ||
-              cursor.y > DEFAULT_SCREEN_BOUNDS.maxY
-            ) {
+          for (const player of positions) {
+            if (!isWithinBounds(player)) {
               skippedCount++;
               continue;
             }
 
-            // Skip if player and cursor are too close
-            if (arePositionsTooClose(player, cursor)) {
-              skippedCount++;
-              continue;
-            }
+            for (const cursor of positions) {
+              if (!isWithinBounds(cursor)) {
+                skippedCount++;
+                continue;
+              }
 
-            testedCount++;
+              if (arePositionsTooClose(player, cursor)) {
+                skippedCount++;
+                continue;
+              }
 
-            // Compute context once per position pair
-            let context;
-            try {
-              context = computeContext(scene, player, cursor);
-            } catch (error) {
-              violations.push(
-                `Context computation failed at player=${positionKey(player)}, cursor=${positionKey(cursor)}: ${error}`
-              );
-              continue;
-            }
+              testedCount++;
 
-            // Check all invariants
-            for (const invariant of ALL_INVARIANTS) {
+              // Compute context once per position pair
+              let context: InvariantContext;
               try {
-                invariant.assert(context);
+                context = computeContext(scene, player, cursor);
               } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                violations.push(
-                  `[${invariant.id}] player=${positionKey(player)}, cursor=${positionKey(cursor)}: ${errorMessage}`
-                );
+                violations.push({
+                  scene: scene.name,
+                  player,
+                  cursor,
+                  invariantId: "context",
+                  message: `Context computation failed: ${error}`,
+                });
+                continue;
+              }
+
+              // Check all invariants
+              for (const invariant of ALL_INVARIANTS) {
+                try {
+                  invariant.assert(context);
+                } catch (error) {
+                  const message = error instanceof Error ? error.message : String(error);
+                  violations.push({
+                    scene: scene.name,
+                    player,
+                    cursor,
+                    invariantId: invariant.id,
+                    message,
+                  });
+                }
               }
             }
           }
-        }
 
-        console.log(`  ${scene.name}: Tested ${testedCount} position pairs, skipped ${skippedCount}`);
+          // Report results
+          console.log(`  ${scene.name}: ${testedCount} tested, ${skippedCount} skipped`);
 
-        if (violations.length > 0) {
-          // Show first few violations
-          const maxShow = 10;
-          const shown = violations.slice(0, maxShow);
-          const remaining = violations.length - maxShow;
-          
-          console.log(`  Violations (showing ${shown.length} of ${violations.length}):`);
-          for (const v of shown) {
-            console.log(`    ${v}`);
+          if (violations.length > 0) {
+            // Group by invariant
+            const byInvariant = new Map<string, Violation[]>();
+            for (const v of violations) {
+              const list = byInvariant.get(v.invariantId) ?? [];
+              list.push(v);
+              byInvariant.set(v.invariantId, list);
+            }
+
+            console.log(`  Found ${violations.length} violations:`);
+            for (const [invariantId, invViolations] of byInvariant) {
+              console.log(`    [${invariantId}]: ${invViolations.length} violations`);
+            }
+
+            // Print first few as copy-paste commands
+            console.log("\n  To investigate, run:");
+            const uniquePositions = new Map<string, Violation>();
+            for (const v of violations) {
+              const key = `${positionKey(v.player)}-${positionKey(v.cursor)}`;
+              if (!uniquePositions.has(key)) {
+                uniquePositions.set(key, v);
+              }
+            }
+            const toShow = Array.from(uniquePositions.values()).slice(0, 5);
+            for (const v of toShow) {
+              console.log(`    ${formatViolationCommand(v.scene, v.player, v.cursor)}`);
+            }
+            if (uniquePositions.size > 5) {
+              console.log(`    ... and ${uniquePositions.size - 5} more position pairs`);
+            }
           }
-          if (remaining > 0) {
-            console.log(`    ... and ${remaining} more`);
-          }
-        }
 
-        expect(
-          violations.length,
-          `Found ${violations.length} invariant violations in scene "${scene.name}"`
-        ).toBe(0);
-      });
-    });
-  }
-});
-
-// Also export individual invariant tests for focused debugging
-describe("Individual Invariant Tests", () => {
-  // Test a specific position that might be problematic
-  const testPlayer = { x: SCREEN.width / 2, y: SCREEN.height - 100 };
-  const testCursor = { x: SCREEN.width / 2, y: 100 };
-
-  for (const scene of ALL_SCENES.slice(0, 3)) { // Just first 3 scenes
-    describe(`${scene.name}: focused position test`, () => {
-      for (const invariant of ALL_INVARIANTS) {
-        it(`${invariant.id}: ${invariant.name}`, () => {
-          const context = computeContext(scene, testPlayer, testCursor);
-          invariant.assert(context);
+          expect(
+            violations.length,
+            `Found ${violations.length} invariant violations in scene "${scene.name}"`
+          ).toBe(0);
         });
-      }
-    });
-  }
-});
+      });
+    }
+  });
+}
 
+// =============================================================================
+// FOCUSED MODE - Individual test cases for investigation
+// =============================================================================
+
+function runFocusedTests(): void {
+  const positions = getPositionsToTest();
+
+  // Filter scenes
+  const scenes = FOCUS.scene
+    ? ALL_SCENES.filter((s) => s.name === FOCUS.scene)
+    : ALL_SCENES;
+
+  // Filter invariants
+  const invariants = FOCUS.invariant
+    ? ALL_INVARIANTS.filter((i) => i.id === FOCUS.invariant)
+    : ALL_INVARIANTS;
+
+  // Filter positions
+  const players = positions.filter((p) => positionMatches(p, FOCUS.player));
+  const cursors = positions.filter((c) => positionMatches(c, FOCUS.cursor));
+
+  console.log("=== Invariant Tests (Focused Mode) ===");
+  console.log(`Scenes: ${scenes.length} (${scenes.map((s) => s.name).join(", ")})`);
+  console.log(`Players: ${players.length}`);
+  console.log(`Cursors: ${cursors.length}`);
+  console.log(`Invariants: ${invariants.length} (${invariants.map((i) => i.id).join(", ")})`);
+  console.log("");
+
+  describe("Invariant Tests (Focused)", () => {
+    for (const scene of scenes) {
+      describe(`Scene: ${scene.name}`, () => {
+        for (const player of players) {
+          if (!isWithinBounds(player)) continue;
+
+          for (const cursor of cursors) {
+            if (!isWithinBounds(cursor)) continue;
+            if (arePositionsTooClose(player, cursor)) continue;
+
+            describe(`player=${positionKey(player)} cursor=${positionKey(cursor)}`, () => {
+              // Compute context once per position pair
+              let context: InvariantContext;
+
+              // Use a single test for context computation errors
+              it("should compute context successfully", () => {
+                context = computeContext(scene, player, cursor);
+                expect(context).toBeDefined();
+              });
+
+              // Individual test for each invariant
+              for (const invariant of invariants) {
+                it(`${invariant.id}: ${invariant.name}`, () => {
+                  // Skip if context failed
+                  if (!context) {
+                    throw new Error("Context computation failed in previous test");
+                  }
+                  invariant.assert(context);
+                });
+              }
+            });
+          }
+        }
+      });
+    }
+  });
+}
+
+// =============================================================================
+// MAIN - Choose mode based on environment
+// =============================================================================
+
+if (IS_FOCUSED) {
+  runFocusedTests();
+} else {
+  runBatchedTests();
+}
