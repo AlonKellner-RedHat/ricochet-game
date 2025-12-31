@@ -9,8 +9,8 @@
  * This ensures the polygon is constructed correctly from shadow rays and surface occlusions.
  */
 
-import { expect } from "vitest";
 import type { Invariant, InvariantContext, VisibilityStage } from "../types";
+import { assertNoViolations } from "../types";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 /** Tolerance for collinearity checks */
@@ -172,10 +172,7 @@ export const polygonEdgesInvariant: Invariant = {
       }
     }
 
-    expect(
-      allViolations.length,
-      `Polygon edges invariant violated:\n${allViolations.join("\n")}`
-    ).toBe(0);
+    assertNoViolations("polygon-edges", allViolations);
   },
 };
 

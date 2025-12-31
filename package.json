@@ -15,7 +15,11 @@
     "lint": "biome check src tests",
     "lint:fix": "biome check --write src tests",
     "format": "biome format --write src tests",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "invariants": "vitest run tests/invariants/",
+    "invariants:report": "npx tsx tests/invariants/tools/run-report.ts",
+    "invariants:analyze": "npx tsx tests/invariants/tools/run-analyze.ts",
+    "invariants:focus": "vitest run tests/invariants/"
   },
   "keywords": [
     "phaser",

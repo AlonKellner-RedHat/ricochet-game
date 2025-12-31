@@ -10,8 +10,8 @@
  * from actual scene geometry.
  */
 
-import { expect } from "vitest";
 import type { Invariant, InvariantContext, VisibilityStage } from "../types";
+import { assertNoViolations } from "../types";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 /** Tolerance for point-on-line checks */
@@ -138,10 +138,7 @@ export const polygonVerticesInvariant: Invariant = {
       }
     }
 
-    expect(
-      allViolations.length,
-      `Polygon vertices invariant violated:\n${allViolations.join("\n")}`
-    ).toBe(0);
+    assertNoViolations("polygon-vertices", allViolations);
   },
 };
 

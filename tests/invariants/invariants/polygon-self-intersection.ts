@@ -8,8 +8,8 @@
  * visibility algorithm.
  */
 
-import { expect } from "vitest";
 import type { Invariant, InvariantContext, VisibilityStage } from "../types";
+import { assertNoViolations } from "../types";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 /**
@@ -112,10 +112,7 @@ export const noSelfIntersectionInvariant: Invariant = {
       }
     }
 
-    expect(
-      allViolations.length,
-      `Polygon self-intersection detected:\n${allViolations.join("\n")}`
-    ).toBe(0);
+    assertNoViolations("no-self-intersection", allViolations);
   },
 };
 

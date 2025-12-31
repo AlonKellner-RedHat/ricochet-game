@@ -121,3 +121,30 @@ export interface ScreenBounds {
   readonly maxY: number;
 }
 
+/**
+ * Error thrown when an invariant is violated.
+ * This allows invariants to be used both in vitest tests and standalone scripts.
+ */
+export class InvariantViolationError extends Error {
+  constructor(
+    public readonly invariantId: string,
+    public readonly violations: string[]
+  ) {
+    super(`Invariant ${invariantId} violated:\n${violations.join("\n")}`);
+    this.name = "InvariantViolationError";
+  }
+}
+
+/**
+ * Assert that no violations occurred.
+ * Throws InvariantViolationError if there are violations.
+ */
+export function assertNoViolations(
+  invariantId: string,
+  violations: string[]
+): void {
+  if (violations.length > 0) {
+    throw new InvariantViolationError(invariantId, violations);
+  }
+}
+

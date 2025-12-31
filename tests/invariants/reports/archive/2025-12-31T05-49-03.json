@@ -1,0 +1,1615 @@
+{
+  "timestamp": "2025-12-31T05:49:03.025Z",
+  "summary": {
+    "totalCases": 23400,
+    "passed": 21144,
+    "failed": 2256,
+    "skipped": 325,
+    "durationMs": 234
+  },
+  "byInvariant": {
+    "polygon-edges": {
+      "count": 2256,
+      "items": [
+        "v-shape-90",
+        "v-shape-60",
+        "collinear-endpoints",
+        "near-parallel",
+        "wall-with-gap"
+      ]
+    }
+  },
+  "byScene": {
+    "v-shape-90": {
+      "count": 552,
+      "items": [
+        "polygon-edges"
+      ]
+    },
+    "v-shape-60": {
+      "count": 576,
+      "items": [
+        "polygon-edges"
+      ]
+    },
+    "collinear-endpoints": {
+      "count": 504,
+      "items": [
+        "polygon-edges"
+      ]
+    },
+    "near-parallel": {
+      "count": 600,
+      "items": [
+        "polygon-edges"
+      ]
+    },
+    "wall-with-gap": {
+      "count": 24,
+      "items": [
+        "polygon-edges"
+      ]
+    }
+  },
+  "byPattern": {
+    "polygon-edges:stage0:screen-to-surface": {
+      "count": 744,
+      "items": [
+        "v-shape-90",
+        "v-shape-60",
+        "collinear-endpoints",
+        "near-parallel",
+        "wall-with-gap"
+      ]
+    },
+    "polygon-edges:stage0:involves-screen": {
+      "count": 1104,
+      "items": [
+        "v-shape-90",
+        "v-shape-60",
+        "collinear-endpoints",
+        "near-parallel"
+      ]
+    },
+    "polygon-edges:stage1:involves-screen": {
+      "count": 216,
+      "items": [
+        "v-shape-90",
+        "v-shape-60",
+        "collinear-endpoints"
+      ]
+    },
+    "polygon-edges:stage1:screen-to-surface": {
+      "count": 192,
+      "items": [
+        "v-shape-90",
+        "v-shape-60",
+        "collinear-endpoints"
+      ]
+    }
+  },
+  "failures": [
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 143
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 143
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 205
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 205
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 205
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 267
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 267
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 329
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 329
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 329
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 391
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 391
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 453
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 453
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 453
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 515
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 515
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 577
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 577
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 577
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 639
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 639
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (605.11, 284.89) to (0.00, 46.31) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 143
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 143
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 205
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 205
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 205
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 267
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 267
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 329
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 329
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 329
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 391
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 391
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 453
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 453
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 453
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 515
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 515
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 109,
+        "y": 577
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 581,
+        "y": 577
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 577
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 345,
+        "y": 639
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 1053,
+        "y": 81
+      },
+      "cursor": {
+        "x": 817,
+        "y": 639
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 143
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 205
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 205
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 205
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 267
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 267
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 329
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 329
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 329
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 391
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 391
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 453
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 453
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 453
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 515
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 515
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 577
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 577
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 577
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 639
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 345,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 639
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 5→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 1 (v90-left): Edge 2→0 from (549.32, 0.00) to (583.43, 306.57) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 1→2 from (603.18, 286.82) to (0.00, 17.86) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 143
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 205
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 205
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 205
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 267
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 267
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 329
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 329
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 329
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 391
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 391
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 453
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 453
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 453
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 515
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 515
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 109,
+        "y": 577
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 581,
+        "y": 577
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 577
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 345,
+        "y": 639
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 817,
+        "y": 143
+      },
+      "cursor": {
+        "x": 817,
+        "y": 639
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 3→4 from (640.00, 250.00) to (0.00, 0.00) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:involves-screen"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 205
+      },
+      "cursor": {
+        "x": 109,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 3→4 from (583.43, 306.57) to (0.00, 195.76) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 205
+      },
+      "cursor": {
+        "x": 581,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 3→4 from (583.43, 306.57) to (0.00, 195.76) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 205
+      },
+      "cursor": {
+        "x": 1053,
+        "y": 81
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 3→4 from (583.43, 306.57) to (0.00, 195.76) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    },
+    {
+      "scene": "v-shape-90",
+      "player": {
+        "x": 109,
+        "y": 205
+      },
+      "cursor": {
+        "x": 345,
+        "y": 143
+      },
+      "invariantId": "polygon-edges",
+      "stageIndex": 0,
+      "message": "Invariant polygon-edges violated:\nStage 0 (player): Edge 6→0 from (1280.00, 0.00) to (640.00, 250.00) is not along a surface, screen boundary, or ray from origin\nStage 2 (v90-right): Edge 3→4 from (583.43, 306.57) to (0.00, 195.76) is not along a surface, screen boundary, or ray from origin",
+      "signature": "polygon-edges:stage0:screen-to-surface"
+    }
+  ],
+  "commands": [
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=581,81 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=1053,81 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=345,143 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=817,143 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=109,205 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=581,205 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=1053,205 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=345,267 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=817,267 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=109,329 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=581,329 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=1053,329 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=345,391 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=817,391 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=109,453 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=581,453 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=1053,453 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=345,515 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=817,515 npm test -- tests/invariants/",
+    "INVARIANT_FOCUS_SCENE=v-shape-90 INVARIANT_FOCUS_PLAYER=109,81 INVARIANT_FOCUS_CURSOR=109,577 npm test -- tests/invariants/"
+  ]
+}

@@ -8,8 +8,8 @@
  * This is the fundamental connection between visibility and trajectory validity.
  */
 
-import { expect } from "vitest";
 import type { Invariant, InvariantContext } from "../types";
+import { assertNoViolations } from "../types";
 
 export const v5CursorReachabilityInvariant: Invariant = {
   id: "V.5",
@@ -19,25 +19,30 @@ export const v5CursorReachabilityInvariant: Invariant = {
 
   assert: (context: InvariantContext): void => {
     const { lightReachesCursor, planValidity } = context;
+    const violations: string[] = [];
 
     // Light should reach cursor exactly when plan is valid
     if (planValidity.isValid) {
-      expect(
-        lightReachesCursor,
-        `V.5 violation: Plan is valid but light does NOT reach cursor. ` +
-          `Player: (${context.player.x}, ${context.player.y}), ` +
-          `Cursor: (${context.cursor.x}, ${context.cursor.y})`
-      ).toBe(true);
+      if (!lightReachesCursor) {
+        violations.push(
+          `Plan is valid but light does NOT reach cursor. ` +
+            `Player: (${context.player.x}, ${context.player.y}), ` +
+            `Cursor: (${context.cursor.x}, ${context.cursor.y})`
+        );
+      }
     } else {
-      expect(
-        lightReachesCursor,
-        `V.5 violation: Plan is INVALID but light reaches cursor. ` +
-          `Divergence: ${planValidity.hasDivergence}, ` +
-          `Bypass: ${planValidity.hasBypass} (${planValidity.bypassedSurfaceIds.join(", ")}). ` +
-          `Player: (${context.player.x}, ${context.player.y}), ` +
-          `Cursor: (${context.cursor.x}, ${context.cursor.y})`
-      ).toBe(false);
+      if (lightReachesCursor) {
+        violations.push(
+          `Plan is INVALID but light reaches cursor. ` +
+            `Divergence: ${planValidity.hasDivergence}, ` +
+            `Bypass: ${planValidity.hasBypass} (${planValidity.bypassedSurfaceIds.join(", ")}). ` +
+            `Player: (${context.player.x}, ${context.player.y}), ` +
+            `Cursor: (${context.cursor.x}, ${context.cursor.y})`
+        );
+      }
     }
+
+    assertNoViolations("V.5", violations);
   },
 };
 
