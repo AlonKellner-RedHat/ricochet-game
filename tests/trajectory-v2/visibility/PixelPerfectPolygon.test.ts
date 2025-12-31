@@ -17,6 +17,7 @@ import {
 import { preparePolygonForRendering } from "@/trajectory-v2/visibility/RenderingDedup";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
+import { toChains } from "./testHelpers";
 
 // Helper to create test surfaces
 function createTestSurface(
@@ -266,7 +267,7 @@ describe("Pixel Perfect Vertex Removal Bug", () => {
     const cone = createConeThroughWindow(origin, pyramid3Start, pyramid3End);
     
     // Project the cone to get source points
-    const sourcePoints = projectConeV2(cone, surfaces, screenBounds, "pyramid-3");
+    const sourcePoints = projectConeV2(cone, toChains(surfaces), screenBounds, "pyramid-3");
     
     // Convert to Vector2 array
     const rawPolygon = toVector2Array(sourcePoints);
@@ -336,7 +337,7 @@ describe("Pixel Perfect Vertex Removal Bug", () => {
     ];
     
     const cone = createConeThroughWindow(origin, pyramid3Start, pyramid3End);
-    const sourcePoints = projectConeV2(cone, surfaces, screenBounds, "pyramid-3");
+    const sourcePoints = projectConeV2(cone, toChains(surfaces), screenBounds, "pyramid-3");
     const rawPolygon = toVector2Array(sourcePoints);
     const dedupedPolygon = preparePolygonForRendering(rawPolygon);
     

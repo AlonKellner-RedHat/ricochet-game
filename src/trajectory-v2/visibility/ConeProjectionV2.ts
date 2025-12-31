@@ -32,7 +32,11 @@ import {
   isEndpoint,
   isHitPoint,
 } from "@/trajectory-v2/geometry/SourcePoint";
-import { type JunctionPoint, type SurfaceChain, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
+import {
+  type JunctionPoint,
+  type SurfaceChain,
+  isJunctionPoint,
+} from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Ray, Vector2 } from "@/trajectory-v2/geometry/types";
 
 // =============================================================================
@@ -153,7 +157,51 @@ export function getShadowBoundaryOrderFromOrientation(
 interface SortablePoint {
   point: SourcePoint;
   xy: Vector2;
-  pairedEndpoint: Endpoint | null;
+  pairedEndpoint: Endpoint | JunctionPoint | null;
+}
+
+/**
+ * Get the associated surface from an Endpoint or JunctionPoint.
+ * For Endpoints: returns the surface directly.
+ * For JunctionPoints: returns surfaceBefore (the surface ending at the junction).
+ */
+function getSurfaceFromPoint(
+  pairedEndpoint: Endpoint | JunctionPoint | null,
+  point: SourcePoint
+): Surface | null {
+  if (pairedEndpoint) {
+    return isEndpoint(pairedEndpoint)
+      ? pairedEndpoint.surface
+      : pairedEndpoint.getSurfaceBefore();
+  }
+  if (isEndpoint(point)) {
+    return point.surface;
+  }
+  if (isJunctionPoint(point)) {
+    return point.getSurfaceBefore();
+  }
+  return null;
+}
+
+/**
+ * Get the endpoint "which" value ("start" or "end") for sorting.
+ * For Endpoints: returns which directly.
+ * For JunctionPoints: returns "end" (junction is at the END of surfaceBefore).
+ */
+function getEndpointWhich(
+  pairedEndpoint: Endpoint | JunctionPoint | null,
+  point: SourcePoint
+): "start" | "end" | null {
+  if (pairedEndpoint) {
+    return isEndpoint(pairedEndpoint) ? pairedEndpoint.which : "end";
+  }
+  if (isEndpoint(point)) {
+    return point.which;
+  }
+  if (isJunctionPoint(point)) {
+    return "end"; // Junction is at the end of surfaceBefore
+  }
+  return null;
 }
 
 /**
@@ -302,7 +350,7 @@ function handleCollinearPoints(
   b: SortablePoint,
   origin: Vector2,
   surfaceOrientations: Map<string, SurfaceOrientation>,
-  continuationToEndpoint: Map<string, Endpoint>,
+  continuationToEndpoint: Map<string, Endpoint | JunctionPoint>,
   endpointToContinuation: Map<string, SourcePoint>
 ): number {
   const p1 = a.point;
@@ -315,26 +363,33 @@ function handleCollinearPoints(
   // This handles transitive pairing: (endpoint) → (endpoint) → (hitpoint)
   const rootEndpoint1 = findRootEndpoint(p1, a.pairedEndpoint, continuationToEndpoint);
   const rootEndpoint2 = findRootEndpoint(p2, b.pairedEndpoint, continuationToEndpoint);
-  
+
   // If both are on the same ray (same root endpoint), use shadow boundary order
-  const sameRay = rootEndpoint1 && rootEndpoint2 && 
-                  rootEndpoint1.getKey() === rootEndpoint2.getKey();
-  
+  const sameRay =
+    rootEndpoint1 && rootEndpoint2 && rootEndpoint1.getKey() === rootEndpoint2.getKey();
+
   if (sameRay || arePaired) {
     // Use shadow boundary order from the root endpoint's orientation
     const rootEndpoint = rootEndpoint1 ?? rootEndpoint2;
-    
+
     if (rootEndpoint) {
-      const orientation = surfaceOrientations.get(rootEndpoint.surface.id);
-      if (orientation) {
+      // Get surface ID for orientation lookup
+      // For Endpoints: use surface.id
+      // For JunctionPoints: use surfaceBefore.id (the surface ending at the junction)
+      const surfaceId = isEndpoint(rootEndpoint)
+        ? rootEndpoint.surface.id
+        : rootEndpoint.getSurfaceBefore().id;
+      const orientation = surfaceOrientations.get(surfaceId);
+
+      if (orientation && isEndpoint(rootEndpoint)) {
         const order = getShadowBoundaryOrderFromOrientation(rootEndpoint, orientation);
         // order > 0: continuation comes BEFORE endpoint (entering shadow)
         // order < 0: continuation comes AFTER endpoint (exiting shadow)
-        
+
         // Determine which point is closer to origin (the endpoint in the chain)
         const dist1 = Math.hypot(a.xy.x - origin.x, a.xy.y - origin.y);
         const dist2 = Math.hypot(b.xy.x - origin.x, b.xy.y - origin.y);
-        
+
         if (order > 0) {
           // Continuation before endpoint: further point (larger distance) comes first
           return dist2 - dist1; // Larger distance first
@@ -342,20 +397,29 @@ function handleCollinearPoints(
           // Continuation after endpoint: closer point (smaller distance) comes first
           return dist1 - dist2; // Smaller distance first
         }
+      } else if (isJunctionPoint(rootEndpoint)) {
+        // For junctions, order by distance (continuation is further from origin)
+        const dist1 = Math.hypot(a.xy.x - origin.x, a.xy.y - origin.y);
+        const dist2 = Math.hypot(b.xy.x - origin.x, b.xy.y - origin.y);
+        return dist1 - dist2; // Closer first (junction), then continuation
       }
     }
   }
 
   // Get surface info for both points
-  const aSurface = a.pairedEndpoint ? a.pairedEndpoint.surface : isEndpoint(p1) ? p1.surface : null;
-  const bSurface = b.pairedEndpoint ? b.pairedEndpoint.surface : isEndpoint(p2) ? p2.surface : null;
+  // For Endpoints: use surface directly
+  // For JunctionPoints: use surfaceBefore
+  const aSurface = getSurfaceFromPoint(a.pairedEndpoint, p1);
+  const bSurface = getSurfaceFromPoint(b.pairedEndpoint, p2);
 
   // Same surface: use orientation to determine order
   if (aSurface && bSurface && aSurface.id === bSurface.id) {
     const orientation = surfaceOrientations.get(aSurface.id);
     if (orientation) {
-      const aWhich = a.pairedEndpoint ? a.pairedEndpoint.which : isEndpoint(p1) ? p1.which : null;
-      const bWhich = b.pairedEndpoint ? b.pairedEndpoint.which : isEndpoint(p2) ? p2.which : null;
+      // Get which endpoint ("start" or "end") for ordering
+      // Endpoints have .which, JunctionPoints are at the "end" of their surfaceBefore
+      const aWhich = getEndpointWhich(a.pairedEndpoint, p1);
+      const bWhich = getEndpointWhich(b.pairedEndpoint, p2);
 
       if (aWhich && bWhich) {
         if (aWhich !== bWhich) {
@@ -606,15 +670,19 @@ function isEndpointOnOtherSurface(
   // should still have continuation rays
   for (const surface of obstacles) {
     if (surface.id === ownSurfaceId) continue;
-    const isOnSegment = isPointOnSegment(point, surface.segment.start, surface.segment.end, EPSILON);
-    const isSharedEndpoint = isPointAtEndpoint(point, surface.segment.start, surface.segment.end, EPSILON);
-    
-    // #region agent log
-    if (isOnSegment || isSharedEndpoint) {
-      fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:isEndpointOnOtherSurface',message:'Corner detection',data:{endpointSurface:ownSurfaceId,endpointWhich:endpoint.which,point:{x:point.x,y:point.y},otherSurface:surface.id,isOnSegment,isSharedEndpoint},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1-H5'})}).catch(()=>{});
-    }
-    // #endregion
-    
+    const isOnSegment = isPointOnSegment(
+      point,
+      surface.segment.start,
+      surface.segment.end,
+      EPSILON
+    );
+    const isSharedEndpoint = isPointAtEndpoint(
+      point,
+      surface.segment.start,
+      surface.segment.end,
+      EPSILON
+    );
+
     if (isOnSegment || isSharedEndpoint) {
       return true;
     }
@@ -744,13 +812,20 @@ function castRayToEndpoint(
       // Skip the surface that the endpoint belongs to
       if (targetEndpoint.surface.id === obstacle.id) continue;
 
-      const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
+      const hit = lineLineIntersection(
+        origin,
+        rayEnd,
+        obstacle.segment.start,
+        obstacle.segment.end
+      );
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
         // PROVENANCE CHECK: If the hit point is exactly at the target endpoint's coordinates,
         // this is NOT a blocking hit - they share the same point (shared endpoint between surfaces)
         if (hit.s === 0 || hit.s === 1) {
-          const hitX = obstacle.segment.start.x + hit.s * (obstacle.segment.end.x - obstacle.segment.start.x);
-          const hitY = obstacle.segment.start.y + hit.s * (obstacle.segment.end.y - obstacle.segment.start.y);
+          const hitX =
+            obstacle.segment.start.x + hit.s * (obstacle.segment.end.x - obstacle.segment.start.x);
+          const hitY =
+            obstacle.segment.start.y + hit.s * (obstacle.segment.end.y - obstacle.segment.start.y);
           const targetXY = targetEndpoint.computeXY();
           if (hitX === targetXY.x && hitY === targetXY.y) {
             // Hit is at the same point as target - not a block
@@ -769,7 +844,12 @@ function castRayToEndpoint(
   // endpoint is definitionally valid (going TO the window, not blocked BY screen)
   if (!windowSurfaceId || targetEndpoint.surface.id !== windowSurfaceId) {
     for (const boundary of screenBoundaries.all) {
-      const hit = lineLineIntersection(origin, rayEnd, boundary.segment.start, boundary.segment.end);
+      const hit = lineLineIntersection(
+        origin,
+        rayEnd,
+        boundary.segment.start,
+        boundary.segment.end
+      );
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
         closestT = hit.t;
         closestSurface = boundary;
@@ -885,7 +965,8 @@ function castContinuationRay(
   allObstacles: readonly Surface[],
   _screenBoundaries: ScreenBoundaries,
   startLine: Segment | null,
-  windowSurfaceId?: string
+  windowSurfaceId?: string,
+  additionalExcludeSurfaceId?: string // For junctions: exclude the second surface too
 ): SourcePoint | null {
   const target = throughEndpoint.computeXY();
   const dx = target.x - origin.x;
@@ -930,6 +1011,8 @@ function castContinuationRay(
   for (const obstacle of allObstacles) {
     // Skip the surface that owns this endpoint
     if (obstacle.id === throughEndpoint.surface.id) continue;
+    // For junctions: also skip the second surface meeting at the junction
+    if (additionalExcludeSurfaceId && obstacle.id === additionalExcludeSurfaceId) continue;
 
     const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
     if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
@@ -1046,11 +1129,12 @@ export function projectConeV2(
     // Skip the floating-point isPointInCone check for ACTUAL window endpoints only.
     // Note: excludeSurfaceId is too broad - it includes all endpoints of the excluded surface.
     // We must check if targetXY matches the actual startLine endpoints.
-    const isWindowEndpoint = isWindowed && startLine && (
-      (targetXY.x === startLine.start.x && targetXY.y === startLine.start.y) ||
-      (targetXY.x === startLine.end.x && targetXY.y === startLine.end.y)
-    );
-    
+    const isWindowEndpoint =
+      isWindowed &&
+      startLine &&
+      ((targetXY.x === startLine.start.x && targetXY.y === startLine.start.y) ||
+        (targetXY.x === startLine.end.x && targetXY.y === startLine.end.y));
+
     // Check if target is in cone (skip for window endpoints - they're definitionally in cone)
     if (!isWindowEndpoint && !isPointInCone(targetXY, source)) continue;
 
@@ -1062,15 +1146,8 @@ export function projectConeV2(
     }
 
     // Handle JunctionPoints (internal joints in chains)
+    // JunctionPoints now extend SourcePoint, enabling direct use in vertices and rayPairs
     if (isJunctionPoint(target)) {
-      // Get the two surfaces meeting at this junction
-      const surfaceBefore = target.getSurfaceBefore();
-      const surfaceAfter = target.getSurfaceAfter();
-
-      // Create an Endpoint representation of the junction for proper sorting
-      // Use surfaceBefore's end (which IS the junction) - this enables rayPairs tracking
-      const junctionAsEndpoint = new Endpoint(surfaceBefore, "end");
-
       // Cast ray to junction point
       const hit = castRayToTarget(
         origin,
@@ -1079,44 +1156,52 @@ export function projectConeV2(
         screenBoundaries,
         startLine
       );
+
       if (hit) {
-        // Use the Endpoint for the junction instead of the raw HitPoint
-        // This enables proper shadow boundary ordering via rayPairs
-        vertices.push(junctionAsEndpoint);
+        // Add the junction directly to vertices (it's now a SourcePoint)
+        vertices.push(target);
 
-        // Check if continuation ray is needed based on pre-calculated surface orientations
-        // Use pre-calculated orientations (crossProduct sign indicates which side origin is on)
-        const orientBefore = surfaceOrientations.get(surfaceBefore.id);
-        const orientAfter = surfaceOrientations.get(surfaceAfter.id);
+        // Use provenance-based pass-through check (no recalculation)
+        const canPassThrough = target.canLightPassWithOrientations(surfaceOrientations);
 
-        if (orientBefore && orientAfter) {
-          // crossProduct > 0: origin is on the "left" (reflective) side of the surface
-          // crossProduct < 0: origin is on the "right" (back) side of the surface
-          // crossProduct = 0: origin is collinear with the surface
-          const originOnReflectiveSideBefore = orientBefore.crossProduct > 0;
-          const originOnReflectiveSideAfter = orientAfter.crossProduct > 0;
+        // For windowed cones, check if this junction is a window endpoint
+        // Window endpoints define the cone boundaries - continuations extend OUTSIDE the cone
+        const isJunctionWindowEndpoint =
+          isWindowed &&
+          startLine &&
+          ((targetXY.x === startLine.start.x && targetXY.y === startLine.start.y) ||
+            (targetXY.x === startLine.end.x && targetXY.y === startLine.end.y));
 
-          // Ray can pass through if origin is on DIFFERENT sides of the two surfaces
-          // (one reflective, one back) - this means the surfaces "open up" toward origin
-          const canPassThrough = originOnReflectiveSideBefore !== originOnReflectiveSideAfter;
+        // Cast continuation ray if light can pass through and not a window endpoint
+        if (canPassThrough && !isJunctionWindowEndpoint) {
+          // Create temporary Endpoint for ray casting (provides surfaceId to exclude)
+          // Use surfaceBefore's end (which IS the junction position)
+          const surfaceBefore = target.getSurfaceBefore();
+          const surfaceAfter = target.getSurfaceAfter();
+          const tempEndpointForRayCast = new Endpoint(surfaceBefore, "end");
 
-          if (canPassThrough) {
-            // Ray can pass through the junction - cast continuation ray
-            // Use the endpoint-based continuation logic for proper rayPairs tracking
-            const continuation = castContinuationRay(
-              origin,
-              junctionAsEndpoint,
-              [...effectiveObstacles, ...screenBoundaries.all],
-              screenBoundaries,
-              startLine,
-              undefined // Don't exclude any surface
-            );
+          const continuation = castContinuationRay(
+            origin,
+            tempEndpointForRayCast,
+            [...effectiveObstacles, ...screenBoundaries.all],
+            screenBoundaries,
+            startLine,
+            undefined, // windowSurfaceId
+            surfaceAfter.id // Exclude the second surface at the junction
+          );
 
-            if (continuation) {
+          if (continuation) {
+            const contXY = continuation.computeXY();
+
+            // Only add continuation if within the cone AND past the window (for windowed cones)
+            if (
+              !isWindowed ||
+              (isPointInCone(contXY, source) && isPointPastWindow(origin, contXY, startLine!))
+            ) {
               vertices.push(continuation);
-              // Track the pair for proper shadow boundary sorting
-              rayPairs.set(junctionAsEndpoint.getKey(), {
-                endpoint: junctionAsEndpoint,
+              // Track the junction (not the temp endpoint) in rayPairs for proper sorting
+              rayPairs.set(target.getKey(), {
+                endpoint: target,
                 continuation,
               });
             }
@@ -1151,17 +1236,22 @@ export function projectConeV2(
           screenBoundaries
         );
 
-        // #region agent log
+        // For windowed cones, check if this endpoint is a window endpoint
+        // Window endpoints define the cone boundaries - continuations from them extend OUTSIDE the cone
         const epXY = targetEndpoint.computeXY();
-        fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:projectConeV2',message:'Continuation decision',data:{endpoint:{surface:targetEndpoint.surface.id,which:targetEndpoint.which,x:epXY.x,y:epXY.y},isAtCorner,willCastContinuation:!isAtCorner},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-        // #endregion
+        const isThisWindowEndpoint =
+          isWindowed &&
+          startLine &&
+          ((epXY.x === startLine.start.x && epXY.y === startLine.start.y) ||
+            (epXY.x === startLine.end.x && epXY.y === startLine.end.y));
 
-        if (!isAtCorner) {
+        if (!isAtCorner && !isThisWindowEndpoint) {
           // Cast continuation ray - may need to recursively continue if it hits another endpoint
+          // Skip for window endpoints: their continuations extend outside the cone
           let currentEndpoint = targetEndpoint;
           let previousOnRay: Endpoint = targetEndpoint; // Track for ray pair linking
           const maxIterations = 10; // Prevent infinite loops
-          
+
           for (let iter = 0; iter < maxIterations; iter++) {
             const continuation = castContinuationRay(
               origin,
@@ -1171,20 +1261,26 @@ export function projectConeV2(
               startLine,
               excludeSurfaceId
             );
-            
+
             if (!continuation) break;
-            
-            // #region agent log
-            const contXY = continuation.computeXY();
-            const curXY = currentEndpoint.computeXY();
-            fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:projectConeV2',message:'Continuation cast',data:{from:{surface:currentEndpoint.surface.id,which:currentEndpoint.which,x:curXY.x,y:curXY.y},to:{x:contXY.x,y:contXY.y},continuationType:continuation.constructor.name},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-            // #endregion
-            
-            vertices.push(continuation);
-            
-            // Track ray pair for sorting: each endpoint on this ray points to its continuation
-            rayPairs.set(previousOnRay.getKey(), { endpoint: previousOnRay, continuation });
-            
+
+            // BUG FIX: Only add continuation if it's within the cone AND past the window (for windowed cones)
+            const contXYForCheck = continuation.computeXY();
+            const contInCone = isPointInCone(contXYForCheck, source);
+            const contPastWindow =
+              !startLine || isPointPastWindow(origin, contXYForCheck, startLine);
+            const shouldAddCont = !isWindowed || (contInCone && contPastWindow);
+
+            if (shouldAddCont) {
+              vertices.push(continuation);
+
+              // Track ray pair for sorting: each endpoint on this ray points to its continuation
+              rayPairs.set(previousOnRay.getKey(), { endpoint: previousOnRay, continuation });
+            } else {
+              // Continuation is outside valid region - stop the chain
+              break;
+            }
+
             // If continuation hit another endpoint, we need to continue through it
             if (isEndpoint(continuation)) {
               // Check if this endpoint is at a corner
@@ -1194,7 +1290,7 @@ export function projectConeV2(
                 screenBoundaries
               );
               if (contIsAtCorner) break;
-              
+
               // Continue from this endpoint - update tracking
               previousOnRay = continuation;
               currentEndpoint = continuation;
@@ -1208,7 +1304,8 @@ export function projectConeV2(
     }
   }
 
-  // For windowed cones, cast rays to cone boundaries (extends to screen)
+  // For windowed cones, cast rays to cone boundaries to find screen/obstacle hits
+  // These rays extend from origin THROUGH the window boundaries to find what's behind
   if (!isFullCone(source)) {
     const leftHit = castRayToTarget(
       origin,
@@ -1217,7 +1314,32 @@ export function projectConeV2(
       screenBoundaries,
       startLine
     );
-    if (leftHit) vertices.push(leftHit);
+    // Only add if the hit is within the cone AND past the window (for windowed cones)
+    if (leftHit) {
+      const hitXY = leftHit.computeXY();
+      const leftInCone = isPointInCone(hitXY, source);
+      const leftPastWindow = !startLine || isPointPastWindow(origin, hitXY, startLine);
+      // For windowed cones, we now track cone boundary hits in rayPairs properly,
+      // so we can include ALL hits (screen or game surface).
+      const shouldAddLeft = leftInCone && leftPastWindow;
+      if (shouldAddLeft) {
+        vertices.push(leftHit);
+        // Track in rayPairs for proper sorting
+        // Find the Endpoint that corresponds to the left boundary
+        const leftBoundaryEndpoint = vertices.find(
+          (v) =>
+            isEndpoint(v) &&
+            v.computeXY().x === source.leftBoundary.x &&
+            v.computeXY().y === source.leftBoundary.y
+        ) as Endpoint | undefined;
+        if (leftBoundaryEndpoint) {
+          rayPairs.set(leftBoundaryEndpoint.getKey(), {
+            endpoint: leftBoundaryEndpoint,
+            continuation: leftHit,
+          });
+        }
+      }
+    }
 
     const rightHit = castRayToTarget(
       origin,
@@ -1226,20 +1348,48 @@ export function projectConeV2(
       screenBoundaries,
       startLine
     );
-    if (rightHit) vertices.push(rightHit);
+    if (rightHit) {
+      const hitXY = rightHit.computeXY();
+      const rightInCone = isPointInCone(hitXY, source);
+      const rightPastWindow = !startLine || isPointPastWindow(origin, hitXY, startLine);
+      // For windowed cones, we now track cone boundary hits in rayPairs properly,
+      // so we can include ALL hits (screen or game surface).
+      const shouldAddRight = rightInCone && rightPastWindow;
+      if (shouldAddRight) {
+        vertices.push(rightHit);
+        // Track in rayPairs for proper sorting
+        // Find the Endpoint that corresponds to the right boundary
+        const rightBoundaryEndpoint = vertices.find(
+          (v) =>
+            isEndpoint(v) &&
+            v.computeXY().x === source.rightBoundary.x &&
+            v.computeXY().y === source.rightBoundary.y
+        ) as Endpoint | undefined;
+        if (rightBoundaryEndpoint) {
+          rayPairs.set(rightBoundaryEndpoint.getKey(), {
+            endpoint: rightBoundaryEndpoint,
+            continuation: rightHit,
+          });
+        }
+      }
+    }
   }
-
-  // #region agent log
-  const rawVerts = vertices.map(v => {const xy = v.computeXY(); return {type:v.constructor.name,x:xy.x.toFixed(2),y:xy.y.toFixed(2)};});
-  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:projectConeV2',message:'Raw vertices before dedup',data:{count:vertices.length,vertices:rawVerts.slice(0,20)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
-  // #endregion
 
   // Remove duplicate points using equals()
   const uniqueVertices = removeDuplicatesSourcePoint(vertices);
 
   // Sort by angle from origin, using ray pairs for tie-breaking
   // Pass pre-calculated surfaceOrientations to avoid recalculating
-  return sortPolygonVerticesSourcePoint(uniqueVertices, origin, startLine, rayPairs, surfaceOrientations);
+  // For windowed cones, pass the pre-computed left/right boundaries for consistent arrangement
+  return sortPolygonVerticesSourcePoint(
+    uniqueVertices,
+    origin,
+    startLine,
+    rayPairs,
+    surfaceOrientations,
+    isWindowed ? source.leftBoundary : undefined,
+    isWindowed ? source.rightBoundary : undefined
+  );
 }
 
 /**
@@ -1280,7 +1430,7 @@ function removeDuplicatesSourcePoint(points: SourcePoint[]): SourcePoint[] {
  * Ray pair info tracked during ray casting.
  * Maps endpoint key → { endpoint, continuation }
  */
-type RayPairMap = Map<string, { endpoint: Endpoint; continuation: SourcePoint | null }>;
+type RayPairMap = Map<string, { endpoint: Endpoint | JunctionPoint; continuation: SourcePoint | null }>;
 
 /**
  * Sort polygon vertices by direction from origin.
@@ -1298,12 +1448,14 @@ function sortPolygonVerticesSourcePoint(
   origin: Vector2,
   startLine: Segment | null,
   rayPairs: RayPairMap,
-  surfaceOrientations: Map<string, SurfaceOrientation>
+  surfaceOrientations: Map<string, SurfaceOrientation>,
+  leftBoundary?: Vector2,
+  rightBoundary?: Vector2
 ): SourcePoint[] {
   if (points.length === 0) return [];
 
-  // Build a map from continuation point key to its paired endpoint
-  const continuationToEndpoint = new Map<string, Endpoint>();
+  // Build a map from continuation point key to its paired endpoint/junction
+  const continuationToEndpoint = new Map<string, Endpoint | JunctionPoint>();
   for (const pair of rayPairs.values()) {
     if (pair.continuation) {
       continuationToEndpoint.set(pair.continuation.getKey(), pair.endpoint);
@@ -1322,9 +1474,9 @@ function sortPolygonVerticesSourcePoint(
   const pointsWithData = points.map((p) => {
     const xy = p.computeXY();
 
-    // Find paired endpoint if this is a continuation
+    // Find paired endpoint/junction if this is a continuation
     // A continuation can be either a HitPoint OR an Endpoint (if it hit another endpoint)
-    let pairedEndpoint: Endpoint | null = null;
+    let pairedEndpoint: Endpoint | JunctionPoint | null = null;
     const pairedEp = continuationToEndpoint.get(p.getKey());
     if (pairedEp) {
       pairedEndpoint = pairedEp;
@@ -1377,73 +1529,76 @@ function sortPolygonVerticesSourcePoint(
     return result;
   });
 
-  // For windowed cones, ensure edge points are at the ends
-  if (startLine !== null) {
-    return arrangeWindowedCone(pointsWithData, origin, startLine);
+  // For windowed cones, we need a specific ordering:
+  // 1. Window surface: right endpoint → left endpoint
+  // 2. Left ray continuation: left endpoint → left screen hit
+  // 3. Screen boundary: left screen hit → right screen hit
+  // 4. Right ray continuation: right screen hit → right endpoint (back to start)
+  //
+  // This is different from simple CCW angle sorting because the window surface
+  // should be first, not the rays.
+  if (startLine !== null && leftBoundary && rightBoundary) {
+    return arrangeWindowedConeV2(pointsWithData, leftBoundary, rightBoundary);
   }
 
   return pointsWithData.map((item) => item.point);
 }
 
 /**
- * Find the root endpoint of a continuation chain.
- * Follows pairedEndpoint links until reaching the original endpoint.
+ * Find the root endpoint/junction of a continuation chain.
+ * Follows pairedEndpoint links until reaching the original endpoint or junction.
  */
 function findRootEndpoint(
   point: SourcePoint,
-  directPairedEndpoint: Endpoint | null,
-  continuationToEndpoint: Map<string, Endpoint>
-): Endpoint | null {
-  // If the point is an endpoint without a paired endpoint, it IS the root
-  if (isEndpoint(point) && !directPairedEndpoint) {
+  directPairedEndpoint: Endpoint | JunctionPoint | null,
+  continuationToEndpoint: Map<string, Endpoint | JunctionPoint>
+): Endpoint | JunctionPoint | null {
+  // If the point is an endpoint/junction without a paired endpoint, it IS the root
+  if ((isEndpoint(point) || isJunctionPoint(point)) && !directPairedEndpoint) {
     return point;
   }
-  
+
   // Follow the chain to find the root
-  let current: Endpoint | null = directPairedEndpoint;
+  let current: Endpoint | JunctionPoint | null = directPairedEndpoint;
   const maxDepth = 10; // Prevent infinite loops
-  
+
   for (let i = 0; i < maxDepth && current; i++) {
     // Check if current has a paired endpoint (it's also a continuation)
     const nextInChain = continuationToEndpoint.get(current.getKey());
     if (!nextInChain) {
-      // current is the root endpoint
+      // current is the root endpoint/junction
       return current;
     }
     current = nextInChain;
   }
-  
+
   return current;
 }
 
 /**
- * Check if two points are a tracked ray pair (endpoint + its continuation).
+ * Check if two points are a tracked ray pair (endpoint/junction + its continuation).
  * This is an epsilon-free check using source-of-truth ray tracking.
  */
 function checkIfPairedPoints(
   p1: SourcePoint,
   p2: SourcePoint,
-  continuationToEndpoint: Map<string, Endpoint>,
+  continuationToEndpoint: Map<string, Endpoint | JunctionPoint>,
   endpointToContinuation: Map<string, SourcePoint>
 ): boolean {
   // The authoritative source of pairing is continuationToEndpoint, which maps
-  // continuation -> its owning endpoint. Multiple endpoints might point to
+  // continuation -> its owning endpoint/junction. Multiple endpoints might point to
   // the same continuation (due to deduplication), but only ONE is the true owner.
 
-  // Case 1: p1 is continuation, check if p2 is its paired endpoint
-  if (isHitPoint(p1)) {
-    const ep = continuationToEndpoint.get(p1.getKey());
-    if (ep && ep.getKey() === p2.getKey()) {
-      return true;
-    }
+  // Case 1: p1 is continuation (HitPoint or Endpoint), check if p2 is its paired endpoint/junction
+  const ep1 = continuationToEndpoint.get(p1.getKey());
+  if (ep1 && ep1.getKey() === p2.getKey()) {
+    return true;
   }
 
-  // Case 2: p2 is continuation, check if p1 is its paired endpoint
-  if (isHitPoint(p2)) {
-    const ep = continuationToEndpoint.get(p2.getKey());
-    if (ep && ep.getKey() === p1.getKey()) {
-      return true;
-    }
+  // Case 2: p2 is continuation, check if p1 is its paired endpoint/junction
+  const ep2 = continuationToEndpoint.get(p2.getKey());
+  if (ep2 && ep2.getKey() === p1.getKey()) {
+    return true;
   }
 
   return false;
@@ -1456,10 +1611,10 @@ function checkIfPairedPoints(
  * eliminating floating-point inconsistencies between angle and cross-product calculations.
  */
 function compareSameRayPointsWithOrientation(
-  a: { point: SourcePoint; xy: Vector2; pairedEndpoint: Endpoint | null },
-  b: { point: SourcePoint; xy: Vector2; pairedEndpoint: Endpoint | null },
+  a: { point: SourcePoint; xy: Vector2; pairedEndpoint: Endpoint | JunctionPoint | null },
+  b: { point: SourcePoint; xy: Vector2; pairedEndpoint: Endpoint | JunctionPoint | null },
   surfaceOrientations: Map<string, SurfaceOrientation>,
-  continuationToEndpoint: Map<string, Endpoint>
+  continuationToEndpoint: Map<string, Endpoint | JunctionPoint>
 ): number {
   const p1 = a.point;
   const p2 = b.point;
@@ -1513,10 +1668,10 @@ function compareSameRayPointsWithOrientation(
  * @deprecated Use compareSameRayPointsWithOrientation instead
  */
 function compareSameRayPoints(
-  a: { point: SourcePoint; xy: Vector2; pairedEndpoint: Endpoint | null },
-  b: { point: SourcePoint; xy: Vector2; pairedEndpoint: Endpoint | null },
+  a: { point: SourcePoint; xy: Vector2; pairedEndpoint: Endpoint | JunctionPoint | null },
+  b: { point: SourcePoint; xy: Vector2; pairedEndpoint: Endpoint | JunctionPoint | null },
   origin: Vector2,
-  continuationToEndpoint: Map<string, Endpoint>
+  continuationToEndpoint: Map<string, Endpoint | JunctionPoint>
 ): number {
   const p1 = a.point;
   const p2 = b.point;
@@ -1610,52 +1765,70 @@ function getShadowBoundaryOrder(endpoint: Endpoint, origin: Vector2): number {
  * Handles the ±180° discontinuity: when window endpoints span this boundary,
  * we determine left/right based on the CCW angular direction of the visible cone.
  */
-function arrangeWindowedCone(
+/**
+ * Arrange vertices for a windowed cone polygon.
+ *
+ * For windowed cones, the polygon should be:
+ * 1. Right endpoint (CW-most window edge)
+ * 2. Left endpoint (CCW-most window edge) - edge along window surface
+ * 3. Left continuation (if any) - edge along left ray
+ * 4. Screen/middle points - edge along screen boundary
+ * 5. Right continuation (if any) - edge back along right ray to start
+ */
+function arrangeWindowedConeV2(
   sortedPoints: Array<{
     point: SourcePoint;
     xy: Vector2;
-    pairedEndpoint: Endpoint | null;
+    pairedEndpoint: Endpoint | JunctionPoint | null;
   }>,
-  origin: Vector2,
-  startLine: Segment
+  leftBoundary: Vector2,
+  rightBoundary: Vector2
 ): SourcePoint[] {
-  const leftEdge: SourcePoint[] = [];
-  const rightEdge: SourcePoint[] = [];
-  const middle: SourcePoint[] = [];
-
-  // Determine which window endpoint is left vs right using cross-product (no atan2!).
-  // cross(start - origin, end - origin) > 0 means start is CCW from end,
-  // so start is "left" and end is "right".
-  const startDir = { x: startLine.start.x - origin.x, y: startLine.start.y - origin.y };
-  const endDir = { x: startLine.end.x - origin.x, y: startLine.end.y - origin.y };
-  const cross = startDir.x * endDir.y - startDir.y * endDir.x;
-
-  // If cross > 0: start is CCW from end → start is "left", end is "right"
-  // If cross < 0: end is CCW from start → end is "left", start is "right"
-  // If cross == 0: collinear (degenerate window), use arbitrary assignment
-  let leftXY: Vector2;
-  let rightXY: Vector2;
-
-  if (cross >= 0) {
-    leftXY = startLine.start;
-    rightXY = startLine.end;
-  } else {
-    leftXY = startLine.end;
-    rightXY = startLine.start;
-  }
+  // Separate points into categories
+  let rightEndpoint: SourcePoint | null = null;
+  let leftEndpoint: SourcePoint | null = null;
+  let leftContinuation: SourcePoint | null = null;
+  let rightContinuation: SourcePoint | null = null;
+  const middlePoints: SourcePoint[] = [];
 
   for (const item of sortedPoints) {
-    // Exact coordinate match for window edges
-    if (item.xy.x === leftXY.x && item.xy.y === leftXY.y) {
-      leftEdge.push(item.point);
-    } else if (item.xy.x === rightXY.x && item.xy.y === rightXY.y) {
-      rightEdge.push(item.point);
-    } else {
-      middle.push(item.point);
+    // Right window endpoint
+    if (item.xy.x === rightBoundary.x && item.xy.y === rightBoundary.y) {
+      if (!rightEndpoint) rightEndpoint = item.point;
+      continue;
     }
+    // Left window endpoint
+    if (item.xy.x === leftBoundary.x && item.xy.y === leftBoundary.y) {
+      if (!leftEndpoint) leftEndpoint = item.point;
+      continue;
+    }
+    // Continuation of left boundary
+    if (item.pairedEndpoint) {
+      const pairedXY = item.pairedEndpoint.computeXY();
+      if (pairedXY.x === leftBoundary.x && pairedXY.y === leftBoundary.y) {
+        if (!leftContinuation) leftContinuation = item.point;
+        continue;
+      }
+      // Continuation of right boundary
+      if (pairedXY.x === rightBoundary.x && pairedXY.y === rightBoundary.y) {
+        if (!rightContinuation) rightContinuation = item.point;
+        continue;
+      }
+    }
+    // Everything else goes to middle
+    middlePoints.push(item.point);
   }
 
-  return [...leftEdge, ...middle, ...rightEdge];
+  // Build the polygon in correct order:
+  // right_ep → left_ep → left_cont → middle → right_cont → back to right_ep
+  const result: SourcePoint[] = [];
+  if (rightEndpoint) result.push(rightEndpoint);
+  if (leftEndpoint) result.push(leftEndpoint);
+  if (leftContinuation) result.push(leftContinuation);
+  result.push(...middlePoints);
+  if (rightContinuation) result.push(rightContinuation);
+
+  return result;
 }
 
 /**

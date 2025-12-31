@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 import { createFullCone, projectConeV2, toVector2Array } from "@/trajectory-v2/visibility/ConeProjectionV2";
 import type { ScreenBoundsConfig } from "@/trajectory-v2/geometry/ScreenBoundaries";
-import { createTestSurface } from "./testHelpers";
+import { createTestSurface, toChains } from "./testHelpers";
 
 const SCREEN_BOUNDS: ScreenBoundsConfig = {
   minX: 0,
@@ -37,7 +37,7 @@ describe("Cross-Product Sort Regression", () => {
     const player = { x: 181.11162870021687, y: 666 };
     const cone = createFullCone(player);
 
-    const points = projectConeV2(cone, surfaces, SCREEN_BOUNDS);
+    const points = projectConeV2(cone, toChains(surfaces), SCREEN_BOUNDS);
     const vertices = toVector2Array(points);
 
     console.log("Polygon vertices:");
@@ -79,7 +79,7 @@ describe("Cross-Product Sort Regression", () => {
     const player = { x: 640, y: 400 };
     const cone = createFullCone(player);
 
-    const points = projectConeV2(cone, surfaces, SCREEN_BOUNDS);
+    const points = projectConeV2(cone, toChains(surfaces), SCREEN_BOUNDS);
     const vertices = toVector2Array(points);
 
     // Calculate angles from player to each vertex

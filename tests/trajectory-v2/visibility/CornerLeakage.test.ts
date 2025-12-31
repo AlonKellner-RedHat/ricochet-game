@@ -12,6 +12,7 @@
 import { describe, it, expect } from "vitest";
 import { createFullCone, projectConeV2, toVector2Array } from "@/trajectory-v2/visibility/ConeProjectionV2";
 import type { Surface } from "@/surfaces/Surface";
+import { toChains } from "./testHelpers";
 
 // Helper to create a mock surface
 function createMockSurface(
@@ -66,7 +67,7 @@ describe("Corner Leakage", () => {
     const cone = createFullCone(player);
     
     // Project the cone
-    const polygon = projectConeV2(cone, surfaces, bounds);
+    const polygon = projectConeV2(cone, toChains(surfaces), bounds);
     const vertices = toVector2Array(polygon);
 
     // Debug: Log all vertices
@@ -121,7 +122,7 @@ describe("Corner Leakage", () => {
     ];
 
     const cone = createFullCone(player);
-    const polygon = projectConeV2(cone, surfaces, bounds);
+    const polygon = projectConeV2(cone, toChains(surfaces), bounds);
     const vertices = toVector2Array(polygon);
 
     console.log("\nMinimal corner test vertices:");

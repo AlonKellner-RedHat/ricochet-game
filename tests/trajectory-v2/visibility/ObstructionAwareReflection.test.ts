@@ -16,6 +16,7 @@ import { segmentsToCones } from "@/trajectory-v2/visibility/HighlightMode";
 import { ValidRegionRenderer } from "@/trajectory-v2/visibility/ValidRegionRenderer";
 import { createSingleWindow } from "@/trajectory-v2/visibility/WindowConfig";
 import type { Segment } from "@/trajectory-v2/visibility/WindowConfig";
+import { toChains } from "./testHelpers";
 
 // =============================================================================
 // TEST HELPERS
@@ -443,7 +444,7 @@ describe("Obstruction-Aware Reflection Windows", () => {
       
       // Stage 1: compute visibility from player (full 360°)
       const cone = createFullCone(player);
-      const sourcePoints = projectConeV2(cone, allSurfaces, screenBounds);
+      const sourcePoints = projectConeV2(cone, toChains(allSurfaces), screenBounds);
       
       const segments = extractVisibleSurfaceSegments(
         plannedSurface.id,
@@ -480,7 +481,7 @@ describe("Obstruction-Aware Reflection Windows", () => {
       
       // Stage 1: compute visibility through umbrella window
       const cone = createConeThroughWindow(player, umbrellaWindow.start, umbrellaWindow.end);
-      const sourcePoints = projectConeV2(cone, allSurfaces, screenBounds);
+      const sourcePoints = projectConeV2(cone, toChains(allSurfaces), screenBounds);
       
       // Find points on ricochet-4
       const ricochet4Points: Vector2[] = [];

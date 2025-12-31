@@ -16,8 +16,20 @@
 import { RicochetSurface } from "@/surfaces/RicochetSurface";
 import type { Surface } from "@/surfaces/Surface";
 import { WallSurface } from "@/surfaces/WallSurface";
-import { Endpoint } from "./SourcePoint";
+import { Endpoint, SourcePoint } from "./SourcePoint";
 import type { Vector2 } from "./types";
+
+// =============================================================================
+// ORIENTATION INFO (for canLightPassWithOrientations - avoids circular deps)
+// =============================================================================
+
+/**
+ * Minimal orientation info needed for junction pass-through check.
+ * Matches the crossProduct field from SurfaceOrientation in ConeProjectionV2.
+ */
+export interface OrientationInfo {
+  readonly crossProduct: number;
+}
 
 // =============================================================================
 // TYPES
@@ -53,26 +65,63 @@ export interface ChainVertex {
 }
 
 // =============================================================================
-// JUNCTION POINT (for connected vertices)
+// JUNCTION POINT (for connected vertices) - extends SourcePoint
 // =============================================================================
 
 /**
  * Represents a junction where two surfaces meet in a chain.
  * All internal vertices of open chains, and ALL vertices of closed chains.
+ *
+ * Extends SourcePoint to enable consistent handling with Endpoints in:
+ * - Visibility polygon vertex sorting
+ * - Ray pair tracking
+ * - Deduplication
  */
-export class JunctionPoint {
+export class JunctionPoint extends SourcePoint {
   readonly type = "junction" as const;
 
   constructor(
     readonly chain: SurfaceChain,
     readonly vertexIndex: number
-  ) {}
+  ) {
+    super();
+  }
 
   /**
    * Compute the actual coordinates of this junction.
    */
   computeXY(): Vector2 {
     return this.chain.getVertex(this.vertexIndex).position;
+  }
+
+  /**
+   * Check if this junction is on the given surface.
+   * Returns true if the surface is either the "before" or "after" surface.
+   */
+  isOnSurface(surface: Surface): boolean {
+    return (
+      this.getSurfaceBefore().id === surface.id ||
+      this.getSurfaceAfter().id === surface.id
+    );
+  }
+
+  /**
+   * Check equality with another SourcePoint.
+   * Two JunctionPoints are equal if they're from the same chain and vertex.
+   */
+  equals(other: SourcePoint): boolean {
+    return (
+      other instanceof JunctionPoint &&
+      this.chain.id === other.chain.id &&
+      this.vertexIndex === other.vertexIndex
+    );
+  }
+
+  /**
+   * Get a unique key for this junction.
+   */
+  getKey(): string {
+    return `junction:${this.chain.id}:${this.vertexIndex}`;
   }
 
   /**
@@ -111,17 +160,31 @@ export class JunctionPoint {
   }
 
   /**
-   * Get a unique key for this junction.
+   * Check if light from the origin can pass through this junction.
+   *
+   * Uses pre-calculated surface orientations (provenance-based, no recalculation).
+   *
+   * Light PASSES if surfaces have OPPOSITE orientations relative to origin:
+   * - One surface faces toward origin (crossProduct > 0)
+   * - Other surface faces away from origin (crossProduct < 0)
+   *
+   * Light is BLOCKED if surfaces have SAME orientation:
+   * - Both surfaces face toward origin (both crossProduct > 0)
+   * - Both surfaces face away from origin (both crossProduct < 0)
+   *
+   * @param surfaceOrientations Map from surface ID to pre-calculated orientation
+   * @returns true if light can pass through, false if blocked
    */
-  getKey(): string {
-    return `junction:${this.chain.id}:${this.vertexIndex}`;
-  }
+  canLightPassWithOrientations(surfaceOrientations: Map<string, OrientationInfo>): boolean {
+    const orientBefore = surfaceOrientations.get(this.getSurfaceBefore().id);
+    const orientAfter = surfaceOrientations.get(this.getSurfaceAfter().id);
 
-  /**
-   * Check equality with another JunctionPoint.
-   */
-  equals(other: JunctionPoint): boolean {
-    return this.chain === other.chain && this.vertexIndex === other.vertexIndex;
+    // If orientations are missing, block light (safe default)
+    if (!orientBefore || !orientAfter) return false;
+
+    // OPPOSITE signs = light passes (one front, one back)
+    // SAME signs = light blocked (both front or both back)
+    return (orientBefore.crossProduct > 0) !== (orientAfter.crossProduct > 0);
   }
 }
 

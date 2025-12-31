@@ -22,6 +22,7 @@ import {
   createMultiWindow,
   getWindowSegments,
 } from "@/trajectory-v2/visibility/WindowConfig";
+import { toChains } from "./testHelpers";
 
 // =============================================================================
 // TEST SETUP FROM USER REPORT
@@ -78,7 +79,7 @@ function getFullUmbrella(): Segment {
 
 function projectWindow(window: Segment): Vector2[] {
   const cone = createConeThroughWindow(PLAYER, window.start, window.end);
-  const sourcePoints = projectConeV2(cone, ALL_SURFACES, BOUNDS);
+  const sourcePoints = projectConeV2(cone, toChains(ALL_SURFACES), BOUNDS);
   return toVector2Array(sourcePoints);
 }
 
