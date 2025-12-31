@@ -133,6 +133,10 @@ export const noUnobstructedPathInvariant: Invariant = {
           // Skip screen boundaries
           if (surface.id.startsWith("screen-")) continue;
 
+          // Skip the window surface for reflection stages
+          // In reflection stages, rays MUST pass through the window
+          if (stage.surfaceId && surface.id === stage.surfaceId) continue;
+
           // Skip if the vertex is on this surface (source surface)
           if (isPointOnSurface(vertexXY, surface)) continue;
 

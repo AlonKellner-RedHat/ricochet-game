@@ -19,9 +19,7 @@
 import type { Surface } from "@/surfaces/Surface";
 import { lineLineIntersection } from "@/trajectory-v2/geometry/GeometryOps";
 import {
-  type ScreenBoundaries,
   type ScreenBoundsConfig,
-  createScreenBoundaries,
   createScreenBoundaryChain,
 } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import {
@@ -248,7 +246,7 @@ function comparePointsCCW(
   origin: Vector2,
   refDirection: Vector2,
   surfaceOrientations: Map<string, SurfaceOrientation>,
-  continuationToEndpoint: Map<string, Endpoint>,
+  continuationToEndpoint: Map<string, Endpoint | JunctionPoint>,
   endpointToContinuation: Map<string, SourcePoint>
 ): number {
   // Get effective coordinates for comparison
@@ -532,11 +530,34 @@ export function isPointInCone(point: Vector2, cone: ConeSource): boolean {
   const leftCross = crossProduct(origin, left, point);
   const sectorCross = crossProduct(origin, right, left);
 
+  // Use relative tolerance for boundary checks
+  // A point on the boundary ray should be considered "in cone"
+  const rightVec = { x: right.x - origin.x, y: right.y - origin.y };
+  const leftVec = { x: left.x - origin.x, y: left.y - origin.y };
+  const pointVec = { x: point.x - origin.x, y: point.y - origin.y };
+
+  // Compute magnitudes for relative tolerance
+  const rightMag = Math.sqrt(rightVec.x * rightVec.x + rightVec.y * rightVec.y);
+  const leftMag = Math.sqrt(leftVec.x * leftVec.x + leftVec.y * leftVec.y);
+  const pointMag = Math.sqrt(pointVec.x * pointVec.x + pointVec.y * pointVec.y);
+
+  // Relative tolerance: if cross product is tiny compared to magnitudes, treat as on-boundary
+  const rightTol = rightMag * pointMag * 0.001;
+  const leftTol = leftMag * pointMag * 0.001;
+
+  // Treat near-zero crosses as on-boundary (in cone)
+  const rightOnBoundary = Math.abs(rightCross) < rightTol;
+  const leftOnBoundary = Math.abs(leftCross) < leftTol;
+
+  // Effective check with tolerance
+  const rightOK = rightCross >= -rightTol || rightOnBoundary;
+  const leftOK = leftCross <= leftTol || leftOnBoundary;
+
   if (sectorCross >= 0) {
-    return rightCross >= 0 && leftCross <= 0;
+    return rightOK && leftOK;
   }
 
-  return rightCross >= 0 || leftCross <= 0;
+  return rightOK || leftOK;
 }
 
 /**
@@ -656,8 +677,7 @@ function areSurfacesAligned(surfaceA: Surface, surfaceB: Surface): boolean {
  */
 function isEndpointOnOtherSurface(
   endpoint: Endpoint,
-  obstacles: readonly Surface[],
-  _screenBoundaries: ScreenBoundaries
+  obstacles: readonly Surface[] // Includes screen boundary surfaces
 ): boolean {
   const point = endpoint.computeXY();
   const ownSurfaceId = endpoint.surface.id;
@@ -755,8 +775,7 @@ function isPointOnSegment(
 function castRayToEndpoint(
   origin: Vector2,
   targetEndpoint: Endpoint,
-  obstacles: readonly Surface[],
-  screenBoundaries: ScreenBoundaries,
+  obstacles: readonly Surface[], // Includes screen boundary surfaces
   startLine: Segment | null,
   windowSurfaceId?: string
 ): SourcePoint | null {
@@ -837,24 +856,8 @@ function castRayToEndpoint(
     }
   }
 
-  // Check screen boundaries
-  // SKIP for window endpoints when origin is outside screen - the ray to a window
-  // endpoint is definitionally valid (going TO the window, not blocked BY screen)
-  if (!windowSurfaceId || targetEndpoint.surface.id !== windowSurfaceId) {
-    for (const boundary of screenBoundaries.all) {
-      const hit = lineLineIntersection(
-        origin,
-        rayEnd,
-        boundary.segment.start,
-        boundary.segment.end
-      );
-      if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
-        closestT = hit.t;
-        closestSurface = boundary;
-        closestS = hit.s;
-      }
-    }
-  }
+  // NOTE: Screen boundaries are now included in obstacles (via allSurfaces)
+  // No separate screen boundary loop needed
 
   // If blocked before target, return HitPoint
   if (closestSurface) {
@@ -880,8 +883,7 @@ function pointsEqual(a: Vector2, b: Vector2): boolean {
 function castRayToTarget(
   origin: Vector2,
   target: Vector2,
-  obstacles: readonly Surface[],
-  screenBoundaries: ScreenBoundaries,
+  obstacles: readonly Surface[], // Includes screen boundary surfaces
   startLine: Segment | null
 ): SourcePoint | null {
   const dx = target.x - origin.x;
@@ -932,15 +934,8 @@ function castRayToTarget(
     }
   }
 
-  // Check screen boundaries
-  for (const boundary of screenBoundaries.all) {
-    const hit = lineLineIntersection(origin, rayEnd, boundary.segment.start, boundary.segment.end);
-    if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
-      closestT = hit.t;
-      closestSurface = boundary;
-      closestS = hit.s;
-    }
-  }
+  // NOTE: Screen boundaries are now included in obstacles (via allSurfaces)
+  // No separate screen boundary loop needed
 
   if (closestSurface) {
     return new HitPoint(ray, closestSurface, closestT, closestS);
@@ -960,8 +955,7 @@ function castRayToTarget(
 function castContinuationRay(
   origin: Vector2,
   throughEndpoint: Endpoint,
-  allObstacles: readonly Surface[],
-  _screenBoundaries: ScreenBoundaries,
+  allObstacles: readonly Surface[], // Includes screen boundary surfaces
   startLine: Segment | null,
   windowSurfaceId?: string,
   additionalExcludeSurfaceId?: string // For junctions: exclude the second surface too
@@ -1066,17 +1060,28 @@ export function projectConeV2(
   const vertices: SourcePoint[] = [];
 
   // #region agent log
-  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:entry',message:'projectConeV2 called',data:{origin,isWindowed,startLine,excludeSurfaceId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1-H5'})}).catch(()=>{});
+  fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      location: "ConeProjectionV2.ts:entry",
+      message: "projectConeV2 called",
+      data: { origin, isWindowed, startLine, excludeSurfaceId },
+      timestamp: Date.now(),
+      sessionId: "debug-session",
+      hypothesisId: "H1-H5",
+    }),
+  }).catch(() => {});
   // #endregion
 
-  // Create screen boundaries as both object (for ray casting) and chain (for endpoints)
-  const screenBoundaries = createScreenBoundaries(bounds);
+  // Create screen boundary as a closed surface chain
+  // Screen corners are JunctionPoints, handled like any other junction
   const screenChain = createScreenBoundaryChain(bounds);
 
-  // Include screen chain in chains for unified endpoint/junction handling
+  // Include screen chain in chains for unified handling
   const allChains = [...chains, screenChain];
 
-  // Extract all surfaces from chains for ray-casting
+  // Extract all surfaces from chains for ray-casting (includes screen boundaries)
   const allSurfaces = allChains.flatMap((c) => c.getSurfaces());
 
   // Filter out excluded surface
@@ -1152,13 +1157,7 @@ export function projectConeV2(
     // JunctionPoints now extend SourcePoint, enabling direct use in vertices and rayPairs
     if (isJunctionPoint(target)) {
       // Cast ray to junction point
-      const hit = castRayToTarget(
-        origin,
-        targetXY,
-        effectiveObstacles,
-        screenBoundaries,
-        startLine
-      );
+      const hit = castRayToTarget(origin, targetXY, effectiveObstacles, startLine);
 
       // CRITICAL: The hit must be at or beyond the target position
       // If an obstacle blocks the ray BEFORE reaching the target, skip this junction
@@ -1169,16 +1168,56 @@ export function projectConeV2(
 
         // If hit is closer than target, the junction is blocked - skip it
         if (distToHit < distToTarget - 0.1) {
+          // #region agent log
+          fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "ConeProjectionV2.ts:junctionBlocked",
+              message: "Junction blocked by obstacle",
+              data: {
+                targetXY,
+                hitXY,
+                distToHit,
+                distToTarget,
+                hitSurfaceId: isHitPoint(hit) ? hit.hitSurface.id : "n/a",
+              },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              hypothesisId: "H2-H3",
+            }),
+          }).catch(() => {});
+          // #endregion
           continue; // Junction is obstructed, don't add it
         }
 
         // Add the junction directly to vertices (it's now a SourcePoint)
         vertices.push(target);
+        // #region agent log
+        fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "ConeProjectionV2.ts:junctionAdded",
+            message: "Junction added to vertices",
+            data: { targetXY, junctionKey: target.getKey() },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            hypothesisId: "H1-H3",
+          }),
+        }).catch(() => {});
 
         // Screen boundary junctions (corners) don't cast continuation rays
         // Screen edges are boundaries - light doesn't pass through them
-        const surfaceBefore = target.getSurfaceBefore();
-        const surfaceAfter = target.getSurfaceAfter();
+        let surfaceBefore: Surface | undefined;
+        let surfaceAfter: Surface | undefined;
+        try {
+          surfaceBefore = target.getSurfaceBefore();
+          surfaceAfter = target.getSurfaceAfter();
+        } catch {
+          // Junction without valid surfaces - skip
+          continue;
+        }
         const isScreenBoundaryJunction =
           surfaceBefore.id.startsWith("screen-") || surfaceAfter.id.startsWith("screen-");
 
@@ -1207,8 +1246,7 @@ export function projectConeV2(
           const continuation = castContinuationRay(
             origin,
             tempEndpointForRayCast,
-            [...effectiveObstacles, ...screenBoundaries.all],
-            screenBoundaries,
+            effectiveObstacles, // Already includes screen boundary surfaces
             startLine,
             undefined, // windowSurfaceId
             surfaceAfter.id // Exclude the second surface at the junction
@@ -1239,8 +1277,7 @@ export function projectConeV2(
     const hit = castRayToEndpoint(
       origin,
       targetEndpoint,
-      effectiveObstacles,
-      screenBoundaries,
+      effectiveObstacles, // Already includes screen boundary surfaces
       startLine,
       excludeSurfaceId
     );
@@ -1255,8 +1292,7 @@ export function projectConeV2(
         // This is still needed for game surfaces that form corners with each other
         const isAtCorner = isEndpointOnOtherSurface(
           targetEndpoint,
-          effectiveObstacles,
-          screenBoundaries
+          effectiveObstacles // Already includes screen boundary surfaces
         );
 
         // For windowed cones, check if this endpoint is a window endpoint
@@ -1279,8 +1315,7 @@ export function projectConeV2(
             const continuation = castContinuationRay(
               origin,
               currentEndpoint,
-              [...effectiveObstacles, ...screenBoundaries.all],
-              screenBoundaries,
+              effectiveObstacles, // Already includes screen boundary surfaces
               startLine,
               excludeSurfaceId
             );
@@ -1309,8 +1344,7 @@ export function projectConeV2(
               // Check if this endpoint is at a corner
               const contIsAtCorner = isEndpointOnOtherSurface(
                 continuation,
-                effectiveObstacles,
-                screenBoundaries
+                effectiveObstacles // Already includes screen boundary surfaces
               );
               if (contIsAtCorner) break;
 
@@ -1333,15 +1367,24 @@ export function projectConeV2(
     const leftHit = castRayToTarget(
       origin,
       source.leftBoundary,
-      effectiveObstacles,
-      screenBoundaries,
+      effectiveObstacles, // Already includes screen boundary surfaces
       startLine
     );
+    // #region agent log
+    if (process.env.DEBUG_POLYGON === "1") {
+      console.log(`  leftBoundaryRay: leftBoundary=(${source.leftBoundary.x}, ${source.leftBoundary.y}), leftHitXY=${leftHit?.computeXY() ? `(${leftHit.computeXY().x.toFixed(2)}, ${leftHit.computeXY().y.toFixed(2)})` : 'null'}, leftHitType=${leftHit?.type}`);
+    }
+    // #endregion
     // Only add if the hit is within the cone AND past the window (for windowed cones)
     if (leftHit) {
       const hitXY = leftHit.computeXY();
       const leftInCone = isPointInCone(hitXY, source);
       const leftPastWindow = !startLine || isPointPastWindow(origin, hitXY, startLine);
+      // #region agent log
+      if (process.env.DEBUG_POLYGON === "1") {
+        console.log(`  leftBoundaryFiltering: hitXY=(${hitXY.x.toFixed(2)}, ${hitXY.y.toFixed(2)}), leftInCone=${leftInCone}, leftPastWindow=${leftPastWindow}, willAdd=${leftInCone && leftPastWindow}`);
+      }
+      // #endregion
       // For windowed cones, we now track cone boundary hits in rayPairs properly,
       // so we can include ALL hits (screen or game surface).
       const shouldAddLeft = leftInCone && leftPastWindow;
@@ -1351,15 +1394,15 @@ export function projectConeV2(
         // Find the OriginPoint or Endpoint that corresponds to the left boundary
         const leftBoundaryPoint = vertices.find(
           (v) =>
-            v.computeXY().x === source.leftBoundary.x &&
-            v.computeXY().y === source.leftBoundary.y
+            v.computeXY().x === source.leftBoundary.x && v.computeXY().y === source.leftBoundary.y
         );
         // Track continuation if we found a point (OriginPoint or Endpoint)
         // For OriginPoints, we use coordinates as key since they don't have getKey()
         if (leftBoundaryPoint) {
-          const leftKey = isEndpoint(leftBoundaryPoint) || isJunctionPoint(leftBoundaryPoint)
-            ? leftBoundaryPoint.getKey()
-            : `origin:${source.leftBoundary.x},${source.leftBoundary.y}`;
+          const leftKey =
+            isEndpoint(leftBoundaryPoint) || isJunctionPoint(leftBoundaryPoint)
+              ? leftBoundaryPoint.getKey()
+              : `origin:${source.leftBoundary.x},${source.leftBoundary.y}`;
           // Create a fake Endpoint for rayPairs tracking (needed for sorting)
           // We'll create a special key that arrangeWindowedConeV2 can match
           if (isEndpoint(leftBoundaryPoint) || isJunctionPoint(leftBoundaryPoint)) {
@@ -1375,8 +1418,7 @@ export function projectConeV2(
     const rightHit = castRayToTarget(
       origin,
       source.rightBoundary,
-      effectiveObstacles,
-      screenBoundaries,
+      effectiveObstacles, // Already includes screen boundary surfaces
       startLine
     );
     if (rightHit) {
@@ -1426,7 +1468,22 @@ export function projectConeV2(
   const withCorners = insertScreenCorners(sorted, bounds);
 
   // #region agent log
-  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:exit',message:'projectConeV2 returning',data:{isWindowed,vertexCount:withCorners.length,vertices:withCorners.map(v=>({type:v.type,xy:v.computeXY()}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1-H5'})}).catch(()=>{});
+  fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      location: "ConeProjectionV2.ts:exit",
+      message: "projectConeV2 returning",
+      data: {
+        isWindowed,
+        vertexCount: withCorners.length,
+        vertices: withCorners.map((v) => ({ type: v.type, xy: v.computeXY() })),
+      },
+      timestamp: Date.now(),
+      sessionId: "debug-session",
+      hypothesisId: "H1-H5",
+    }),
+  }).catch(() => {});
   // #endregion
 
   return withCorners;
@@ -1829,7 +1886,27 @@ function arrangeWindowedConeV2(
   rightBoundary: Vector2
 ): SourcePoint[] {
   // #region agent log
-  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:arrangeWindowedConeV2',message:'Arranging windowed cone',data:{origin,leftBoundary,rightBoundary,sortedPoints:sortedPoints.map(p=>({type:p.point.type,xy:p.xy,pairedXY:p.pairedEndpoint?.computeXY()}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2-H3'})}).catch(()=>{});
+  fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      location: "ConeProjectionV2.ts:arrangeWindowedConeV2",
+      message: "Arranging windowed cone",
+      data: {
+        origin,
+        leftBoundary,
+        rightBoundary,
+        sortedPoints: sortedPoints.map((p) => ({
+          type: p.point.type,
+          xy: p.xy,
+          pairedXY: p.pairedEndpoint?.computeXY(),
+        })),
+      },
+      timestamp: Date.now(),
+      sessionId: "debug-session",
+      hypothesisId: "H2-H3",
+    }),
+  }).catch(() => {});
   // #endregion
 
   // Helper: check if a point is on the ray from origin through boundary
@@ -1846,7 +1923,7 @@ function arrangeWindowedConeV2(
     // Also check that point is further from origin than boundary (same direction)
     const boundaryDist = bx * bx + by * by;
     const pointDist = px * px + py * py;
-    const sameDirection = (bx * px + by * py) > 0; // Dot product > 0 means same direction
+    const sameDirection = bx * px + by * py > 0; // Dot product > 0 means same direction
     // Tolerance for collinearity (relative to distance)
     const tolerance = Math.sqrt(boundaryDist) * 0.01; // 1% tolerance
     return Math.abs(cross) < tolerance && pointDist > boundaryDist && sameDirection;
@@ -1907,7 +1984,25 @@ function arrangeWindowedConeV2(
   if (rightContinuation) result.push(rightContinuation);
 
   // #region agent log
-  fetch('http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConeProjectionV2.ts:arrangeWindowedConeV2:result',message:'Windowed cone arranged',data:{hasRightEndpoint:!!rightEndpoint,hasLeftEndpoint:!!leftEndpoint,hasLeftCont:!!leftContinuation,hasRightCont:!!rightContinuation,middleCount:middlePoints.length,result:result.map(p=>({type:p.type,xy:p.computeXY()}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2-H3'})}).catch(()=>{});
+  fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      location: "ConeProjectionV2.ts:arrangeWindowedConeV2:result",
+      message: "Windowed cone arranged",
+      data: {
+        hasRightEndpoint: !!rightEndpoint,
+        hasLeftEndpoint: !!leftEndpoint,
+        hasLeftCont: !!leftContinuation,
+        hasRightCont: !!rightContinuation,
+        middleCount: middlePoints.length,
+        result: result.map((p) => ({ type: p.type, xy: p.computeXY() })),
+      },
+      timestamp: Date.now(),
+      sessionId: "debug-session",
+      hypothesisId: "H2-H3",
+    }),
+  }).catch(() => {});
   // #endregion
 
   return result;
@@ -1972,12 +2067,33 @@ function insertScreenCorners(
     const nextEdge = getScreenEdge(nextXY);
 
     // If both are on different screen edges, insert the corner
+    // BUT only if the corner isn't already the next point (screen corners are now JunctionPoints)
     if (currentEdge && nextEdge && currentEdge !== nextEdge) {
       const corner = getCornerBetween(currentEdge, nextEdge);
       if (corner) {
-        // Create a HitPoint-like corner point
-        // Using OriginPoint as a simple coordinate holder
-        result.push(new OriginPoint(corner));
+        // Check if the next point IS the corner (screen corners are JunctionPoints)
+        const nextIsCorner =
+          Math.abs(nextXY.x - corner.x) < 0.01 && Math.abs(nextXY.y - corner.y) < 0.01;
+
+        if (!nextIsCorner) {
+          // #region agent log
+          fetch("http://localhost:7244/ingest/35819445-5c83-4f31-b501-c940886787b5", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "ConeProjectionV2.ts:insertCorner",
+              message: "Inserting screen corner",
+              data: { currentEdge, nextEdge, corner },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              hypothesisId: "H2",
+            }),
+          }).catch(() => {});
+          // #endregion
+          // Create a HitPoint-like corner point
+          // Using OriginPoint as a simple coordinate holder
+          result.push(new OriginPoint(corner));
+        }
       }
     }
   }

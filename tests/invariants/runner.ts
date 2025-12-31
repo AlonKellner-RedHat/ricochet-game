@@ -87,8 +87,14 @@ function computeVisibilityStage(
 
   // Debug logging for investigation
   if (process.env.DEBUG_POLYGON === '1') {
-    console.log(`\nStage ${stageIndex}: ${polygon.length} vertices`);
-    polygon.forEach((v, i) => console.log(`  ${i}: (${v.x.toFixed(2)}, ${v.y.toFixed(2)})`));
+    console.log(`\nStage ${stageIndex}: origin=(${origin.x.toFixed(2)}, ${origin.y.toFixed(2)})`);
+    if (windowStart && windowEnd) {
+      console.log(`  Window: (${windowStart.x}, ${windowStart.y}) to (${windowEnd.x}, ${windowEnd.y})`);
+    }
+    console.log(`  Raw polygon: ${rawPolygon.length} vertices`);
+    rawPolygon.forEach((v, i) => console.log(`    ${i}: (${v.x.toFixed(2)}, ${v.y.toFixed(2)})`));
+    console.log(`  Final polygon: ${polygon.length} vertices`);
+    polygon.forEach((v, i) => console.log(`    ${i}: (${v.x.toFixed(2)}, ${v.y.toFixed(2)})`));
   }
 
   return {
