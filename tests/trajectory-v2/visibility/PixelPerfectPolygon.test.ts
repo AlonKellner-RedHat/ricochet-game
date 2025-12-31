@@ -284,8 +284,8 @@ describe("Pixel Perfect Vertex Removal Bug", () => {
       console.log(`  (${v.x.toFixed(6)}, ${v.y.toFixed(6)})`);
     }
     
-    // Apply rendering deduplication (this is where the bug occurs)
-    const dedupedPolygon = preparePolygonForRendering(rawPolygon);
+    // Apply rendering deduplication (provenance-based)
+    const dedupedPolygon = preparePolygonForRendering(sourcePoints);
     
     // Check if (1000, 420) is still present AFTER deduplication
     const hasVertexAfterDedup = dedupedPolygon.some(
@@ -339,7 +339,7 @@ describe("Pixel Perfect Vertex Removal Bug", () => {
     const cone = createConeThroughWindow(origin, pyramid3Start, pyramid3End);
     const sourcePoints = projectConeV2(cone, toChains(surfaces), screenBounds, "pyramid-3");
     const rawPolygon = toVector2Array(sourcePoints);
-    const dedupedPolygon = preparePolygonForRendering(rawPolygon);
+    const dedupedPolygon = preparePolygonForRendering(sourcePoints);
     
     const hasVertex = dedupedPolygon.some(
       v => Math.abs(v.x - 1000) < 0.01 && Math.abs(v.y - 420) < 0.01
@@ -352,48 +352,34 @@ describe("Pixel Perfect Vertex Removal Bug", () => {
   });
 
   /**
-   * Unit test for the exact bug: sequential deduplication removes window endpoint
-   * when a computed hit point is within 0.5 pixels.
+   * Test that the new provenance-based deduplication preserves endpoints.
    * 
-   * This directly tests preparePolygonForRendering() with the exact vertex pattern
-   * from the bug report:
-   * - Computed hit point at (1000.4628791048536, 420)
-   * - Window endpoint at (1000, 420)
-   * 
-   * Distance: 0.4628 < 0.5 (tolerance), so the endpoint is incorrectly removed.
+   * The old epsilon-based deduplication would remove an endpoint when a computed
+   * hit was within 0.5 pixels. The new provenance-based approach never removes
+   * endpoints because it only removes consecutive HitPoints on the same surface.
    */
-  it("should not remove window endpoint even when computed hit is within tolerance", () => {
-    // Simulate the exact polygon from the buggy case
-    // The vertices are sorted such that the computed hit comes before the exact endpoint
-    const vertices: Vector2[] = [
-      { x: 1000.4628791048536, y: 420 },  // Computed hit point (grazing ray)
-      { x: 898.7030328388289, y: 700 },   // Floor hit
-      { x: 897.7132994682881, y: 700 },   // Floor hit (continuation)
-      { x: 1000, y: 420 },                // Window endpoint (SHOULD NOT BE REMOVED)
+  it("should preserve window endpoint (provenance-based deduplication)", () => {
+    // Use the buggy origin position that was causing issues
+    const origin: Vector2 = { x: 1089.201377076448, y: 174 };
+    
+    const pyramid3Start: Vector2 = { x: 1000, y: 420 };
+    const pyramid3End: Vector2 = { x: 1100, y: 420 };
+    
+    const surfaces: Surface[] = [
+      createTestSurface("floor", { x: 0, y: 700 }, { x: 1280, y: 700 }, false),
+      createTestSurface("pyramid-3", pyramid3Start, pyramid3End, true),
     ];
     
-    console.log("Input vertices:");
-    for (const v of vertices) {
-      console.log(`  (${v.x}, ${v.y})`);
-    }
+    const cone = createConeThroughWindow(origin, pyramid3Start, pyramid3End);
+    const sourcePoints = projectConeV2(cone, toChains(surfaces), screenBounds, "pyramid-3");
+    const dedupedPolygon = preparePolygonForRendering(sourcePoints);
     
-    // Apply rendering deduplication
-    const result = preparePolygonForRendering(vertices);
-    
-    console.log("Output vertices after preparePolygonForRendering:");
-    for (const v of result) {
-      console.log(`  (${v.x}, ${v.y})`);
-    }
-    
-    // The window endpoint (1000, 420) MUST be preserved
-    const hasExactEndpoint = result.some(
+    // The window endpoint (1000, 420) MUST be preserved by provenance-based dedup
+    const hasExactEndpoint = dedupedPolygon.some(
       v => v.x === 1000 && v.y === 420
     );
     
-    console.log("Has exact endpoint (1000, 420):", hasExactEndpoint);
-    
-    // This test demonstrates the bug: the endpoint is removed
-    // because it's within 0.5 pixels of the computed hit point
+    console.log("Window endpoint present:", hasExactEndpoint);
     expect(hasExactEndpoint).toBe(true);
   });
 });

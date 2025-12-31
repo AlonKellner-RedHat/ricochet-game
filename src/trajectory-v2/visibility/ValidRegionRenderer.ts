@@ -404,8 +404,7 @@ export class ValidRegionRenderer {
         const cone = createConeThroughWindow(player, window.start, window.end);
         const sourcePoints = projectConeV2(cone, allChains, this.screenBounds);
         stage1SourcePoints.push(...sourcePoints);
-        const rawPolygon = toVector2Array(sourcePoints);
-        const polygon = preparePolygonForRendering(rawPolygon);
+        const polygon = preparePolygonForRendering(sourcePoints);
         if (polygon.length >= 3) {
           stage1Polygons.push(polygon);
         }
@@ -415,8 +414,7 @@ export class ValidRegionRenderer {
       const cone = createFullCone(player);
       const sourcePoints = projectConeV2(cone, allChains, this.screenBounds);
       stage1SourcePoints.push(...sourcePoints);
-      const rawPolygon = toVector2Array(sourcePoints);
-      const polygon = preparePolygonForRendering(rawPolygon);
+      const polygon = preparePolygonForRendering(sourcePoints);
       if (polygon.length >= 3) {
         stage1Polygons.push(polygon);
       }
@@ -484,8 +482,7 @@ export class ValidRegionRenderer {
             currentSurface.id // Exclude the current reflection surface
           );
           stageSourcePoints.push(...sourcePoints);
-          const rawPolygon = toVector2Array(sourcePoints);
-          const polygon = preparePolygonForRendering(rawPolygon);
+          const polygon = preparePolygonForRendering(sourcePoints);
           if (polygon.length >= 3) {
             stagePolygons.push(polygon);
           }

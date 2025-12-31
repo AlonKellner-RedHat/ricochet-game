@@ -1,21 +1,37 @@
 /**
  * RenderingDedup Tests
  *
- * Tests for exact-equality deduplication and collinear point removal.
- * 
- * IMPORTANT: The deduplication is now EXACT (no tolerance/epsilon).
- * This prevents bugs where geometrically distinct vertices from different
- * sources are incorrectly merged, which was causing visibility polygon errors.
+ * Tests for exact-equality deduplication and provenance-based consecutive hit removal.
+ *
+ * IMPORTANT: The deduplication is now PROVENANCE-BASED (no tolerance/epsilon).
+ * - Consecutive HitPoints on the same surface are collapsed to first and last
+ * - Endpoints, JunctionPoints, and OriginPoints are always preserved
  */
 
 import { describe, it, expect } from "vitest";
 import {
   dedupeForRendering,
-  removeCollinearPoints,
+  dedupeConsecutiveHits,
   preparePolygonForRendering,
   VISUAL_TOLERANCE_PIXELS,
 } from "@/trajectory-v2/visibility/RenderingDedup";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import { HitPoint, Endpoint, OriginPoint } from "@/trajectory-v2/geometry/SourcePoint";
+import type { Surface } from "@/surfaces/Surface";
+
+// Helper to create a mock surface
+function createMockSurface(id: string): Surface {
+  return {
+    id,
+    segment: { start: { x: 0, y: 0 }, end: { x: 100, y: 0 } },
+    surfaceType: "wall",
+    onArrowHit: () => ({ type: "blocked" }),
+    isPlannable: () => false,
+    getVisualProperties: () => ({ color: 0, alpha: 1, lineWidth: 1 }),
+    getNormal: () => ({ x: 0, y: 1 }),
+    canReflectFrom: () => false,
+  } as Surface;
+}
 
 describe("RenderingDedup", () => {
   describe("dedupeForRendering()", () => {
@@ -83,126 +99,143 @@ describe("RenderingDedup", () => {
     });
   });
 
-  describe("removeCollinearPoints()", () => {
-    it("removes points on a straight line", () => {
-      const vertices: Vector2[] = [
-        { x: 0, y: 0 },
-        { x: 50, y: 0 }, // Collinear with prev and next
-        { x: 100, y: 0 },
-        { x: 100, y: 100 },
-        { x: 0, y: 100 },
+  describe("dedupeConsecutiveHits()", () => {
+    const surfaceA = createMockSurface("surface-A");
+    const surfaceB = createMockSurface("surface-B");
+
+    it("keeps first and last of consecutive HitPoints on same surface", () => {
+      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const points = [
+        new HitPoint(ray, surfaceA, 0.1, 0.1), // First of run
+        new HitPoint(ray, surfaceA, 0.2, 0.2), // Middle - removed
+        new HitPoint(ray, surfaceA, 0.3, 0.3), // Middle - removed
+        new HitPoint(ray, surfaceA, 0.4, 0.4), // Last of run
       ];
 
-      const result = removeCollinearPoints(vertices, 0.001);
+      const result = dedupeConsecutiveHits(points);
 
-      // Middle point on bottom edge should be removed
-      expect(result.length).toBe(4);
-      expect(result).not.toContainEqual({ x: 50, y: 0 });
+      expect(result.length).toBe(2);
+      expect(result[0]).toBe(points[0]); // First
+      expect(result[1]).toBe(points[3]); // Last
     });
 
-    it("keeps corner points", () => {
-      const vertices: Vector2[] = [
-        { x: 0, y: 0 },
-        { x: 100, y: 0 },
-        { x: 100, y: 100 },
-        { x: 0, y: 100 },
+    it("keeps all points when surfaces differ", () => {
+      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const points = [
+        new HitPoint(ray, surfaceA, 0.1, 0.1),
+        new HitPoint(ray, surfaceB, 0.2, 0.2), // Different surface - start new run
+        new HitPoint(ray, surfaceA, 0.3, 0.3), // Different surface - start new run
       ];
 
-      const result = removeCollinearPoints(vertices);
+      const result = dedupeConsecutiveHits(points);
 
-      // All corners should be kept
-      expect(result.length).toBe(4);
-    });
-
-    it("handles triangle (minimum polygon)", () => {
-      const vertices: Vector2[] = [
-        { x: 0, y: 0 },
-        { x: 100, y: 0 },
-        { x: 50, y: 100 },
-      ];
-
-      const result = removeCollinearPoints(vertices);
-
-      // Triangles are returned as-is
+      // Each hit is on a different surface (or starts a new run), all kept
       expect(result.length).toBe(3);
     });
 
-    it("preserves near-collinear points with large tolerance", () => {
-      const vertices: Vector2[] = [
-        { x: 0, y: 0 },
-        { x: 50, y: 1 }, // Slightly off the line
-        { x: 100, y: 0 },
-        { x: 100, y: 100 },
-        { x: 0, y: 100 },
+    it("always keeps Endpoints", () => {
+      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const points = [
+        new HitPoint(ray, surfaceA, 0.1, 0.1),
+        new Endpoint(surfaceA, "start"), // Endpoint - always kept
+        new HitPoint(ray, surfaceA, 0.3, 0.3),
       ];
 
-      // With large tolerance, the slightly off point should be removed
-      const result = removeCollinearPoints(vertices, 100);
-      expect(result.length).toBe(4);
+      const result = dedupeConsecutiveHits(points);
 
-      // With small tolerance, it should be kept
-      const result2 = removeCollinearPoints(vertices, 0.5);
-      expect(result2.length).toBe(5);
+      // Endpoint breaks the run and is always kept
+      expect(result.length).toBe(3);
+      expect(result[1]).toBeInstanceOf(Endpoint);
+    });
+
+    it("always keeps OriginPoints", () => {
+      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const points = [
+        new HitPoint(ray, surfaceA, 0.1, 0.1),
+        new OriginPoint({ x: 50, y: 50 }), // OriginPoint - always kept
+        new HitPoint(ray, surfaceA, 0.3, 0.3),
+      ];
+
+      const result = dedupeConsecutiveHits(points);
+
+      // OriginPoint breaks the run and is always kept
+      expect(result.length).toBe(3);
+      expect(result[1]).toBeInstanceOf(OriginPoint);
+    });
+
+    it("handles empty array", () => {
+      const result = dedupeConsecutiveHits([]);
+      expect(result).toEqual([]);
+    });
+
+    it("handles single point", () => {
+      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const point = new HitPoint(ray, surfaceA, 0.1, 0.1);
+      const result = dedupeConsecutiveHits([point]);
+      expect(result.length).toBe(1);
+    });
+
+    it("handles mixed point types", () => {
+      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const points = [
+        new Endpoint(surfaceA, "start"),
+        new HitPoint(ray, surfaceA, 0.1, 0.1),
+        new HitPoint(ray, surfaceA, 0.2, 0.2),
+        new HitPoint(ray, surfaceA, 0.3, 0.3),
+        new Endpoint(surfaceA, "end"),
+        new HitPoint(ray, surfaceB, 0.4, 0.4),
+      ];
+
+      const result = dedupeConsecutiveHits(points);
+
+      // Endpoints always kept, middle HitPoints on surfaceA removed
+      expect(result.length).toBe(5);
+      expect(result[0]).toBeInstanceOf(Endpoint);
+      expect(result[1]).toBeInstanceOf(HitPoint); // First of run
+      expect(result[2]).toBeInstanceOf(HitPoint); // Last of run (before endpoint)
+      expect(result[3]).toBeInstanceOf(Endpoint);
+      expect(result[4]).toBeInstanceOf(HitPoint);
     });
   });
 
   describe("preparePolygonForRendering()", () => {
-    it("applies both dedup and collinear removal", () => {
-      const vertices: Vector2[] = [
-        { x: 0, y: 0 },
-        { x: 0, y: 0 }, // Exact duplicate - removed
-        { x: 50, y: 0 }, // Collinear with 0,0 and 100,0 - removed by collinear pass
-        { x: 100, y: 0 },
-        { x: 100, y: 100 },
-        { x: 0, y: 100 },
+    const surface = createMockSurface("test-surface");
+
+    it("returns Vector2 array", () => {
+      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const points = [
+        new HitPoint(ray, surface, 0.1, 0.1),
+        new HitPoint(ray, surface, 0.2, 0.2),
       ];
 
-      const result = preparePolygonForRendering(vertices);
+      const result = preparePolygonForRendering(points);
 
-      // Should remove exact duplicate AND collinear point
-      expect(result.length).toBeLessThanOrEqual(4);
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBeGreaterThan(0);
+      expect(typeof result[0].x).toBe("number");
+      expect(typeof result[0].y).toBe("number");
     });
 
-    it("preserves near-duplicate vertices from different sources", () => {
-      // This is the critical case that caused the pixel-perfect bug!
-      // A computed hit point at (1000.46, 420) and a window endpoint at (1000, 420)
-      // are geometrically distinct and must BOTH be preserved
-      const vertices: Vector2[] = [
-        { x: 1000.4628791048536, y: 420 }, // Computed hit point
-        { x: 898.7, y: 700 },
-        { x: 897.7, y: 700 },
-        { x: 1000, y: 420 }, // Window endpoint (0.46px away from first)
+    it("removes consecutive hits on same surface", () => {
+      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const points = [
+        new HitPoint(ray, surface, 0.1, 0.1),
+        new HitPoint(ray, surface, 0.2, 0.2),
+        new HitPoint(ray, surface, 0.3, 0.3),
+        new HitPoint(ray, surface, 0.4, 0.4),
       ];
 
-      const result = preparePolygonForRendering(vertices);
+      const result = preparePolygonForRendering(points);
 
-      // Both (1000.46, 420) and (1000, 420) must be preserved
-      expect(result.length).toBe(4);
-      expect(result.some((v) => v.x === 1000.4628791048536 && v.y === 420)).toBe(
-        true
-      );
-      expect(result.some((v) => v.x === 1000 && v.y === 420)).toBe(true);
+      // Only first and last kept
+      expect(result.length).toBe(2);
     });
 
-    it("produces a valid renderable polygon", () => {
-      // Complex polygon with duplicates and collinear points
-      const vertices: Vector2[] = [
-        { x: 0, y: 0 },
-        { x: 25, y: 0 },
-        { x: 50, y: 0 },
-        { x: 75, y: 0 },
-        { x: 100, y: 0 },
-        { x: 100, y: 50 },
-        { x: 100, y: 100 },
-        { x: 50, y: 100 },
-        { x: 0, y: 100 },
-        { x: 0, y: 50 },
-      ];
+    it("preserves endpoints", () => {
+      const endpoint = new Endpoint(surface, "start");
+      const result = preparePolygonForRendering([endpoint]);
 
-      const result = preparePolygonForRendering(vertices);
-
-      // Should reduce to 4 corners
-      expect(result.length).toBe(4);
+      expect(result.length).toBe(1);
     });
   });
 
@@ -214,4 +247,3 @@ describe("RenderingDedup", () => {
     });
   });
 });
-

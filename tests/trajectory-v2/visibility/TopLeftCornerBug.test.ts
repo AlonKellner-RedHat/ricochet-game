@@ -180,7 +180,7 @@ describe("TopLeftCornerBug", () => {
       const cone = createFullCone(pos);
       const sourcePoints = projectConeV2(cone, chains, BOUNDS);
       const rawPolygon = toVector2Array(sourcePoints);
-      const renderedPolygon = preparePolygonForRendering(rawPolygon);
+      const renderedPolygon = preparePolygonForRendering(sourcePoints);
 
       // Check if (20, 80) is in raw polygon
       const hasInRaw = rawPolygon.some((p) => p.x === 20 && p.y === 80);

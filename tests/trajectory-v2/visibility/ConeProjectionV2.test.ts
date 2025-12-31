@@ -717,7 +717,7 @@ describe("Regression: player near ricochet-4 at (849.9997, 517.82)", () => {
     const rawVertices = toVector2Array(points);
 
     // Apply preparePolygonForRendering to match demo behavior
-    const renderedVertices = preparePolygonForRendering(rawVertices);
+    const renderedVertices = preparePolygonForRendering(points);
 
     // Find ricochet-4 endpoints in rendered output
     const idx350 = renderedVertices.findIndex(
@@ -754,7 +754,7 @@ describe("Regression: player near ricochet-4 at (849.9997, 517.82)", () => {
     const rawVertices = toVector2Array(points);
 
     // Apply preparePolygonForRendering to match demo behavior
-    const renderedVertices = preparePolygonForRendering(rawVertices);
+    const renderedVertices = preparePolygonForRendering(points);
 
     // Find continuation hits on ricochet-1 (points near x=850, y=200)
     const continuations = renderedVertices.filter(
@@ -817,7 +817,7 @@ describe("Reflection visibility instability", () => {
     const cone = createConeThroughWindow(reflectedOrigin, ricochet4.start, ricochet4.end);
     const points = projectConeV2(cone, toChains(allSurfaces), bounds, "ricochet-4");
     const rawVertices = toVector2Array(points);
-    const renderedVertices = preparePolygonForRendering(rawVertices);
+    const renderedVertices = preparePolygonForRendering(points);
 
     // Check that we have the expected number of vertices
     const platform2Hit = renderedVertices.filter(
@@ -839,7 +839,7 @@ describe("Reflection visibility instability", () => {
     const cone = createConeThroughWindow(reflectedOrigin, ricochet4.start, ricochet4.end);
     const points = projectConeV2(cone, toChains(allSurfaces), bounds, "ricochet-4");
     const rawVertices = toVector2Array(points);
-    const renderedVertices = preparePolygonForRendering(rawVertices);
+    const renderedVertices = preparePolygonForRendering(points);
 
     // Check for the platform-2 vertex near (675.8, 350)
     const platform2Hit = renderedVertices.filter(
@@ -930,7 +930,7 @@ describe("Reflection visibility instability", () => {
       const cone = createConeThroughWindow(reflectedOrigin, ricochet4.start, ricochet4.end);
       const points = projectConeV2(cone, toChains(allSurfaces), bounds, "ricochet-4");
       const rawVertices = toVector2Array(points);
-      const renderedVertices = preparePolygonForRendering(rawVertices);
+      const renderedVertices = preparePolygonForRendering(points);
 
       const platform2Hits = renderedVertices.filter(
         (v) => Math.abs(v.y - 350) < 1 && v.x > 550 && v.x < 750
@@ -997,7 +997,7 @@ describe("Off-screen origin visibility", () => {
 
     const cone = createConeThroughWindow(reflectedOrigin, ricochet4.start, ricochet4.end);
     const points = projectConeV2(cone, toChains(allSurfaces), bounds, "ricochet-4");
-    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+    const renderedVertices = preparePolygonForRendering(points);
 
     // Check for left-wall vertex around y=289 (continuation through window endpoint)
     const leftWallHits = renderedVertices.filter(
@@ -1020,7 +1020,7 @@ describe("Off-screen origin visibility", () => {
 
     const cone = createConeThroughWindow(reflectedOrigin, ricochet4.start, ricochet4.end);
     const points = projectConeV2(cone, toChains(allSurfaces), bounds, "ricochet-4");
-    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+    const renderedVertices = preparePolygonForRendering(points);
 
     // Check for left-wall vertex around y=289
     const leftWallHits = renderedVertices.filter(
@@ -1043,7 +1043,7 @@ describe("Off-screen origin visibility", () => {
       const cone = createConeThroughWindow(reflectedOrigin, ricochet4.start, ricochet4.end);
       const points = projectConeV2(cone, toChains(allSurfaces), bounds, "ricochet-4");
       const rawVertices = toVector2Array(points);
-      const renderedVertices = preparePolygonForRendering(rawVertices);
+      const renderedVertices = preparePolygonForRendering(points);
 
       const leftWallHits = renderedVertices.filter(
         (v) => Math.abs(v.x - 20) < 1 && v.y > 280 && v.y < 300
@@ -1147,7 +1147,7 @@ describe("ConeProjectionV2 - Diagonal Window Sorting", () => {
 
     const cone = createConeThroughWindow(reflectedOrigin, ricochet1.start, ricochet1.end);
     const points = projectConeV2(cone, toChains(allSurfaces), bounds, "ricochet-1");
-    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+    const renderedVertices = preparePolygonForRendering(points);
 
     // The polygon vertices should be in proper CCW angular order
     expect(isProperAngularOrder(renderedVertices, reflectedOrigin)).toBe(true);
@@ -1163,7 +1163,7 @@ describe("ConeProjectionV2 - Diagonal Window Sorting", () => {
 
     const cone = createConeThroughWindow(reflectedOrigin, ricochet1.start, ricochet1.end);
     const points = projectConeV2(cone, toChains(allSurfaces), bounds, "ricochet-1");
-    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+    const renderedVertices = preparePolygonForRendering(points);
 
     // The polygon vertices should be in proper CCW angular order
     expect(isProperAngularOrder(renderedVertices, reflectedOrigin)).toBe(true);
@@ -1175,7 +1175,7 @@ describe("ConeProjectionV2 - Diagonal Window Sorting", () => {
     const origin1 = reflectPoint(player1, ricochet1.start, ricochet1.end);
     const cone1 = createConeThroughWindow(origin1, ricochet1.start, ricochet1.end);
     const vertices1 = preparePolygonForRendering(
-      toVector2Array(projectConeV2(cone1, toChains(allSurfaces), bounds, "ricochet-1"))
+      projectConeV2(cone1, toChains(allSurfaces), bounds, "ricochet-1")
     );
 
     // Valid case
@@ -1183,7 +1183,7 @@ describe("ConeProjectionV2 - Diagonal Window Sorting", () => {
     const origin2 = reflectPoint(player2, ricochet1.start, ricochet1.end);
     const cone2 = createConeThroughWindow(origin2, ricochet1.start, ricochet1.end);
     const vertices2 = preparePolygonForRendering(
-      toVector2Array(projectConeV2(cone2, toChains(allSurfaces), bounds, "ricochet-1"))
+      projectConeV2(cone2, toChains(allSurfaces), bounds, "ricochet-1")
     );
 
     // Both should have similar vertex counts (within 2)
@@ -1238,7 +1238,7 @@ describe("ConeProjectionV2 - Out-of-Bounds Origin Spike", () => {
 
     const cone = createConeThroughWindow(reflectedOrigin, ricochet1.start, ricochet1.end);
     const points = projectConeV2(cone, toChains(allSurfaces), bounds, "ricochet-1");
-    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+    const renderedVertices = preparePolygonForRendering(points);
 
     // The polygon should NOT contain the right-wall corner (1260, 80)
     // because it's between the origin and window, not past the window
@@ -1258,7 +1258,7 @@ describe("ConeProjectionV2 - Out-of-Bounds Origin Spike", () => {
 
     const cone = createConeThroughWindow(reflectedOrigin, ricochet1.start, ricochet1.end);
     const points = projectConeV2(cone, toChains(allSurfaces), bounds, "ricochet-1");
-    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+    const renderedVertices = preparePolygonForRendering(points);
 
     // This case should also NOT have the right-wall corner
     const rightWallCorner = renderedVertices.find(
@@ -1274,7 +1274,7 @@ describe("ConeProjectionV2 - Out-of-Bounds Origin Spike", () => {
 
     const cone = createConeThroughWindow(reflectedOrigin, ricochet1.start, ricochet1.end);
     const points = projectConeV2(cone, toChains(allSurfaces), bounds, "ricochet-1");
-    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+    const renderedVertices = preparePolygonForRendering(points);
 
     // Check for any vertices on the right wall (x > 1200) that aren't window endpoints
     const windowEndpoints = [
@@ -1332,7 +1332,7 @@ describe("ConeProjectionV2 - Umbrella Reference Ray Alignment", () => {
 
     const cone = createConeThroughWindow(player, umbrella.start, umbrella.end);
     const points = projectConeV2(cone, toChains(allSurfaces), bounds);
-    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+    const renderedVertices = preparePolygonForRendering(points);
 
     // The problematic ceiling vertex around x=1236 should NOT appear early in the polygon
     // In the bug, it appeared at position 2 instead of near the end
@@ -1369,7 +1369,7 @@ describe("ConeProjectionV2 - Umbrella Reference Ray Alignment", () => {
 
     const cone = createConeThroughWindow(player, umbrella.start, umbrella.end);
     const points = projectConeV2(cone, toChains(allSurfaces), bounds);
-    const renderedVertices = preparePolygonForRendering(toVector2Array(points));
+    const renderedVertices = preparePolygonForRendering(points);
 
     // Same angular order check
     const angles = renderedVertices.map((v) => Math.atan2(v.y - player.y, v.x - player.x));
@@ -1390,14 +1390,14 @@ describe("ConeProjectionV2 - Umbrella Reference Ray Alignment", () => {
     const umbrella1 = getUmbrellaSegment(player1);
     const cone1 = createConeThroughWindow(player1, umbrella1.start, umbrella1.end);
     const vertices1 = preparePolygonForRendering(
-      toVector2Array(projectConeV2(cone1, toChains(allSurfaces), bounds))
+      projectConeV2(cone1, toChains(allSurfaces), bounds)
     );
 
     const player2 = { x: 796.6097575998065, y: 666 };
     const umbrella2 = getUmbrellaSegment(player2);
     const cone2 = createConeThroughWindow(player2, umbrella2.start, umbrella2.end);
     const vertices2 = preparePolygonForRendering(
-      toVector2Array(projectConeV2(cone2, toChains(allSurfaces), bounds))
+      projectConeV2(cone2, toChains(allSurfaces), bounds)
     );
 
     // Sub-pixel player change should not significantly affect vertex count
