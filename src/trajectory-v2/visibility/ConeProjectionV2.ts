@@ -34,7 +34,11 @@ import {
   isHitPoint,
   startOf,
 } from "@/trajectory-v2/geometry/SourcePoint";
-import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import {
+  type SurfaceChain,
+  type JunctionPoint,
+  isJunctionPoint,
+} from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Ray, Vector2 } from "@/trajectory-v2/geometry/types";
 
 // =============================================================================
@@ -530,7 +534,12 @@ function castRayToEndpoint(
     for (const obstacle of obstacles) {
       if (targetEndpoint.surface.id === obstacle.id) continue;
 
-      const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
+      const hit = lineLineIntersection(
+        origin,
+        rayEnd,
+        obstacle.segment.start,
+        obstacle.segment.end
+      );
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
         closestT = hit.t;
         closestSurface = obstacle;
@@ -542,7 +551,12 @@ function castRayToEndpoint(
   // Check screen boundaries (skip for window endpoints)
   if (!windowSurfaceId || targetEndpoint.surface.id !== windowSurfaceId) {
     for (const boundary of screenBoundaries.all) {
-      const hit = lineLineIntersection(origin, rayEnd, boundary.segment.start, boundary.segment.end);
+      const hit = lineLineIntersection(
+        origin,
+        rayEnd,
+        boundary.segment.start,
+        boundary.segment.end
+      );
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
         closestT = hit.t;
         closestSurface = boundary;
@@ -693,6 +707,68 @@ function castContinuationRay(
   return null;
 }
 
+/**
+ * Cast a continuation ray through a JunctionPoint.
+ * Similar to castContinuationRay, but excludes BOTH surfaces at the junction.
+ */
+function castContinuationRayForJunction(
+  origin: Vector2,
+  junction: JunctionPoint,
+  allObstacles: readonly Surface[],
+  _screenBoundaries: ScreenBoundaries,
+  startLine: Segment | null
+): SourcePoint | null {
+  const target = junction.computeXY();
+  const dx = target.x - origin.x;
+  const dy = target.y - origin.y;
+  const lenSq = dx * dx + dy * dy;
+
+  if (lenSq === 0) return null;
+
+  const scale = 10;
+  const rayEnd = { x: origin.x + dx * scale, y: origin.y + dy * scale };
+  const ray: Ray = { from: origin, to: rayEnd };
+
+  const junctionT = 1 / scale;
+  let minT = junctionT;
+
+  // For windowed cones, check if ray passes through window
+  if (startLine) {
+    const lineHit = lineLineIntersection(origin, rayEnd, startLine.start, startLine.end);
+    if (lineHit.valid && lineHit.s >= 0 && lineHit.s <= 1 && lineHit.t > 0) {
+      minT = Math.max(lineHit.t, junctionT);
+    } else {
+      return null;
+    }
+  }
+
+  // Get the IDs of both surfaces at the junction
+  const surfaceBeforeId = junction.getSurfaceBefore()?.id;
+  const surfaceAfterId = junction.getSurfaceAfter()?.id;
+
+  let closestT = Number.POSITIVE_INFINITY;
+  let closestSurface: Surface | null = null;
+  let closestS = 0;
+
+  for (const obstacle of allObstacles) {
+    // Skip both surfaces that form this junction
+    if (obstacle.id === surfaceBeforeId || obstacle.id === surfaceAfterId) continue;
+
+    const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
+    if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
+      closestT = hit.t;
+      closestSurface = obstacle;
+      closestS = hit.s;
+    }
+  }
+
+  if (closestSurface) {
+    return new HitPoint(ray, closestSurface, closestT, closestS);
+  }
+
+  return null;
+}
+
 // =============================================================================
 // MAIN ALGORITHM
 // =============================================================================
@@ -727,8 +803,9 @@ export function projectConeV2(
     ? obstacles.filter((o) => o.id !== excludeSurfaceId)
     : obstacles;
 
-  // Collect all ray targets (Endpoints only - ignoring JunctionPoints for now)
-  const rayTargets: Endpoint[] = [];
+  // Collect all ray targets (Endpoints and JunctionPoints)
+  type RayTarget = Endpoint | JunctionPoint;
+  const rayTargets: RayTarget[] = [];
 
   // Add game surface endpoints
   for (const obstacle of obstacles) {
@@ -736,10 +813,30 @@ export function projectConeV2(
     rayTargets.push(endOf(obstacle));
   }
 
-  // Add screen boundary endpoints (treated as Endpoints, not JunctionPoints)
-  for (const screenSurface of screenChain.getSurfaces()) {
-    rayTargets.push(startOf(screenSurface));
-    rayTargets.push(endOf(screenSurface));
+  // Add game chain JunctionPoints (internal vertices where surfaces meet)
+  for (const chain of chains) {
+    for (const junction of chain.getJunctionPoints()) {
+      rayTargets.push(junction);
+    }
+  }
+
+  // Add screen boundary ray targets
+  // For closed chains (like screen boundary), all vertices are JunctionPoints
+  // For open chains, we add both endpoints (exposed ends) and JunctionPoints (internal vertices)
+  if (screenChain.isClosed) {
+    // Closed chain: only JunctionPoints (all 4 corners)
+    for (const junction of screenChain.getJunctionPoints()) {
+      rayTargets.push(junction);
+    }
+  } else {
+    // Open chain: add endpoints for exposed ends
+    for (const screenSurface of screenChain.getSurfaces()) {
+      rayTargets.push(startOf(screenSurface));
+      rayTargets.push(endOf(screenSurface));
+    }
+    for (const junction of screenChain.getJunctionPoints()) {
+      rayTargets.push(junction);
+    }
   }
 
   // For windowed cones, add window endpoints to polygon
@@ -748,8 +845,22 @@ export function projectConeV2(
     vertices.push(new OriginPoint(startLine.end));
   }
 
-  // Track ray pairs: endpoint + continuation that share the same ray
-  const rayPairs = new Map<string, { endpoint: Endpoint; continuation: SourcePoint | null }>();
+  // Pre-compute surface orientations for sorting and junction pass-through checks
+  // This is done BEFORE the main loop so orientations are available for junction decisions
+  const surfaceOrientations = new Map<string, SurfaceOrientation>();
+
+  // Compute orientations for all surfaces (from both game chains and screen chain)
+  for (const surface of [...obstacles, ...screenChain.getSurfaces()]) {
+    if (!surfaceOrientations.has(surface.id)) {
+      surfaceOrientations.set(surface.id, computeSurfaceOrientation(surface, origin));
+    }
+  }
+
+  // Track ray pairs: endpoint/junction + continuation that share the same ray
+  const rayPairs = new Map<
+    string,
+    { endpoint: Endpoint | JunctionPoint; continuation: SourcePoint | null }
+  >();
 
   // Cast rays to each target within the cone
   for (const target of rayTargets) {
@@ -773,8 +884,48 @@ export function projectConeV2(
       if (!isPointPastWindow(origin, targetXY, startLine)) continue;
     }
 
+    // Handle JunctionPoints - junction can block its own ray
+    if (isJunctionPoint(target)) {
+      // Check if junction blocks its own ray using pre-computed orientations
+      const canPass = target.canLightPassWithOrientations(surfaceOrientations);
+
+      // Cast ray to the junction point
+      const hit = castRayToTarget(
+        origin,
+        targetXY,
+        effectiveObstacles,
+        screenBoundaries,
+        startLine
+      );
+
+      if (hit) {
+        vertices.push(hit);
+
+        // Check if ray actually reached the junction (not blocked by another obstacle)
+        const hitXY = hit.computeXY();
+        const reachesJunction = hitXY.x === targetXY.x && hitXY.y === targetXY.y;
+
+        // If junction allows pass-through and ray reaches it, cast continuation
+        if (canPass && reachesJunction) {
+          const continuation = castContinuationRayForJunction(
+            origin,
+            target,
+            [...effectiveObstacles, ...screenBoundaries.all],
+            screenBoundaries,
+            startLine
+          );
+          if (continuation) {
+            vertices.push(continuation);
+            rayPairs.set(target.getKey(), { endpoint: target, continuation });
+          }
+        }
+        // If junction blocks (!canPass), we still add the hit but no continuation
+      }
+      continue;
+    }
+
     // Handle Endpoints - may need continuation rays
-    const targetEndpoint = target;
+    const targetEndpoint = target as Endpoint;
     const hit = castRayToEndpoint(
       origin,
       targetEndpoint,
