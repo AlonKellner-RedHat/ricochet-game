@@ -7,11 +7,7 @@
 
 import type { Surface } from "@/surfaces/Surface";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
-import {
-  type SourcePoint,
-  isEndpoint,
-  isHitPoint,
-} from "@/trajectory-v2/geometry/SourcePoint";
+import { type SourcePoint, isEndpoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import {
@@ -261,7 +257,7 @@ function computeVisibilityStages(
     }
 
     // Create aggregated stage
-    const aggregatedPolygon = stagePolygons.length > 0 ? stagePolygons[0] ?? [] : [];
+    const aggregatedPolygon = stagePolygons.length > 0 ? (stagePolygons[0] ?? []) : [];
     stages.push({
       origin: reflectedOrigin,
       polygon: aggregatedPolygon,
