@@ -59,6 +59,11 @@ export const SPECIAL_POSITIONS: Vector2[] = [
   { x: 1090.7970816001189, y: 666 }, // CORRECT - pyramid-1 left endpoint present
   { x: 1035.6085918854415, y: 485.25059665871123 }, // cursor for buggy
   { x: 1031.0262529832935, y: 477.61336515513125 }, // cursor for correct
+  // Top-left corner sorting bug - left-wall endpoint (20, 80) missing
+  { x: 130.71028971272352, y: 522.6852008399795 }, // BUGGY player - (20,80) missing
+  { x: 130.86070971272358, y: 522.6601108399797 }, // CORRECT player - (20,80) present
+  { x: 82.90155440414507, y: 209.11917098445593 }, // cursor for buggy
+  { x: 66.32124352331606, y: 200.82901554404143 }, // cursor for correct
 ];
 
 /**
