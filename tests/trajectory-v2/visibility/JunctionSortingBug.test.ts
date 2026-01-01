@@ -16,15 +16,16 @@
 
 import { RicochetSurface } from "@/surfaces/RicochetSurface";
 import { WallSurface } from "@/surfaces/WallSurface";
+import { isEndpoint, isHitPoint, isOriginPoint } from "@/trajectory-v2/geometry/SourcePoint";
 import {
-  isEndpoint,
-  isHitPoint,
-  isOriginPoint,
-} from "@/trajectory-v2/geometry/SourcePoint";
-import { type SurfaceChain, createRicochetChain, createSingleSurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
+  type SurfaceChain,
+  createRicochetChain,
+  createSingleSurfaceChain,
+} from "@/trajectory-v2/geometry/SurfaceChain";
 import { isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import {
+  computeSurfaceOrientation,
   createFullCone,
   projectConeV2,
   toVector2Array,
@@ -86,7 +87,12 @@ function createDemoChains(): SurfaceChain[] {
 /**
  * Helper to create a single-surface chain from coordinates.
  */
-function makeSingleChain(id: string, start: Vector2, end: Vector2, canReflect: boolean): SurfaceChain {
+function makeSingleChain(
+  id: string,
+  start: Vector2,
+  end: Vector2,
+  canReflect: boolean
+): SurfaceChain {
   const surface = canReflect
     ? new RicochetSurface(id, { start, end })
     : new WallSurface(id, { start, end });
@@ -120,18 +126,58 @@ function createStandaloneSurfaceChains(): SurfaceChain[] {
     // Grid surfaces (all from bug report)
     makeSingleChain("grid-0-0-0", { x: 885, y: 200 }, { x: 915, y: 200 }, true),
     makeSingleChain("grid-0-1-0", { x: 935, y: 200 }, { x: 965, y: 200 }, true),
-    makeSingleChain("grid-0-2-0", { x: 1010.6066017177982, y: 189.3933982822018 }, { x: 989.3933982822018, y: 210.6066017177982 }, true),
-    makeSingleChain("grid-0-3-0", { x: 1039.3933982822018, y: 189.3933982822018 }, { x: 1060.6066017177982, y: 210.6066017177982 }, true),
+    makeSingleChain(
+      "grid-0-2-0",
+      { x: 1010.6066017177982, y: 189.3933982822018 },
+      { x: 989.3933982822018, y: 210.6066017177982 },
+      true
+    ),
+    makeSingleChain(
+      "grid-0-3-0",
+      { x: 1039.3933982822018, y: 189.3933982822018 },
+      { x: 1060.6066017177982, y: 210.6066017177982 },
+      true
+    ),
     makeSingleChain("grid-1-0-0", { x: 900, y: 235 }, { x: 900, y: 265 }, true),
-    makeSingleChain("grid-1-1-0", { x: 939.3933982822018, y: 239.3933982822018 }, { x: 960.6066017177982, y: 260.6066017177982 }, true),
+    makeSingleChain(
+      "grid-1-1-0",
+      { x: 939.3933982822018, y: 239.3933982822018 },
+      { x: 960.6066017177982, y: 260.6066017177982 },
+      true
+    ),
     makeSingleChain("grid-1-2-0", { x: 985, y: 250 }, { x: 1015, y: 250 }, true),
-    makeSingleChain("grid-1-3-0", { x: 1060.6066017177982, y: 260.6066017177982 }, { x: 1039.3933982822018, y: 239.3933982822018 }, true),
+    makeSingleChain(
+      "grid-1-3-0",
+      { x: 1060.6066017177982, y: 260.6066017177982 },
+      { x: 1039.3933982822018, y: 239.3933982822018 },
+      true
+    ),
     makeSingleChain("grid-2-0-0", { x: 915, y: 300 }, { x: 885, y: 300 }, true),
-    makeSingleChain("grid-2-1-0", { x: 960.6066017177982, y: 310.6066017177982 }, { x: 939.3933982822018, y: 289.3933982822018 }, true),
+    makeSingleChain(
+      "grid-2-1-0",
+      { x: 960.6066017177982, y: 310.6066017177982 },
+      { x: 939.3933982822018, y: 289.3933982822018 },
+      true
+    ),
     makeSingleChain("grid-2-2-0", { x: 1000, y: 315 }, { x: 1000, y: 285 }, true),
-    makeSingleChain("grid-2-3-0", { x: 1060.6066017177982, y: 289.3933982822018 }, { x: 1039.3933982822018, y: 310.6066017177982 }, true),
-    makeSingleChain("grid-3-0-0", { x: 889.3933982822018, y: 339.3933982822018 }, { x: 910.6066017177982, y: 360.6066017177982 }, true),
-    makeSingleChain("grid-3-1-0", { x: 939.3933982822018, y: 339.3933982822018 }, { x: 960.6066017177982, y: 360.6066017177982 }, true),
+    makeSingleChain(
+      "grid-2-3-0",
+      { x: 1060.6066017177982, y: 289.3933982822018 },
+      { x: 1039.3933982822018, y: 310.6066017177982 },
+      true
+    ),
+    makeSingleChain(
+      "grid-3-0-0",
+      { x: 889.3933982822018, y: 339.3933982822018 },
+      { x: 910.6066017177982, y: 360.6066017177982 },
+      true
+    ),
+    makeSingleChain(
+      "grid-3-1-0",
+      { x: 939.3933982822018, y: 339.3933982822018 },
+      { x: 960.6066017177982, y: 360.6066017177982 },
+      true
+    ),
     makeSingleChain("grid-3-2-0", { x: 1000, y: 365 }, { x: 1000, y: 335 }, true),
     makeSingleChain("grid-3-3-0", { x: 1050, y: 365 }, { x: 1050, y: 335 }, true),
   ];
@@ -189,7 +235,7 @@ describe("Junction Sorting Bug", () => {
   });
 
   describe("Visibility polygon analysis", () => {
-    it("should reproduce the black triangle bug", () => {
+    it("should NO LONGER have the black triangle bug (FIXED)", () => {
       const chains = getAllChains();
 
       const source = createFullCone(PLAYER);
@@ -198,30 +244,19 @@ describe("Junction Sorting Bug", () => {
 
       console.log("=== Visibility Polygon ===");
       console.log(`Total vertices: ${polygon.length}`);
-      console.log("All vertices:");
-      for (let i = 0; i < polygon.length; i++) {
-        const v = polygon[i];
-        if (v) console.log(`  ${i}: (${v.x.toFixed(2)}, ${v.y.toFixed(2)})`);
-      }
 
       // Find vertices near the apex (850, 250)
       const nearApex = polygon.filter(
         (v) => Math.abs(v.x - CHAIN3_APEX.x) < 1 && Math.abs(v.y - CHAIN3_APEX.y) < 1
       );
       console.log(`Vertices near apex (850, 250): ${nearApex.length}`);
-      for (const v of nearApex) {
-        console.log(`  (${v.x.toFixed(2)}, ${v.y.toFixed(2)})`);
-      }
 
       // Find vertices on the ceiling (y ≈ 80)
       const onCeiling = polygon.filter((v) => Math.abs(v.y - 80) < 1);
       console.log(`Vertices on ceiling (y ≈ 80): ${onCeiling.length}`);
-      for (const v of onCeiling) {
-        console.log(`  (${v.x.toFixed(2)}, ${v.y.toFixed(2)})`);
-      }
 
       // Check for the problematic sequence
-      // Look for: ceiling → apex → ceiling pattern
+      // Look for: ceiling → apex → ceiling pattern (the bug pattern)
       let foundSpike = false;
       for (let i = 0; i < polygon.length; i++) {
         const prev = polygon[(i - 1 + polygon.length) % polygon.length];
@@ -244,9 +279,9 @@ describe("Junction Sorting Bug", () => {
         }
       }
 
-      // The bug should manifest as a spike pattern
-      // This test confirms the bug exists
-      expect(foundSpike).toBe(true);
+      // FIXED: No more spike pattern
+      expect(foundSpike).toBe(false);
+      console.log("\n=== NO SPIKE DETECTED (BUG FIXED) ===");
     });
 
     it("should trace source points around the apex", () => {
@@ -351,7 +386,7 @@ describe("Junction Sorting Bug", () => {
       }
     });
 
-    it("should identify if apex is sorted AFTER its continuation (the bug)", () => {
+    it("should verify apex is sorted BEFORE its continuation (FIXED)", () => {
       const chains = getAllChains();
 
       const source = createFullCone(PLAYER);
@@ -380,59 +415,21 @@ describe("Junction Sorting Bug", () => {
       console.log(`Apex index: ${apexIndex}`);
       console.log(`Ceiling hit (517, 80) index: ${ceilingHitIndex}`);
 
-      if (apexIndex >= 0 && ceilingHitIndex >= 0) {
-        const apexPoint = sourcePoints[apexIndex];
-        const ceilingPoint = sourcePoints[ceilingHitIndex];
-        if (!apexPoint || !ceilingPoint) return;
-        const apexXY = apexPoint.computeXY();
-        const ceilingXY = ceilingPoint.computeXY();
-
-        const apexDist = Math.hypot(apexXY.x - PLAYER.x, apexXY.y - PLAYER.y);
-        const ceilingDist = Math.hypot(ceilingXY.x - PLAYER.x, ceilingXY.y - PLAYER.y);
-
-        console.log(`\nApex point: (${apexXY.x.toFixed(2)}, ${apexXY.y.toFixed(2)}) dist=${apexDist.toFixed(2)}`);
-        console.log(`Ceiling point: (${ceilingXY.x.toFixed(2)}, ${ceilingXY.y.toFixed(2)}) dist=${ceilingDist.toFixed(2)}`);
-
-        // Check if they're on the same ray
-        const toApex = { x: apexXY.x - PLAYER.x, y: apexXY.y - PLAYER.y };
-        const toCeiling = { x: ceilingXY.x - PLAYER.x, y: ceilingXY.y - PLAYER.y };
-        const cross = toApex.x * toCeiling.y - toApex.y * toCeiling.x;
-        const relativeCross = Math.abs(cross) / (apexDist * ceilingDist);
-
-        console.log(`Cross product (relative): ${relativeCross.toFixed(6)}`);
-
-        if (relativeCross < 0.01) {
-          console.log("\n>>> CONFIRMED: Points are on the same ray <<<");
-          console.log(`Apex is at index ${apexIndex}, ceiling is at index ${ceilingHitIndex}`);
-
-          // For CCW traversal, the closer point (apex) should come BEFORE the farther point (ceiling)
-          // in the direction of traversal.
-          // If ceiling comes before apex in the array, that's the bug.
-          const n = sourcePoints.length;
-
-          // Calculate the "forward" distance in CCW order
-          const forwardFromCeilingToApex = (apexIndex - ceilingHitIndex + n) % n;
-          const forwardFromApexToCeiling = (ceilingHitIndex - apexIndex + n) % n;
-
-          console.log(`Forward distance ceiling→apex: ${forwardFromCeilingToApex}`);
-          console.log(`Forward distance apex→ceiling: ${forwardFromApexToCeiling}`);
-
-          // If ceiling→apex is smaller (1 step), then ceiling is sorted BEFORE apex
-          // This would be the bug: far point before near point
-          if (forwardFromCeilingToApex < forwardFromApexToCeiling) {
-            console.log("\n>>> BUG CONFIRMED: Ceiling (far) is sorted BEFORE apex (near) <<<");
-            console.log("The shadow boundary ordering for junctions is inverted!");
-          } else {
-            console.log("\n>>> Apex (near) is correctly sorted BEFORE ceiling (far) <<<");
-          }
-        }
-      }
-
       // Assert that we found both points
       expect(apexIndex).toBeGreaterThanOrEqual(0);
+      expect(ceilingHitIndex).toBeGreaterThanOrEqual(0);
+
+      const n = sourcePoints.length;
+      const forwardFromApexToCeiling = (ceilingHitIndex - apexIndex + n) % n;
+      const forwardFromCeilingToApex = (apexIndex - ceilingHitIndex + n) % n;
+
+      // FIXED: Apex (closer) should now come BEFORE ceiling (farther)
+      const apexBeforeCeiling = forwardFromApexToCeiling < forwardFromCeilingToApex;
+      console.log(`Apex comes before ceiling: ${apexBeforeCeiling}`);
+      expect(apexBeforeCeiling).toBe(true);
     });
 
-    it("HYPOTHESIS TEST: proves the sorting order is inverted for junction pairs", () => {
+    it("VERIFICATION: sorting order is now correct for junction pairs (FIXED)", () => {
       const chains = getAllChains();
       const source = createFullCone(PLAYER);
       const sourcePoints = projectConeV2(source, chains, SCREEN_BOUNDS);
@@ -478,38 +475,311 @@ describe("Junction Sorting Bug", () => {
       // Verify apex is CLOSER than ceiling
       expect(apexDist).toBeLessThan(ceilingDist);
 
-      // THE BUG: Ceiling (far) comes BEFORE apex (near) in sorted order
-      // In CCW traversal, the near point should come before the far point
+      // FIXED: Apex (near) now comes BEFORE ceiling (far) in sorted order
       const n = sourcePoints.length;
-      const forwardFromCeilingToApex = (apexIndex - ceilingHitIndex + n) % n;
       const forwardFromApexToCeiling = (ceilingHitIndex - apexIndex + n) % n;
+      const forwardFromCeilingToApex = (apexIndex - ceilingHitIndex + n) % n;
 
-      // If ceiling→apex distance is 1, then ceiling is immediately before apex
-      // This means ceiling (far) is sorted BEFORE apex (near) - THE BUG!
-      const ceilingBeforeApex = forwardFromCeilingToApex < forwardFromApexToCeiling;
+      const apexBeforeCeiling = forwardFromApexToCeiling < forwardFromCeilingToApex;
 
-      console.log("\n=== HYPOTHESIS VERIFICATION ===");
-      console.log(`Ceiling index: ${ceilingHitIndex}, Apex index: ${apexIndex}`);
-      console.log(`Ceiling distance: ${ceilingDist.toFixed(2)}, Apex distance: ${apexDist.toFixed(2)}`);
-      console.log(`Ceiling is ${(ceilingDist / apexDist).toFixed(1)}x farther than apex`);
-      console.log(`Ceiling comes before apex in sorted order: ${ceilingBeforeApex}`);
+      console.log("\n=== FIX VERIFICATION ===");
+      console.log(`Apex index: ${apexIndex}, Ceiling index: ${ceilingHitIndex}`);
+      console.log(
+        `Apex distance: ${apexDist.toFixed(2)}, Ceiling distance: ${ceilingDist.toFixed(2)}`
+      );
+      console.log(`Apex comes before ceiling in sorted order: ${apexBeforeCeiling}`);
+      console.log("\n>>> FIX CONFIRMED: Junction (near) comes BEFORE continuation (far) <<<");
 
-      if (ceilingBeforeApex) {
-        console.log("\n>>> HYPOTHESIS CONFIRMED <<<");
-        console.log("The sorting code at ConeProjectionV2.ts lines 304-321 returns");
-        console.log("'continuation before junction' but for CCW traversal, the");
-        console.log("junction (near point) should come FIRST, then continuation (far point).");
-        console.log("");
-        console.log("ROOT CAUSE: handleCollinearPoints() at lines 304-311 has:");
-        console.log("  if (jp1 && isHitPoint(p2)) return 1;  // p2 before p1");
-        console.log("  if (jp2 && isHitPoint(p1)) return -1; // p1 before p2");
-        console.log("");
-        console.log("This puts continuation BEFORE junction, but it should be AFTER.");
+      // Assert the fix is working
+      expect(apexBeforeCeiling).toBe(true);
+    });
+  });
+
+  // ===========================================================================
+  // MULTI-POSITION TESTS - Phase 1 of Junction Pair Ordering Investigation
+  // ===========================================================================
+
+  describe("Multi-position orientation analysis", () => {
+    // Test positions relative to chain3 apex (850, 250)
+    const POSITIONS = {
+      RIGHT: { x: 889.0416036756611, y: 269.9802316262268 }, // Original bug position
+      LEFT: { x: 750, y: 270 },
+      ABOVE: { x: 850, y: 150 },
+      BELOW: { x: 850, y: 400 },
+    };
+
+    // Chain3 surfaces for orientation analysis
+    const CHAIN3_SURFACES = {
+      before: {
+        id: "chain-43-0",
+        start: { x: 820, y: 301.9615242270663 },
+        end: { x: 850, y: 250 }, // apex
+      },
+      after: {
+        id: "chain-43-1",
+        start: { x: 850, y: 250 }, // apex
+        end: { x: 880, y: 301.9615242270663 },
+      },
+    };
+
+    /**
+     * Test a specific player position for sorting behavior.
+     * Returns analysis data about the junction orientation and sorting.
+     */
+    function analyzePosition(player: Vector2, positionName: string) {
+      const chains = getAllChains();
+      const source = createFullCone(player);
+      const sourcePoints = projectConeV2(source, chains, SCREEN_BOUNDS);
+      const polygon = toVector2Array(sourcePoints);
+
+      // Find apex and its continuation in the polygon
+      let apexIndex = -1;
+      let ceilingHitIndex = -1;
+      let ceilingXY: Vector2 | null = null;
+
+      for (let i = 0; i < sourcePoints.length; i++) {
+        const p = sourcePoints[i];
+        if (!p) continue;
+        const xy = p.computeXY();
+
+        // Apex is at (850, 250)
+        if (Math.abs(xy.x - CHAIN3_APEX.x) < 1 && Math.abs(xy.y - CHAIN3_APEX.y) < 1) {
+          apexIndex = i;
+        }
+
+        // Ceiling hit is at y ≈ 80 on the same ray as apex
+        if (Math.abs(xy.y - 80) < 2 && isHitPoint(p)) {
+          // Check if this is on the same ray as the apex
+          const toApex = { x: CHAIN3_APEX.x - player.x, y: CHAIN3_APEX.y - player.y };
+          const toPoint = { x: xy.x - player.x, y: xy.y - player.y };
+          const cross = toApex.x * toPoint.y - toApex.y * toPoint.x;
+          const apexMag = Math.hypot(toApex.x, toApex.y);
+          const pointMag = Math.hypot(toPoint.x, toPoint.y);
+          const relativeCross = Math.abs(cross) / (apexMag * pointMag);
+
+          if (relativeCross < 0.01) {
+            // On the same ray
+            ceilingHitIndex = i;
+            ceilingXY = xy;
+          }
+        }
       }
 
-      // Assert the bug exists (this test documents the bug, not fixes it)
-      expect(ceilingBeforeApex).toBe(true);
+      // Compute surface orientations relative to player
+      const beforeSurface = new RicochetSurface(CHAIN3_SURFACES.before.id, {
+        start: CHAIN3_SURFACES.before.start,
+        end: CHAIN3_SURFACES.before.end,
+      });
+      const afterSurface = new RicochetSurface(CHAIN3_SURFACES.after.id, {
+        start: CHAIN3_SURFACES.after.start,
+        end: CHAIN3_SURFACES.after.end,
+      });
+
+      const beforeOrientation = computeSurfaceOrientation(beforeSurface, player);
+      const afterOrientation = computeSurfaceOrientation(afterSurface, player);
+
+      // Determine if there's a black triangle spike
+      let hasSpike = false;
+      for (let i = 0; i < polygon.length; i++) {
+        const prev = polygon[(i - 1 + polygon.length) % polygon.length];
+        const curr = polygon[i];
+        const next = polygon[(i + 1) % polygon.length];
+
+        if (!prev || !curr || !next) continue;
+
+        const prevOnCeiling = Math.abs(prev.y - 80) < 5;
+        const currNearApex =
+          Math.abs(curr.x - CHAIN3_APEX.x) < 5 && Math.abs(curr.y - CHAIN3_APEX.y) < 5;
+        const nextOnCeiling = Math.abs(next.y - 80) < 5;
+
+        if (prevOnCeiling && currNearApex && nextOnCeiling) {
+          hasSpike = true;
+          break;
+        }
+      }
+
+      // Determine sorting order
+      let sortingOrder: "junction-first" | "continuation-first" | "no-continuation" = "no-continuation";
+      if (apexIndex >= 0 && ceilingHitIndex >= 0) {
+        const n = sourcePoints.length;
+        const forwardFromCeilingToApex = (apexIndex - ceilingHitIndex + n) % n;
+        const forwardFromApexToCeiling = (ceilingHitIndex - apexIndex + n) % n;
+
+        if (forwardFromCeilingToApex < forwardFromApexToCeiling) {
+          sortingOrder = "continuation-first"; // Bug: far point before near point
+        } else {
+          sortingOrder = "junction-first"; // Correct: near point before far point
+        }
+      }
+
+      return {
+        positionName,
+        player,
+        apexIndex,
+        ceilingHitIndex,
+        ceilingXY,
+        hasSpike,
+        sortingOrder,
+        beforeOrientation: {
+          firstEndpoint: beforeOrientation.firstEndpoint,
+          crossProduct: beforeOrientation.crossProduct,
+        },
+        afterOrientation: {
+          firstEndpoint: afterOrientation.firstEndpoint,
+          crossProduct: afterOrientation.crossProduct,
+        },
+        hasContinuation: ceilingHitIndex >= 0,
+      };
+    }
+
+    it("should analyze sorting from RIGHT of V (original bug position, now fixed)", () => {
+      const result = analyzePosition(POSITIONS.RIGHT, "RIGHT");
+
+      console.log("\n=== POSITION: RIGHT of V ===");
+      console.log(`Player: (${result.player.x.toFixed(2)}, ${result.player.y.toFixed(2)})`);
+      console.log(`Apex index: ${result.apexIndex}`);
+      console.log(`Ceiling hit index: ${result.ceilingHitIndex}`);
+      console.log(`Has continuation: ${result.hasContinuation}`);
+      console.log(`Sorting order: ${result.sortingOrder}`);
+      console.log(`Has spike (bug): ${result.hasSpike}`);
+      console.log("Surface orientations:");
+      console.log(`  Before surface: firstEndpoint=${result.beforeOrientation.firstEndpoint}, cross=${result.beforeOrientation.crossProduct.toFixed(4)}`);
+      console.log(`  After surface: firstEndpoint=${result.afterOrientation.firstEndpoint}, cross=${result.afterOrientation.crossProduct.toFixed(4)}`);
+
+      // FIXED: Junction pairs now use distance-based ordering (junction first)
+      expect(result.hasContinuation).toBe(true);
+      expect(result.hasSpike).toBe(false); // No more spike!
+      expect(result.sortingOrder).toBe("junction-first"); // Correct order
+    });
+
+    it("should analyze sorting from LEFT of V", () => {
+      const result = analyzePosition(POSITIONS.LEFT, "LEFT");
+
+      console.log("\n=== POSITION: LEFT of V ===");
+      console.log(`Player: (${result.player.x.toFixed(2)}, ${result.player.y.toFixed(2)})`);
+      console.log(`Apex index: ${result.apexIndex}`);
+      console.log(`Ceiling hit index: ${result.ceilingHitIndex}`);
+      console.log(`Has continuation: ${result.hasContinuation}`);
+      console.log(`Sorting order: ${result.sortingOrder}`);
+      console.log(`Has spike (bug): ${result.hasSpike}`);
+      console.log("Surface orientations:");
+      console.log(`  Before surface: firstEndpoint=${result.beforeOrientation.firstEndpoint}, cross=${result.beforeOrientation.crossProduct.toFixed(4)}`);
+      console.log(`  After surface: firstEndpoint=${result.afterOrientation.firstEndpoint}, cross=${result.afterOrientation.crossProduct.toFixed(4)}`);
+
+      // From left, the junction BLOCKS because both surfaces face the same way
+      // (opposite of RIGHT position). This is expected behavior.
+      // The apex may or may not be found depending on how blocking is handled
+      // Key insight: before=CW, after=CCW - opposite of RIGHT position
+      expect(result.beforeOrientation.crossProduct).toBeLessThan(0); // CW
+      expect(result.afterOrientation.crossProduct).toBeGreaterThan(0); // CCW
+    });
+
+    it("should analyze sorting from ABOVE V", () => {
+      const result = analyzePosition(POSITIONS.ABOVE, "ABOVE");
+
+      console.log("\n=== POSITION: ABOVE V ===");
+      console.log(`Player: (${result.player.x.toFixed(2)}, ${result.player.y.toFixed(2)})`);
+      console.log(`Apex index: ${result.apexIndex}`);
+      console.log(`Ceiling hit index: ${result.ceilingHitIndex}`);
+      console.log(`Has continuation: ${result.hasContinuation}`);
+      console.log(`Sorting order: ${result.sortingOrder}`);
+      console.log(`Has spike (bug): ${result.hasSpike}`);
+      console.log("Surface orientations:");
+      console.log(`  Before surface: firstEndpoint=${result.beforeOrientation.firstEndpoint}, cross=${result.beforeOrientation.crossProduct.toFixed(4)}`);
+      console.log(`  After surface: firstEndpoint=${result.afterOrientation.firstEndpoint}, cross=${result.afterOrientation.crossProduct.toFixed(4)}`);
+
+      // From above, continuation might not hit ceiling
+      expect(result.apexIndex).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should analyze sorting from BELOW V", () => {
+      const result = analyzePosition(POSITIONS.BELOW, "BELOW");
+
+      console.log("\n=== POSITION: BELOW V ===");
+      console.log(`Player: (${result.player.x.toFixed(2)}, ${result.player.y.toFixed(2)})`);
+      console.log(`Apex index: ${result.apexIndex}`);
+      console.log(`Ceiling hit index: ${result.ceilingHitIndex}`);
+      console.log(`Has continuation: ${result.hasContinuation}`);
+      console.log(`Sorting order: ${result.sortingOrder}`);
+      console.log(`Has spike (bug): ${result.hasSpike}`);
+      console.log("Surface orientations:");
+      console.log(`  Before surface: firstEndpoint=${result.beforeOrientation.firstEndpoint}, cross=${result.beforeOrientation.crossProduct.toFixed(4)}`);
+      console.log(`  After surface: firstEndpoint=${result.afterOrientation.firstEndpoint}, cross=${result.afterOrientation.crossProduct.toFixed(4)}`);
+
+      // From below, the V-shape should block, so no continuation
+      // (player can't see through the back of the V)
+    });
+
+    it("SUMMARY: compares all positions to identify the correct ordering pattern", () => {
+      const allResults = [
+        analyzePosition(POSITIONS.RIGHT, "RIGHT"),
+        analyzePosition(POSITIONS.LEFT, "LEFT"),
+        analyzePosition(POSITIONS.ABOVE, "ABOVE"),
+        analyzePosition(POSITIONS.BELOW, "BELOW"),
+      ];
+
+      console.log("\n=== MULTI-POSITION SUMMARY ===");
+      console.log("| Position | Apex | Ceiling | Continuation | Sorting | Spike | Before Cross | After Cross |");
+      console.log("|----------|------|---------|--------------|---------|-------|--------------|-------------|");
+
+      for (const r of allResults) {
+        const beforeCross = r.beforeOrientation.crossProduct.toFixed(1);
+        const afterCross = r.afterOrientation.crossProduct.toFixed(1);
+        console.log(
+          `| ${r.positionName.padEnd(8)} | ${String(r.apexIndex).padEnd(4)} | ${String(r.ceilingHitIndex).padEnd(7)} | ${String(r.hasContinuation).padEnd(12)} | ${r.sortingOrder.padEnd(17)} | ${String(r.hasSpike).padEnd(5)} | ${beforeCross.padEnd(12)} | ${afterCross.padEnd(11)} |`
+        );
+      }
+
+      // Analysis: Look for the pattern
+      console.log("\n=== PATTERN ANALYSIS ===");
+      for (const r of allResults) {
+        if (r.hasContinuation) {
+          // Expected: When before surface cross > 0, start comes first (CCW)
+          // When after surface cross > 0, start comes first (CCW)
+          const beforeCCW = r.beforeOrientation.crossProduct > 0 ? "CCW" : "CW";
+          const afterCCW = r.afterOrientation.crossProduct > 0 ? "CCW" : "CW";
+          console.log(`${r.positionName}: before=${beforeCCW}, after=${afterCCW}, sorting=${r.sortingOrder}, hasSpike=${r.hasSpike}`);
+        }
+      }
+
+      // FIXED: No positions should have a spike anymore
+      const hasAnySpike = allResults.some((r) => r.hasSpike);
+      expect(hasAnySpike).toBe(false);
+    });
+
+    it("VERIFIED FIX: junction pairs now use distance-based ordering (closer first)", () => {
+      /**
+       * INSIGHT FROM ANALYSIS:
+       *
+       * For junction-continuation pairs, the CORRECT ordering is DISTANCE-BASED:
+       * - Junction is CLOSER to origin → junction should come FIRST
+       * - Continuation is FARTHER from origin → continuation should come SECOND
+       *
+       * This is already the default behavior in handleCollinearPoints() for
+       * non-paired points (final tiebreaker: "closer first").
+       *
+       * THE FIX (APPLIED): Inverted the return values for junction pairs:
+       *   if (jp1 && isHitPoint(p2)) return -1;  // junction before continuation
+       *   if (jp2 && isHitPoint(p1)) return 1;   // junction before continuation
+       *
+       * This makes junction pairs use the same "closer first" rule as everything else.
+       *
+       * WHY THIS IS CORRECT:
+       * - For pass-through junctions, the junction is where light EXITS the obstacle
+       * - The continuation represents where the ray goes AFTER exiting
+       * - In CCW traversal, exit points come before their continuations (like endpoints)
+       */
+
+      const result = analyzePosition(POSITIONS.RIGHT, "RIGHT");
+
+      // FIXED: Now uses correct distance-based ordering
+      expect(result.sortingOrder).toBe("junction-first");
+      expect(result.hasSpike).toBe(false);
+
+      console.log("\n=== FIX VERIFIED ===");
+      console.log("Sorting order: junction-first (correct!)");
+      console.log("Has spike: false (no more black triangle!)");
+      console.log("\nFix applied at: ConeProjectionV2.ts handleCollinearPoints()");
     });
   });
 });
-

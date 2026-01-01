@@ -296,28 +296,30 @@ function handleCollinearPoints(
     }
 
     // Handle junction pairs: if one is a junction's continuation, the other is a junction hit
-    // For junctions that allow pass-through, continuation comes FIRST (like "entering" shadow)
-    // This is because we traverse from ceiling to junction, not junction to ceiling
+    // For pass-through junctions, use DISTANCE-BASED ordering (closer first):
+    // - Junction is CLOSER to origin → junction comes FIRST
+    // - Continuation is FARTHER from origin → continuation comes SECOND
+    // This matches the default tiebreaker behavior and prevents the "black triangle" artifact.
     const jp1 = isJunctionPoint(p1) ? p1 : null;
     const jp2 = isJunctionPoint(p2) ? p2 : null;
 
     if (jp1 && isHitPoint(p2)) {
-      // p1 is junction, p2 is its continuation → continuation (p2) should come first
-      return 1; // p2 before p1
+      // p1 is junction (closer), p2 is its continuation (farther) → junction first
+      return -1; // p1 before p2
     }
     if (jp2 && isHitPoint(p1)) {
-      // p2 is junction, p1 is its continuation → continuation (p1) should come first
-      return -1; // p1 before p2
+      // p2 is junction (closer), p1 is its continuation (farther) → junction first
+      return 1; // p2 before p1
     }
 
     // Check if pairedEndpoint is a JunctionPoint
     if (a.pairedEndpoint && isJunctionPoint(a.pairedEndpoint)) {
-      // a.point is a continuation of a junction → junction should come after
-      return -1; // continuation (a) before junction
+      // a.point is a continuation (farther), its paired junction is closer → junction first
+      return 1; // junction (a.pairedEndpoint) before continuation (a)
     }
     if (b.pairedEndpoint && isJunctionPoint(b.pairedEndpoint)) {
-      // b.point is a continuation of a junction → junction should come after
-      return 1; // continuation (b) before junction
+      // b.point is a continuation (farther), its paired junction is closer → junction first
+      return -1; // junction (b.pairedEndpoint) before continuation (b)
     }
   }
 

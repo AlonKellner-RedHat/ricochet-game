@@ -81,10 +81,7 @@ export const SPECIAL_POSITIONS: Vector2[] = [
 /**
  * All positions to test (grid + special).
  */
-export const ALL_POSITIONS: Vector2[] = [
-  ...generateGridPositions(),
-  ...SPECIAL_POSITIONS,
-];
+export const ALL_POSITIONS: Vector2[] = [...generateGridPositions(), ...SPECIAL_POSITIONS];
 
 /**
  * Get a position key for deduplication/logging.
@@ -92,4 +89,3 @@ export const ALL_POSITIONS: Vector2[] = [
 export function positionKey(pos: Vector2): string {
   return `(${Math.round(pos.x)},${Math.round(pos.y)})`;
 }
-
