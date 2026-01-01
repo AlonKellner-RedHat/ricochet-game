@@ -32,6 +32,7 @@ import {
   endOf,
   isEndpoint,
   isHitPoint,
+  isOriginPoint,
   startOf,
 } from "@/trajectory-v2/geometry/SourcePoint";
 import {
@@ -1009,22 +1010,9 @@ export function projectConeV2(
       }
 
       if (reachesJunction) {
-        // Ray reaches the junction - create HitPoint with EXACT coordinates
-        // Use the afterSurface at s=0 as canonical representation
-        const junctionSurface = afterSurface ?? beforeSurface;
-        let exactHit: HitPoint | null = null;
-        if (junctionSurface) {
-          const junctionRay = {
-            from: origin,
-            to: {
-              x: origin.x + (targetXY.x - origin.x) * 10,
-              y: origin.y + (targetXY.y - origin.y) * 10,
-            },
-          };
-          const exactS = afterSurface ? 0 : 1;
-          exactHit = new HitPoint(junctionRay, junctionSurface, 0.1, exactS);
-          vertices.push(exactHit);
-        }
+        // Ray reaches the junction - add JunctionPoint DIRECTLY using provenance
+        // JunctionPoint has exact coordinates from chain definition, no computation needed
+        vertices.push(target);
 
         // If junction allows pass-through, cast continuation
         if (canPass) {
@@ -1035,11 +1023,10 @@ export function projectConeV2(
             screenBoundaries,
             startLine
           );
-          if (continuation && exactHit) {
+          if (continuation) {
             vertices.push(continuation);
-            // Key by the HitPoint's key so sorting can find the pairing
-            // Store the JunctionPoint so we can determine shadow boundary order
-            rayPairs.set(exactHit.getKey(), { endpoint: target, continuation });
+            // Key by JunctionPoint's key since that's what we add to vertices
+            rayPairs.set(target.getKey(), { endpoint: target, continuation });
           }
         }
         // If junction blocks (!canPass), we still add the junction but no continuation
@@ -1124,14 +1111,30 @@ export function projectConeV2(
 
 /**
  * Remove duplicate SourcePoints using equals() AND coordinate match.
+ *
+ * Also handles provenance-based deduplication:
+ * - OriginPoints (window endpoints) take precedence over JunctionPoints at the same position
+ * - Screen boundary points are deduplicated by coordinates
  */
 function removeDuplicatesSourcePoint(points: SourcePoint[]): SourcePoint[] {
   const result: SourcePoint[] = [];
   const seenScreenCornerCoords = new Set<string>();
 
+  // First pass: collect all OriginPoint coordinates (window endpoints)
+  // These have provenance priority - other points at same position are redundant
+  const originPointCoords = new Set<string>();
+  for (const p of points) {
+    if (isOriginPoint(p)) {
+      const xy = p.computeXY();
+      originPointCoords.add(`${xy.x},${xy.y}`);
+    }
+  }
+
   for (const p of points) {
     const xy = p.computeXY();
+    const coordKey = `${xy.x},${xy.y}`;
 
+    // Check for exact duplicates using equals()
     let isDuplicate = false;
     for (const existing of result) {
       if (p.equals(existing)) {
@@ -1141,10 +1144,15 @@ function removeDuplicatesSourcePoint(points: SourcePoint[]): SourcePoint[] {
     }
     if (isDuplicate) continue;
 
-    const isScreenBoundary = isEndpoint(p) && p.surface.id.startsWith("screen-");
+    // For JunctionPoints and Endpoints: skip if an OriginPoint exists at same position
+    // (OriginPoint from window definition takes precedence - provenance-based dedup)
+    if ((isJunctionPoint(p) || isEndpoint(p)) && originPointCoords.has(coordKey)) {
+      continue;
+    }
 
+    // For screen boundary endpoints: deduplicate by coordinates
+    const isScreenBoundary = isEndpoint(p) && p.surface.id.startsWith("screen-");
     if (isScreenBoundary) {
-      const coordKey = `${xy.x},${xy.y}`;
       if (seenScreenCornerCoords.has(coordKey)) continue;
       seenScreenCornerCoords.add(coordKey);
     }

@@ -26,6 +26,7 @@ import {
 } from "@/trajectory-v2/visibility/ConeProjectionV2";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
 import { isEndpoint, isHitPoint, type SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
+import { isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 // =============================================================================
@@ -114,6 +115,14 @@ function extractVisibleSurfaceSegments(
     if (isEndpoint(sp) && sp.surface.id === targetSurfaceId) {
       isOnTarget = true;
       coords = sp.computeXY();
+    } else if (isJunctionPoint(sp)) {
+      // JunctionPoint - check if it connects to target surface using provenance
+      const beforeSurface = sp.getSurfaceBefore();
+      const afterSurface = sp.getSurfaceAfter();
+      if (beforeSurface?.id === targetSurfaceId || afterSurface?.id === targetSurfaceId) {
+        isOnTarget = true;
+        coords = sp.computeXY();
+      }
     } else if (isHitPoint(sp)) {
       if (sp.hitSurface.id === targetSurfaceId) {
         isOnTarget = true;
@@ -396,14 +405,9 @@ describe("Chain Reflection Bug", () => {
 
       expect(apexPoint).toBeDefined();
 
-      // The apex IS a HitPoint (not an Endpoint)
-      expect(isHitPoint(apexPoint!)).toBe(true);
-
-      // And it's associated with chain1-1, not chain1-0
-      if (isHitPoint(apexPoint!)) {
-        expect(apexPoint!.hitSurface.id).toBe("chain1-1");
-        expect(apexPoint!.s).toBe(0); // s=0 means start of chain1-1
-      }
+      // The apex IS a JunctionPoint (fixed: provenance-based handling)
+      // Previously it was a HitPoint on chain1-1, which caused the bug
+      expect(isJunctionPoint(apexPoint!)).toBe(true);
 
       // Count points on chain1-0
       const pointsOnChain1_0 = sourcePoints.filter((sp) => {

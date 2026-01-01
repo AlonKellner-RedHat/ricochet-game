@@ -1005,12 +1005,20 @@ describe("Off-screen origin visibility", () => {
     );
     expect(leftWallHits.length).toBe(1);
 
-    // Check ricochet-4 endpoints are in source points (not blocked by screen)
-    const ricochet4Endpoints = points.filter((p) => {
-      if (!("surface" in p)) return false;
-      return (p as any).surface?.id === "ricochet-4";
+    // Check ricochet-4 window positions are in the polygon
+    // Window endpoints are added as OriginPoints (provenance-based deduplication removes
+    // the Endpoints since OriginPoints take precedence at window positions)
+    // ricochet4 = { start: { x: 850, y: 350 }, end: { x: 850, y: 500 } }
+    const hasStart = points.some((p) => {
+      const xy = p.computeXY();
+      return Math.abs(xy.x - 850) < 1 && Math.abs(xy.y - 350) < 1;
     });
-    expect(ricochet4Endpoints.length).toBe(2);
+    const hasEnd = points.some((p) => {
+      const xy = p.computeXY();
+      return Math.abs(xy.x - 850) < 1 && Math.abs(xy.y - 500) < 1;
+    });
+    expect(hasStart).toBe(true);
+    expect(hasEnd).toBe(true);
   });
 
   it("sub-pixel player movement with off-screen origin produces same vertex", () => {
