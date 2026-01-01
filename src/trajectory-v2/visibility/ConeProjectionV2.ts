@@ -1122,6 +1122,7 @@ function removeDuplicatesSourcePoint(points: SourcePoint[]): SourcePoint[] {
 
   // First pass: collect all OriginPoint coordinates (window endpoints)
   // These have provenance priority - other points at same position are redundant
+  // Use EXACT coordinates from the OriginPoint (provenance-based)
   const originPointCoords = new Set<string>();
   for (const p of points) {
     if (isOriginPoint(p)) {
@@ -1148,6 +1149,52 @@ function removeDuplicatesSourcePoint(points: SourcePoint[]): SourcePoint[] {
     // (OriginPoint from window definition takes precedence - provenance-based dedup)
     if ((isJunctionPoint(p) || isEndpoint(p)) && originPointCoords.has(coordKey)) {
       continue;
+    }
+
+    // PROVENANCE-BASED DEDUP for HitPoints at surface boundaries
+    // If a HitPoint's hitSurface has a boundary that matches an OriginPoint,
+    // AND the HitPoint's position is essentially at that boundary, skip it.
+    //
+    // Detection strategy:
+    // We check if the HitPoint position matches the surface boundary by computing
+    // the expected position at s=0 or s=1 and comparing with the actual coords.
+    // Due to floating-point precision, s might be 2.59e-15 instead of 0, producing
+    // coords like (650.0000000002, 250.0000000001) instead of exact (650, 250).
+    //
+    // We use the surface's EXACT boundary coords as source of truth. If the HitPoint's
+    // coords are within floating-point precision of the boundary, it's a duplicate.
+    if (isHitPoint(p)) {
+      const surface = p.hitSurface;
+      const surfaceStart = surface.segment.start;
+      const surfaceEnd = surface.segment.end;
+      const surfaceStartKey = `${surfaceStart.x},${surfaceStart.y}`;
+      const surfaceEndKey = `${surfaceEnd.x},${surfaceEnd.y}`;
+
+      // Check if hit is at surface start (within floating-point precision)
+      // We use relative error check: |computed - exact| / max(|exact|, 1) < threshold
+      if (originPointCoords.has(surfaceStartKey)) {
+        const dxStart = Math.abs(xy.x - surfaceStart.x);
+        const dyStart = Math.abs(xy.y - surfaceStart.y);
+        const scaleX = Math.max(Math.abs(surfaceStart.x), 1);
+        const scaleY = Math.max(Math.abs(surfaceStart.y), 1);
+        // Floating-point relative precision is ~1e-15 for doubles, use 1e-10 as buffer
+        const atStart = (dxStart / scaleX) < 1e-10 && (dyStart / scaleY) < 1e-10;
+        if (atStart) {
+          continue; // Skip - OriginPoint at surface start takes precedence
+        }
+      }
+      
+      // Check if hit is at surface end (within floating-point precision)
+      if (originPointCoords.has(surfaceEndKey)) {
+        const dxEnd = Math.abs(xy.x - surfaceEnd.x);
+        const dyEnd = Math.abs(xy.y - surfaceEnd.y);
+        const scaleX = Math.max(Math.abs(surfaceEnd.x), 1);
+        const scaleY = Math.max(Math.abs(surfaceEnd.y), 1);
+        const atEnd = (dxEnd / scaleX) < 1e-10 && (dyEnd / scaleY) < 1e-10;
+        if (atEnd) {
+          continue; // Skip - OriginPoint at surface end takes precedence
+        }
+      }
     }
 
     // For screen boundary endpoints: deduplicate by coordinates
