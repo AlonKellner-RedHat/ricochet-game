@@ -15,28 +15,28 @@
  * even though the player's light reaches the entire surface.
  */
 
-import { describe, it, expect } from "vitest";
 import { RicochetSurface } from "@/surfaces/RicochetSurface";
-import { createRicochetChain, type SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
+import { type SourcePoint, isEndpoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
+import { type SurfaceChain, createRicochetChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import { isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
+import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import {
-  createFullCone,
   createConeThroughWindow,
+  createFullCone,
   projectConeV2,
   toVector2Array,
 } from "@/trajectory-v2/visibility/ConeProjectionV2";
-import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
-import { isEndpoint, isHitPoint, type SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
-import { isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import { describe, expect, it } from "vitest";
 
 // =============================================================================
 // BUG SCENARIO: Chain1 from demo (120-degree V-shape)
 // =============================================================================
 
 const CHAIN1_VERTICES = [
-  { x: 598.0384757729337, y: 280 },     // left outer endpoint
-  { x: 650, y: 250 },                    // apex (junction)
-  { x: 701.9615242270663, y: 280 },     // right outer endpoint
+  { x: 598.0384757729337, y: 280 }, // left outer endpoint
+  { x: 650, y: 250 }, // apex (junction)
+  { x: 701.9615242270663, y: 280 }, // right outer endpoint
 ];
 
 const PLAYER = { x: 799.5532401600012, y: 666 };
@@ -66,9 +66,7 @@ function createChain1(): SurfaceChain {
  * Build a mapping from surface start/end points to connected surface IDs.
  * This allows HitPoints at s=0 or s=1 to be recognized as junctions.
  */
-function buildJunctionMapping(
-  chains: readonly SurfaceChain[]
-): Map<string, Set<string>> {
+function buildJunctionMapping(chains: readonly SurfaceChain[]): Map<string, Set<string>> {
   const pointToSurfaces = new Map<string, Set<string>>();
 
   for (const chain of chains) {
@@ -268,7 +266,9 @@ describe("Chain Reflection Bug", () => {
         surface.segment.start,
         surface.segment.end
       );
-      console.log(`Reflected origin: (${reflectedOrigin.x.toFixed(2)}, ${reflectedOrigin.y.toFixed(2)})`);
+      console.log(
+        `Reflected origin: (${reflectedOrigin.x.toFixed(2)}, ${reflectedOrigin.y.toFixed(2)})`
+      );
 
       // Stage 1: Compute reflected visibility
       const stage1Cone = createConeThroughWindow(reflectedOrigin, window.start, window.end);
@@ -492,7 +492,11 @@ describe("Chain Reflection Bug", () => {
         }
 
         // Extract visible segments for chain1-0
-        const visibleSegments = extractVisibleSurfaceSegments("chain1-0", stage0SourcePoints, chains);
+        const visibleSegments = extractVisibleSurfaceSegments(
+          "chain1-0",
+          stage0SourcePoints,
+          chains
+        );
 
         if (visibleSegments.length === 0) {
           issues.push({
@@ -559,7 +563,9 @@ describe("Chain Reflection Bug", () => {
       if (issues.length > 0) {
         console.log("\n=== FLICKERING ISSUES FOUND ===");
         issues.forEach((issue, i) => {
-          console.log(`\n${i + 1}. Player (${issue.player.x.toFixed(2)}, ${issue.player.y.toFixed(2)})`);
+          console.log(
+            `\n${i + 1}. Player (${issue.player.x.toFixed(2)}, ${issue.player.y.toFixed(2)})`
+          );
           console.log(`   Issue: ${issue.issue}`);
           console.log(`   Details: ${JSON.stringify(issue.details)}`);
         });
@@ -586,7 +592,8 @@ describe("Chain Reflection Bug", () => {
         const onChain1_0 =
           (isEndpoint(sp) && sp.surface.id === "chain1-0") ||
           (isHitPoint(sp) && sp.hitSurface.id === "chain1-0") ||
-          (isJunctionPoint(sp) && (sp.getSurfaceBefore()?.id === "chain1-0" || sp.getSurfaceAfter()?.id === "chain1-0"));
+          (isJunctionPoint(sp) &&
+            (sp.getSurfaceBefore()?.id === "chain1-0" || sp.getSurfaceAfter()?.id === "chain1-0"));
         console.log(
           `  ${i}: (${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}) - ${sp.type}${onChain1_0 ? " [ON chain1-0]" : ""}`
         );
@@ -612,9 +619,9 @@ describe("Chain Reflection Bug", () => {
       // One of the segments should span from left endpoint to apex
       const fullSegment = visibleSegments.find((seg) => {
         const startsAtLeft =
-          Math.abs(seg.start.x - leftEndpoint.x) < 0.1 && Math.abs(seg.start.y - leftEndpoint.y) < 0.1;
-        const endsAtApex =
-          Math.abs(seg.end.x - apex.x) < 0.1 && Math.abs(seg.end.y - apex.y) < 0.1;
+          Math.abs(seg.start.x - leftEndpoint.x) < 0.1 &&
+          Math.abs(seg.start.y - leftEndpoint.y) < 0.1;
+        const endsAtApex = Math.abs(seg.end.x - apex.x) < 0.1 && Math.abs(seg.end.y - apex.y) < 0.1;
         return startsAtLeft && endsAtApex;
       });
 
@@ -673,7 +680,9 @@ describe("Chain Reflection Bug", () => {
           console.log("\n=== Source Points (before toVector2Array) ===");
           sourcePoints.forEach((sp, i) => {
             const coords = sp.computeXY();
-            console.log(`  ${i}: ${sp.type} at (${coords.x.toFixed(6)}, ${coords.y.toFixed(6)}) - key: ${sp.getKey()}`);
+            console.log(
+              `  ${i}: ${sp.type} at (${coords.x.toFixed(6)}, ${coords.y.toFixed(6)}) - key: ${sp.getKey()}`
+            );
           });
         }
 
@@ -715,7 +724,9 @@ describe("Chain Reflection Bug", () => {
       console.log("\n=== Coordinate Comparison ===");
       console.log(`Apex coords from JunctionPoint: (${apexCoords?.x}, ${apexCoords?.y})`);
       console.log(`Window end coords: (${window.end.x}, ${window.end.y})`);
-      console.log(`Are they EXACTLY equal? x: ${apexCoords?.x === window.end.x}, y: ${apexCoords?.y === window.end.y}`);
+      console.log(
+        `Are they EXACTLY equal? x: ${apexCoords?.x === window.end.x}, y: ${apexCoords?.y === window.end.y}`
+      );
 
       // Stage 1
       const surface = chain.getSurfaces()[0]!;
@@ -748,5 +759,3 @@ describe("Chain Reflection Bug", () => {
     });
   });
 });
-
-

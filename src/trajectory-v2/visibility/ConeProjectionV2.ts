@@ -216,7 +216,14 @@ function comparePointsCCW(
       return aMagSq - bMagSq;
     }
     // Same distance - use shadow boundary ordering
-    return handleCollinearPoints(a, b, origin, surfaceOrientations, continuationToEndpoint, endpointToContinuation);
+    return handleCollinearPoints(
+      a,
+      b,
+      origin,
+      surfaceOrientations,
+      continuationToEndpoint,
+      endpointToContinuation
+    );
   }
 
   // Check if points are on opposite sides of the reference ray
@@ -506,11 +513,7 @@ function isEndpointOnOtherSurface(
  * Check if a point lies on a line segment (exact check).
  * Uses cross product for collinearity and parametric t for segment bounds.
  */
-function isPointOnSegmentExact(
-  point: Vector2,
-  segStart: Vector2,
-  segEnd: Vector2
-): boolean {
+function isPointOnSegmentExact(point: Vector2, segStart: Vector2, segEnd: Vector2): boolean {
   const dx = segEnd.x - segStart.x;
   const dy = segEnd.y - segStart.y;
   const lenSq = dx * dx + dy * dy;
@@ -1038,7 +1041,10 @@ export function projectConeV2(
       continue;
     }
 
-    // Handle Endpoints - may need continuation rays
+    // Handle Endpoints - same pattern as non-blocking junctions:
+    // 1. Check obstructions BEFORE endpoint (castRayToEndpoint returns Endpoint or blocking HitPoint)
+    // 2. Add Endpoint directly (provenance) if not blocked, or blocking HitPoint if blocked
+    // 3. Cast continuation ray and pair with Endpoint
     const targetEndpoint = target as Endpoint;
     const hit = castRayToEndpoint(
       origin,
@@ -1080,11 +1086,35 @@ export function projectConeV2(
   }
 
   // For windowed cones, cast rays to cone boundaries (extends to screen)
+  // These rays find where the cone edges hit the screen boundaries.
+  // 
+  // IMPORTANT: We need to exclude surfaces that start/end at the window endpoints
+  // to prevent HitPoints at junction positions (e.g., s≈0 on a surface starting
+  // at the junction). The window endpoints are already represented by OriginPoints.
   if (!isFullCone(source)) {
+    // Build set of surfaces to exclude (those starting/ending at window endpoints)
+    const windowEndpointSurfaces = new Set<string>();
+    for (const chain of chains) {
+      for (const surface of chain.getSurfaces()) {
+        const startKey = `${surface.segment.start.x},${surface.segment.start.y}`;
+        const endKey = `${surface.segment.end.x},${surface.segment.end.y}`;
+        const leftKey = `${source.leftBoundary.x},${source.leftBoundary.y}`;
+        const rightKey = `${source.rightBoundary.x},${source.rightBoundary.y}`;
+        if (startKey === leftKey || endKey === leftKey || startKey === rightKey || endKey === rightKey) {
+          windowEndpointSurfaces.add(surface.id);
+        }
+      }
+    }
+
+    // Filter out surfaces at window endpoints
+    const obstaclesExcludingWindowEndpoints = effectiveObstacles.filter(
+      (o) => !windowEndpointSurfaces.has(o.id)
+    );
+
     const leftHit = castRayToTarget(
       origin,
       source.leftBoundary,
-      effectiveObstacles,
+      obstaclesExcludingWindowEndpoints,
       screenBoundaries,
       startLine
     );
@@ -1093,7 +1123,7 @@ export function projectConeV2(
     const rightHit = castRayToTarget(
       origin,
       source.rightBoundary,
-      effectiveObstacles,
+      obstaclesExcludingWindowEndpoints,
       screenBoundaries,
       startLine
     );
@@ -1149,52 +1179,6 @@ function removeDuplicatesSourcePoint(points: SourcePoint[]): SourcePoint[] {
     // (OriginPoint from window definition takes precedence - provenance-based dedup)
     if ((isJunctionPoint(p) || isEndpoint(p)) && originPointCoords.has(coordKey)) {
       continue;
-    }
-
-    // PROVENANCE-BASED DEDUP for HitPoints at surface boundaries
-    // If a HitPoint's hitSurface has a boundary that matches an OriginPoint,
-    // AND the HitPoint's position is essentially at that boundary, skip it.
-    //
-    // Detection strategy:
-    // We check if the HitPoint position matches the surface boundary by computing
-    // the expected position at s=0 or s=1 and comparing with the actual coords.
-    // Due to floating-point precision, s might be 2.59e-15 instead of 0, producing
-    // coords like (650.0000000002, 250.0000000001) instead of exact (650, 250).
-    //
-    // We use the surface's EXACT boundary coords as source of truth. If the HitPoint's
-    // coords are within floating-point precision of the boundary, it's a duplicate.
-    if (isHitPoint(p)) {
-      const surface = p.hitSurface;
-      const surfaceStart = surface.segment.start;
-      const surfaceEnd = surface.segment.end;
-      const surfaceStartKey = `${surfaceStart.x},${surfaceStart.y}`;
-      const surfaceEndKey = `${surfaceEnd.x},${surfaceEnd.y}`;
-
-      // Check if hit is at surface start (within floating-point precision)
-      // We use relative error check: |computed - exact| / max(|exact|, 1) < threshold
-      if (originPointCoords.has(surfaceStartKey)) {
-        const dxStart = Math.abs(xy.x - surfaceStart.x);
-        const dyStart = Math.abs(xy.y - surfaceStart.y);
-        const scaleX = Math.max(Math.abs(surfaceStart.x), 1);
-        const scaleY = Math.max(Math.abs(surfaceStart.y), 1);
-        // Floating-point relative precision is ~1e-15 for doubles, use 1e-10 as buffer
-        const atStart = (dxStart / scaleX) < 1e-10 && (dyStart / scaleY) < 1e-10;
-        if (atStart) {
-          continue; // Skip - OriginPoint at surface start takes precedence
-        }
-      }
-      
-      // Check if hit is at surface end (within floating-point precision)
-      if (originPointCoords.has(surfaceEndKey)) {
-        const dxEnd = Math.abs(xy.x - surfaceEnd.x);
-        const dyEnd = Math.abs(xy.y - surfaceEnd.y);
-        const scaleX = Math.max(Math.abs(surfaceEnd.x), 1);
-        const scaleY = Math.max(Math.abs(surfaceEnd.y), 1);
-        const atEnd = (dxEnd / scaleX) < 1e-10 && (dyEnd / scaleY) < 1e-10;
-        if (atEnd) {
-          continue; // Skip - OriginPoint at surface end takes precedence
-        }
-      }
     }
 
     // For screen boundary endpoints: deduplicate by coordinates
