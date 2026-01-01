@@ -62,16 +62,50 @@ function createChain1(): SurfaceChain {
 }
 
 /**
+ * Build a mapping from surface start/end points to connected surface IDs.
+ * This allows HitPoints at s=0 or s=1 to be recognized as junctions.
+ */
+function buildJunctionMapping(
+  chains: readonly SurfaceChain[]
+): Map<string, Set<string>> {
+  const pointToSurfaces = new Map<string, Set<string>>();
+
+  for (const chain of chains) {
+    const surfaces = chain.getSurfaces();
+
+    for (const surface of surfaces) {
+      const startKey = `${surface.segment.start.x},${surface.segment.start.y}`;
+      if (!pointToSurfaces.has(startKey)) {
+        pointToSurfaces.set(startKey, new Set());
+      }
+      pointToSurfaces.get(startKey)!.add(surface.id);
+
+      const endKey = `${surface.segment.end.x},${surface.segment.end.y}`;
+      if (!pointToSurfaces.has(endKey)) {
+        pointToSurfaces.set(endKey, new Set());
+      }
+      pointToSurfaces.get(endKey)!.add(surface.id);
+    }
+  }
+
+  return pointToSurfaces;
+}
+
+/**
  * Extract visible segments on a surface from source points.
- * This mirrors the logic in ValidRegionRenderer.extractVisibleSurfaceSegments.
+ * Uses junction provenance to detect HitPoints at s=0/1 that connect to target.
  */
 function extractVisibleSurfaceSegments(
   targetSurfaceId: string,
-  sourcePoints: readonly SourcePoint[]
+  sourcePoints: readonly SourcePoint[],
+  chains: readonly SurfaceChain[]
 ): { start: Vector2; end: Vector2 }[] {
   const segments: { start: Vector2; end: Vector2 }[] = [];
   let currentRunStart: Vector2 | null = null;
   let currentRunEnd: Vector2 | null = null;
+
+  // Build junction mapping for HitPoint junction detection
+  const pointToSurfaces = buildJunctionMapping(chains);
 
   for (const sp of sourcePoints) {
     let isOnTarget = false;
@@ -80,9 +114,20 @@ function extractVisibleSurfaceSegments(
     if (isEndpoint(sp) && sp.surface.id === targetSurfaceId) {
       isOnTarget = true;
       coords = sp.computeXY();
-    } else if (isHitPoint(sp) && sp.hitSurface.id === targetSurfaceId) {
-      isOnTarget = true;
-      coords = sp.computeXY();
+    } else if (isHitPoint(sp)) {
+      if (sp.hitSurface.id === targetSurfaceId) {
+        isOnTarget = true;
+        coords = sp.computeXY();
+      } else if (sp.s === 0 || sp.s === 1) {
+        // HitPoint at junction - check if connected to target
+        const hitCoords = sp.computeXY();
+        const coordKey = `${hitCoords.x},${hitCoords.y}`;
+        const connectedSurfaces = pointToSurfaces.get(coordKey);
+        if (connectedSurfaces && connectedSurfaces.has(targetSurfaceId)) {
+          isOnTarget = true;
+          coords = hitCoords;
+        }
+      }
     }
 
     if (isOnTarget && coords) {
@@ -150,7 +195,7 @@ describe("Chain Reflection Bug", () => {
       const sourcePoints = projectConeV2(cone, [chain], SCREEN_BOUNDS);
 
       // Extract visible segments for chain1-0
-      const segments = extractVisibleSurfaceSegments("chain1-0", sourcePoints);
+      const segments = extractVisibleSurfaceSegments("chain1-0", sourcePoints, [chain]);
 
       console.log("Extracted visible segments for chain1-0:");
       segments.forEach((seg, i) =>
@@ -200,7 +245,7 @@ describe("Chain Reflection Bug", () => {
       const stage0Points = projectConeV2(stage0Cone, [chain], SCREEN_BOUNDS);
 
       // Extract visible window (should be full surface)
-      const segments = extractVisibleSurfaceSegments(surface.id, stage0Points);
+      const segments = extractVisibleSurfaceSegments(surface.id, stage0Points, [chain]);
       expect(segments.length).toBeGreaterThan(0);
 
       const window = segments[0]!;
@@ -241,7 +286,7 @@ describe("Chain Reflection Bug", () => {
       const stage0Points = projectConeV2(stage0Cone, [chain], SCREEN_BOUNDS);
 
       // Extract visible window
-      const segments = extractVisibleSurfaceSegments(surface.id, stage0Points);
+      const segments = extractVisibleSurfaceSegments(surface.id, stage0Points, [chain]);
       expect(segments.length).toBeGreaterThan(0);
 
       const window = segments[0]!;

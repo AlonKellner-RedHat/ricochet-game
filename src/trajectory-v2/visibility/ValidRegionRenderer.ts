@@ -113,9 +113,16 @@ export class ValidRegionRenderer {
   private lastOutline: ValidRegionOutline | null = null;
   private lastSourcePoints: readonly SourcePoint[] = [];
   private lastOrigin: Vector2 | null = null;
+  private lastAllChains: readonly SurfaceChain[] = [];
 
   /** All visibility stages from the last render (Stage 1, Stage 2, etc.) */
   private visibilityStages: VisibilityStage[] = [];
+
+  /**
+   * Mapping from coordinate keys to connected surface IDs.
+   * Used for junction provenance detection in extractVisibleSurfaceSegments.
+   */
+  private junctionPointToSurfaces: Map<string, Set<string>> = new Map();
 
   constructor(
     graphics: IValidRegionGraphics,
@@ -125,6 +132,40 @@ export class ValidRegionRenderer {
     this.graphics = graphics;
     this.screenBounds = screenBounds;
     this.config = { ...DEFAULT_VALID_REGION_CONFIG, ...config };
+  }
+
+  /**
+   * Build junction mapping from chains.
+   * Maps coordinate keys to sets of surface IDs that share that point.
+   * Used for junction provenance detection in extractVisibleSurfaceSegments.
+   */
+  private buildJunctionMapping(chains: readonly SurfaceChain[]): void {
+    this.junctionPointToSurfaces.clear();
+
+    for (const chain of chains) {
+      // Skip if chain doesn't have getSurfaces method (defensive check for legacy code)
+      if (typeof chain.getSurfaces !== "function") {
+        continue;
+      }
+
+      const surfaces = chain.getSurfaces();
+
+      for (const surface of surfaces) {
+        // Add surface start point
+        const startKey = `${surface.segment.start.x},${surface.segment.start.y}`;
+        if (!this.junctionPointToSurfaces.has(startKey)) {
+          this.junctionPointToSurfaces.set(startKey, new Set());
+        }
+        this.junctionPointToSurfaces.get(startKey)!.add(surface.id);
+
+        // Add surface end point
+        const endKey = `${surface.segment.end.x},${surface.segment.end.y}`;
+        if (!this.junctionPointToSurfaces.has(endKey)) {
+          this.junctionPointToSurfaces.set(endKey, new Set());
+        }
+        this.junctionPointToSurfaces.get(endKey)!.add(surface.id);
+      }
+    }
   }
 
   /**
@@ -304,16 +345,31 @@ export class ValidRegionRenderer {
     let currentRunEnd: Vector2 | null = null;
 
     for (const sp of sourcePoints) {
-      // Check if this point is on the target surface
+      // Check if this point is on the target surface using provenance
       let isOnTarget = false;
       let coords: Vector2 | null = null;
 
       if (isEndpoint(sp) && sp.surface.id === targetSurfaceId) {
+        // Endpoint is on its surface
         isOnTarget = true;
         coords = sp.computeXY();
-      } else if (isHitPoint(sp) && sp.hitSurface.id === targetSurfaceId) {
-        isOnTarget = true;
-        coords = sp.computeXY();
+      } else if (isHitPoint(sp)) {
+        // HitPoint: directly on target surface
+        if (sp.hitSurface.id === targetSurfaceId) {
+          isOnTarget = true;
+          coords = sp.computeXY();
+        } else if (sp.s === 0 || sp.s === 1) {
+          // HitPoint at s=0 (surface start) or s=1 (surface end)
+          // This might be a junction that connects to the target surface
+          // Use the junction mapping to check (provenance-based)
+          const hitCoords = sp.computeXY();
+          const coordKey = `${hitCoords.x},${hitCoords.y}`;
+          const connectedSurfaces = this.junctionPointToSurfaces.get(coordKey);
+          if (connectedSurfaces && connectedSurfaces.has(targetSurfaceId)) {
+            isOnTarget = true;
+            coords = hitCoords;
+          }
+        }
       }
 
       if (isOnTarget && coords) {
@@ -376,6 +432,10 @@ export class ValidRegionRenderer {
     allChains: readonly SurfaceChain[],
     windowConfig: WindowConfig | null = null
   ): void {
+    // Store chains for junction provenance detection in extractVisibleSurfaceSegments
+    this.lastAllChains = allChains;
+    this.buildJunctionMapping(allChains);
+
     // Unified ConeProjection algorithm for all cases:
     // - 360° visibility: full cone from player
     // - Umbrella mode: cone through umbrella window from player

@@ -8,7 +8,7 @@
 import type { Surface } from "@/surfaces/Surface";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
 import { type SourcePoint, isEndpoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
-import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import { type SurfaceChain, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import {
   createConeThroughWindow,
@@ -66,31 +66,105 @@ interface Segment {
 }
 
 /**
+ * Build a mapping from surface start/end points to connected surface IDs.
+ * This allows HitPoints at s=0 or s=1 to be recognized as junctions.
+ *
+ * For each chain:
+ * - Junction vertices connect two surfaces
+ * - A HitPoint at s=0 (surface start) might be a junction to the PREVIOUS surface
+ * - A HitPoint at s=1 (surface end) might be a junction to the NEXT surface
+ *
+ * Uses exact coordinate keys for provenance (no epsilons).
+ */
+function buildJunctionMapping(
+  chains: readonly SurfaceChain[]
+): Map<string, Set<string>> {
+  // Maps "x,y" coordinate key -> set of surface IDs that share this point
+  const pointToSurfaces = new Map<string, Set<string>>();
+
+  for (const chain of chains) {
+    const surfaces = chain.getSurfaces();
+
+    for (const surface of surfaces) {
+      // Add surface start point
+      const startKey = `${surface.segment.start.x},${surface.segment.start.y}`;
+      if (!pointToSurfaces.has(startKey)) {
+        pointToSurfaces.set(startKey, new Set());
+      }
+      pointToSurfaces.get(startKey)!.add(surface.id);
+
+      // Add surface end point
+      const endKey = `${surface.segment.end.x},${surface.segment.end.y}`;
+      if (!pointToSurfaces.has(endKey)) {
+        pointToSurfaces.set(endKey, new Set());
+      }
+      pointToSurfaces.get(endKey)!.add(surface.id);
+    }
+  }
+
+  return pointToSurfaces;
+}
+
+/**
  * Extract visible segments on a surface from source points.
  * This is the same logic as ValidRegionRenderer.extractVisibleSurfaceSegments.
  *
  * Uses provenance to find which portions of a surface are visible,
  * converting source points to window segments for reflection.
+ *
+ * Provenance-based checks:
+ * - Endpoint: surface.id matches target
+ * - HitPoint: hitSurface.id matches target, OR
+ *             s=0/1 and the point is a junction that connects to target
+ * - JunctionPoint: getSurfaceBefore().id OR getSurfaceAfter().id matches target
+ *   (JunctionPoints connect TWO surfaces, so they belong to both)
  */
 function extractVisibleSurfaceSegments(
   targetSurfaceId: string,
-  sourcePoints: readonly SourcePoint[]
+  sourcePoints: readonly SourcePoint[],
+  chains: readonly SurfaceChain[]
 ): Segment[] {
   const segments: Segment[] = [];
   let currentRunStart: Vector2 | null = null;
   let currentRunEnd: Vector2 | null = null;
 
+  // Build junction mapping for HitPoint junction detection
+  const pointToSurfaces = buildJunctionMapping(chains);
+
   for (const sp of sourcePoints) {
-    // Check if this point is on the target surface
+    // Check if this point is on the target surface using provenance
     let isOnTarget = false;
     let coords: Vector2 | null = null;
 
     if (isEndpoint(sp) && sp.surface.id === targetSurfaceId) {
+      // Endpoint is on its surface
       isOnTarget = true;
       coords = sp.computeXY();
-    } else if (isHitPoint(sp) && sp.hitSurface.id === targetSurfaceId) {
-      isOnTarget = true;
-      coords = sp.computeXY();
+    } else if (isHitPoint(sp)) {
+      // HitPoint: directly on target surface
+      if (sp.hitSurface.id === targetSurfaceId) {
+        isOnTarget = true;
+        coords = sp.computeXY();
+      } else if (sp.s === 0 || sp.s === 1) {
+        // HitPoint at s=0 (surface start) or s=1 (surface end)
+        // This might be a junction that connects to the target surface
+        // Use the junction mapping to check
+        const hitCoords = sp.computeXY();
+        const coordKey = `${hitCoords.x},${hitCoords.y}`;
+        const connectedSurfaces = pointToSurfaces.get(coordKey);
+        if (connectedSurfaces && connectedSurfaces.has(targetSurfaceId)) {
+          isOnTarget = true;
+          coords = hitCoords;
+        }
+      }
+    } else if (isJunctionPoint(sp)) {
+      // JunctionPoint connects TWO surfaces - check both using provenance
+      const beforeSurface = sp.getSurfaceBefore();
+      const afterSurface = sp.getSurfaceAfter();
+      if (beforeSurface.id === targetSurfaceId || afterSurface.id === targetSurfaceId) {
+        isOnTarget = true;
+        coords = sp.computeXY();
+      }
     }
 
     if (isOnTarget && coords) {
@@ -231,7 +305,7 @@ function computeVisibilityStages(
     const surface = surfaces[i]!;
 
     // Extract visible segments on this surface from the PREVIOUS stage's source points
-    const visibleSegments = extractVisibleSurfaceSegments(surface.id, currentSourcePoints);
+    const visibleSegments = extractVisibleSurfaceSegments(surface.id, currentSourcePoints, scene.allChains);
 
     if (visibleSegments.length === 0) {
       // No light reaches this surface - stop cascading
