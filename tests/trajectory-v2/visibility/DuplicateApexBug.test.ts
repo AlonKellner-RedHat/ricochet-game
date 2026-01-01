@@ -366,5 +366,37 @@ describe("Duplicate Apex Bug", () => {
       });
     });
   });
+
+  describe("Stage 0: Flickering investigation", () => {
+    it("should have consistent apex count across many player positions", () => {
+      const chain = createChain1();
+      const issues: { player: Vector2; apexCount: number; vertexCount: number }[] = [];
+
+      // Sweep across many player X positions
+      for (let x = 1100; x <= 1110; x += 0.1) {
+        const player = { x, y: 666 };
+        const cone = createFullCone(player);
+        const sourcePoints = projectConeV2(cone, [chain], SCREEN_BOUNDS);
+
+        const apexCount = sourcePoints.filter((sp) => {
+          const coords = sp.computeXY();
+          return Math.abs(coords.x - 650) < 0.1 && Math.abs(coords.y - 250) < 0.1;
+        }).length;
+
+        if (apexCount !== 1) {
+          issues.push({ player, apexCount, vertexCount: sourcePoints.length });
+        }
+      }
+
+      if (issues.length > 0) {
+        console.log("\n=== FLICKERING ISSUES FOUND ===");
+        issues.forEach((issue) => {
+          console.log(`  Player (${issue.player.x.toFixed(6)}, ${issue.player.y}): apex=${issue.apexCount}, vertices=${issue.vertexCount}`);
+        });
+      }
+
+      expect(issues.length).toBe(0);
+    });
+  });
 });
 
