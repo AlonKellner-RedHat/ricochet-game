@@ -12,16 +12,16 @@
 import type { Surface } from "@/surfaces/Surface";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
 import { type SourcePoint, isEndpoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
-import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import { type SurfaceChain, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { TrajectoryDebugLogger, type VisibilityDebugInfo } from "../TrajectoryDebugLogger";
+import type { ScreenBounds } from "./AnalyticalPropagation";
 import {
   createConeThroughWindow,
   createFullCone,
   projectConeV2,
   toVector2Array,
 } from "./ConeProjectionV2";
-import type { ScreenBounds } from "./AnalyticalPropagation";
 import type { ValidRegionOutline } from "./OutlineBuilder";
 import { preparePolygonForRendering } from "./RenderingDedup";
 import { type Segment, type WindowConfig, getWindowSegments } from "./WindowConfig";
@@ -353,6 +353,14 @@ export class ValidRegionRenderer {
         // Endpoint is on its surface
         isOnTarget = true;
         coords = sp.computeXY();
+      } else if (isJunctionPoint(sp)) {
+        // JunctionPoint - check if it connects to target surface using provenance
+        const beforeSurface = sp.getSurfaceBefore();
+        const afterSurface = sp.getSurfaceAfter();
+        if (beforeSurface?.id === targetSurfaceId || afterSurface?.id === targetSurfaceId) {
+          isOnTarget = true;
+          coords = sp.computeXY();
+        }
       } else if (isHitPoint(sp)) {
         // HitPoint: directly on target surface
         if (sp.hitSurface.id === targetSurfaceId) {
@@ -365,7 +373,7 @@ export class ValidRegionRenderer {
           const hitCoords = sp.computeXY();
           const coordKey = `${hitCoords.x},${hitCoords.y}`;
           const connectedSurfaces = this.junctionPointToSurfaces.get(coordKey);
-          if (connectedSurfaces && connectedSurfaces.has(targetSurfaceId)) {
+          if (connectedSurfaces?.has(targetSurfaceId)) {
             isOnTarget = true;
             coords = hitCoords;
           }
@@ -566,7 +574,7 @@ export class ValidRegionRenderer {
 
       // Use the last stage for rendering and highlight mode
       const lastStage = this.visibilityStages[this.visibilityStages.length - 1];
-      if (lastStage && lastStage.isValid) {
+      if (lastStage?.isValid) {
         this.lastSourcePoints = lastStage.sourcePoints;
         this.lastOrigin = lastStage.origin;
         visibilityResult = {
