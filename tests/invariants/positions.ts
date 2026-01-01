@@ -67,6 +67,11 @@ export const SPECIAL_POSITIONS: Vector2[] = [
   // Chain reflection bug - reflected polygon truncated (only 3 vertices)
   { x: 799.5532401600012, y: 666 }, // player for chain1-0 reflection bug
   { x: 640, y: 283.7305699481865 }, // cursor for chain1-0 reflection bug
+  // Duplicate apex bug - apex appears twice with floating-point error
+  { x: 1105.6955874, y: 666 }, // BUGGY - apex duplicated (5 vertices)
+  { x: 1105.6955179119636, y: 666 }, // CORRECT - apex once (4 vertices)
+  { x: 658.2383419689119, y: 439.5854922279793 }, // cursor for buggy
+  { x: 668.1865284974093, y: 573.8860103626943 }, // cursor for correct
 ];
 
 /**
