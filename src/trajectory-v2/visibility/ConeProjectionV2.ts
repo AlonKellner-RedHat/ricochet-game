@@ -1087,7 +1087,7 @@ export function projectConeV2(
 
   // For windowed cones, cast rays to cone boundaries (extends to screen)
   // These rays find where the cone edges hit the screen boundaries.
-  // 
+  //
   // IMPORTANT: We need to exclude surfaces that start/end at the window endpoints
   // to prevent HitPoints at junction positions (e.g., s≈0 on a surface starting
   // at the junction). The window endpoints are already represented by OriginPoints.
@@ -1100,7 +1100,12 @@ export function projectConeV2(
         const endKey = `${surface.segment.end.x},${surface.segment.end.y}`;
         const leftKey = `${source.leftBoundary.x},${source.leftBoundary.y}`;
         const rightKey = `${source.rightBoundary.x},${source.rightBoundary.y}`;
-        if (startKey === leftKey || endKey === leftKey || startKey === rightKey || endKey === rightKey) {
+        if (
+          startKey === leftKey ||
+          endKey === leftKey ||
+          startKey === rightKey ||
+          endKey === rightKey
+        ) {
           windowEndpointSurfaces.add(surface.id);
         }
       }

@@ -72,6 +72,10 @@ export const SPECIAL_POSITIONS: Vector2[] = [
   { x: 1105.6955179119636, y: 666 }, // CORRECT - apex once (4 vertices)
   { x: 658.2383419689119, y: 439.5854922279793 }, // cursor for buggy
   { x: 668.1865284974093, y: 573.8860103626943 }, // cursor for correct
+  // Junction sorting bug - black triangle between ceiling and chain3 apex (850, 250)
+  // Apex and its continuation ceiling hit are on same ray but sorted incorrectly
+  { x: 889.0416036756611, y: 269.9802316262268 }, // player - black triangle bug
+  { x: 802.4870466321242, y: 159.3782383419689 }, // cursor - black triangle bug
 ];
 
 /**
