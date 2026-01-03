@@ -63,7 +63,7 @@ describe("SurfaceOrientation", () => {
       expect(orientation.firstEndpoint).toBe("end");
     });
 
-    it("uses distance as tiebreaker when collinear (zero cross)", () => {
+    it("uses deterministic ordering when collinear (zero cross) - start always wins", () => {
       // Origin directly in line with the surface
       const surface = createSurface("col", { x: 100, y: 100 }, { x: 100, y: 300 });
       const origin = { x: 100, y: 400 }; // On the same vertical line
@@ -71,10 +71,9 @@ describe("SurfaceOrientation", () => {
       const orientation = computeSurfaceOrientation(surface, origin);
 
       expect(orientation.crossProduct).toBe(0);
-      // Start is at (100, 100), closer to origin at (100, 400) than end at (100, 300)
-      // Distance to start: 300, distance to end: 100
-      // Wait, end is closer! So end should be first
-      expect(orientation.firstEndpoint).toBe("end");
+      // When collinear (cross = 0), we use deterministic ordering: start always first
+      // This avoids floating-point issues and maintains stability
+      expect(orientation.firstEndpoint).toBe("start");
     });
 
     it("returns consistent results for player slightly left vs right of vertical surface", () => {

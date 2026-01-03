@@ -16,20 +16,11 @@
 import { RicochetSurface } from "@/surfaces/RicochetSurface";
 import type { Surface } from "@/surfaces/Surface";
 import { WallSurface } from "@/surfaces/WallSurface";
-import { Endpoint, SourcePoint } from "./SourcePoint";
+import { Endpoint, type OrientationInfo, SourcePoint } from "./SourcePoint";
 import type { Vector2 } from "./types";
 
-// =============================================================================
-// ORIENTATION INFO (for canLightPassWithOrientations - avoids circular deps)
-// =============================================================================
-
-/**
- * Minimal orientation info needed for junction pass-through check.
- * Matches the crossProduct field from SurfaceOrientation in ConeProjectionV2.
- */
-export interface OrientationInfo {
-  readonly crossProduct: number;
-}
+// Re-export OrientationInfo for backwards compatibility
+export type { OrientationInfo } from "./SourcePoint";
 
 // =============================================================================
 // TYPES
@@ -185,6 +176,19 @@ export class JunctionPoint extends SourcePoint {
     // OPPOSITE signs = light passes (one front, one back)
     // SAME signs = light blocked (both front or both back)
     return (orientBefore.crossProduct > 0) !== (orientAfter.crossProduct > 0);
+  }
+
+  /**
+   * Check if this junction blocks light from passing through.
+   *
+   * OCP: JunctionPoint implements its own blocking behavior based on
+   * the surface orientations at the junction.
+   *
+   * @param orientations Pre-computed surface orientations
+   * @returns true if light is blocked, false if light can pass through
+   */
+  isBlocking(orientations: Map<string, OrientationInfo>): boolean {
+    return !this.canLightPassWithOrientations(orientations);
   }
 }
 
@@ -406,5 +410,41 @@ export function createSingleSurfaceChain(surface: Surface): SurfaceChain {
     vertices: [surface.segment.start, surface.segment.end],
     isClosed: false,
     surfaceFactory: () => surface,
+  });
+}
+
+/**
+ * Create a chain with mixed reflectivity - some surfaces reflective, others blocking.
+ *
+ * This enables single closed chains (with JunctionPoints at all vertices) while
+ * allowing different surface types. Perfect for room boundaries where some walls
+ * should reflect light and others should block it.
+ *
+ * @param id - Base ID for the chain (surfaces will be named `${id}-0`, `${id}-1`, etc.)
+ * @param vertices - Array of vertex positions (minimum 2)
+ * @param reflective - Array of booleans, one per surface. true = RicochetSurface, false = WallSurface
+ * @param isClosed - If true, the chain loops back (default: false)
+ *
+ * @example
+ * // Room with reflective ceiling (0) and left-wall (3), non-reflective right-wall (1) and floor (2)
+ * // Vertices: top-left → top-right → bottom-right → bottom-left
+ * createMixedChain("room", vertices, [true, false, false, true], true);
+ */
+export function createMixedChain(
+  id: string,
+  vertices: Vector2[],
+  reflective: boolean[],
+  isClosed = false
+): SurfaceChain {
+  return new SurfaceChain({
+    vertices,
+    isClosed,
+    surfaceFactory: (index, start, end) => {
+      const isReflective = reflective[index] ?? false;
+      const surfaceId = `${id}-${index}`;
+      return isReflective
+        ? new RicochetSurface(surfaceId, { start, end })
+        : new WallSurface(surfaceId, { start, end });
+    },
   });
 }

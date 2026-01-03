@@ -19,6 +19,7 @@ import { WallSurface } from "@/surfaces/WallSurface";
 import { isEndpoint, isHitPoint, isOriginPoint } from "@/trajectory-v2/geometry/SourcePoint";
 import {
   type SurfaceChain,
+  createMixedChain,
   createRicochetChain,
   createSingleSurfaceChain,
 } from "@/trajectory-v2/geometry/SurfaceChain";
@@ -104,83 +105,98 @@ function makeSingleChain(
  * projectConeV2 only accepts SurfaceChain[], not standalone surfaces.
  */
 function createStandaloneSurfaceChains(): SurfaceChain[] {
-  return [
-    // Ceiling - IMPORTANT for the bug
-    makeSingleChain("ceiling-0", { x: 0, y: 80 }, { x: 1280, y: 80 }, true),
-    // Floor
-    makeSingleChain("floor-0", { x: 0, y: 700 }, { x: 1280, y: 700 }, false),
-    // Left wall
-    makeSingleChain("left-wall-0", { x: 20, y: 700 }, { x: 20, y: 80 }, true),
-    // Right wall
-    makeSingleChain("right-wall-0", { x: 1260, y: 80 }, { x: 1260, y: 700 }, false),
-    // Platform
-    makeSingleChain("platform-0", { x: 50, y: 620 }, { x: 200, y: 620 }, false),
-    // Mirror surfaces
-    makeSingleChain("mirror-left-0", { x: 250, y: 550 }, { x: 250, y: 150 }, true),
-    makeSingleChain("mirror-right-0", { x: 550, y: 150 }, { x: 550, y: 550 }, true),
-    // Pyramid surfaces
-    makeSingleChain("pyramid-1-0", { x: 1030, y: 500 }, { x: 1070, y: 500 }, true),
-    makeSingleChain("pyramid-2-0", { x: 1015, y: 460 }, { x: 1085, y: 460 }, true),
-    makeSingleChain("pyramid-3-0", { x: 1000, y: 420 }, { x: 1100, y: 420 }, true),
-    makeSingleChain("pyramid-4-0", { x: 985, y: 380 }, { x: 1115, y: 380 }, true),
-    // Grid surfaces (all from bug report)
-    makeSingleChain("grid-0-0-0", { x: 885, y: 200 }, { x: 915, y: 200 }, true),
-    makeSingleChain("grid-0-1-0", { x: 935, y: 200 }, { x: 965, y: 200 }, true),
-    makeSingleChain(
-      "grid-0-2-0",
-      { x: 1010.6066017177982, y: 189.3933982822018 },
-      { x: 989.3933982822018, y: 210.6066017177982 },
-      true
-    ),
-    makeSingleChain(
-      "grid-0-3-0",
-      { x: 1039.3933982822018, y: 189.3933982822018 },
-      { x: 1060.6066017177982, y: 210.6066017177982 },
-      true
-    ),
-    makeSingleChain("grid-1-0-0", { x: 900, y: 235 }, { x: 900, y: 265 }, true),
-    makeSingleChain(
-      "grid-1-1-0",
-      { x: 939.3933982822018, y: 239.3933982822018 },
-      { x: 960.6066017177982, y: 260.6066017177982 },
-      true
-    ),
-    makeSingleChain("grid-1-2-0", { x: 985, y: 250 }, { x: 1015, y: 250 }, true),
-    makeSingleChain(
-      "grid-1-3-0",
-      { x: 1060.6066017177982, y: 260.6066017177982 },
-      { x: 1039.3933982822018, y: 239.3933982822018 },
-      true
-    ),
-    makeSingleChain("grid-2-0-0", { x: 915, y: 300 }, { x: 885, y: 300 }, true),
-    makeSingleChain(
-      "grid-2-1-0",
-      { x: 960.6066017177982, y: 310.6066017177982 },
-      { x: 939.3933982822018, y: 289.3933982822018 },
-      true
-    ),
-    makeSingleChain("grid-2-2-0", { x: 1000, y: 315 }, { x: 1000, y: 285 }, true),
-    makeSingleChain(
-      "grid-2-3-0",
-      { x: 1060.6066017177982, y: 289.3933982822018 },
-      { x: 1039.3933982822018, y: 310.6066017177982 },
-      true
-    ),
-    makeSingleChain(
-      "grid-3-0-0",
-      { x: 889.3933982822018, y: 339.3933982822018 },
-      { x: 910.6066017177982, y: 360.6066017177982 },
-      true
-    ),
-    makeSingleChain(
-      "grid-3-1-0",
-      { x: 939.3933982822018, y: 339.3933982822018 },
-      { x: 960.6066017177982, y: 360.6066017177982 },
-      true
-    ),
-    makeSingleChain("grid-3-2-0", { x: 1000, y: 365 }, { x: 1000, y: 335 }, true),
-    makeSingleChain("grid-3-3-0", { x: 1050, y: 365 }, { x: 1050, y: 335 }, true),
-  ];
+  const chains: SurfaceChain[] = [];
+
+  // Room boundary: single closed chain with mixed reflectivity
+  // Vertices in CCW order: top-left → top-right → bottom-right → bottom-left
+  // Surfaces: 0=ceiling (reflective), 1=right-wall (non-reflective),
+  //           2=floor (non-reflective), 3=left-wall (reflective)
+  chains.push(
+    createMixedChain(
+      "room",
+      [
+        { x: 20, y: 80 },     // top-left
+        { x: 1260, y: 80 },   // top-right
+        { x: 1260, y: 700 },  // bottom-right
+        { x: 20, y: 700 },    // bottom-left
+      ],
+      [true, false, false, true], // ceiling, right, floor, left
+      true // closed chain
+    )
+  );
+
+  // Platform
+  chains.push(makeSingleChain("platform-0", { x: 50, y: 620 }, { x: 200, y: 620 }, false));
+
+  // Mirror surfaces
+  chains.push(makeSingleChain("mirror-left-0", { x: 250, y: 550 }, { x: 250, y: 150 }, true));
+  chains.push(makeSingleChain("mirror-right-0", { x: 550, y: 150 }, { x: 550, y: 550 }, true));
+
+  // Pyramid surfaces
+  chains.push(makeSingleChain("pyramid-1-0", { x: 1030, y: 500 }, { x: 1070, y: 500 }, true));
+  chains.push(makeSingleChain("pyramid-2-0", { x: 1015, y: 460 }, { x: 1085, y: 460 }, true));
+  chains.push(makeSingleChain("pyramid-3-0", { x: 1000, y: 420 }, { x: 1100, y: 420 }, true));
+  chains.push(makeSingleChain("pyramid-4-0", { x: 985, y: 380 }, { x: 1115, y: 380 }, true));
+
+  // Grid surfaces (all from bug report)
+  chains.push(makeSingleChain("grid-0-0-0", { x: 885, y: 200 }, { x: 915, y: 200 }, true));
+  chains.push(makeSingleChain("grid-0-1-0", { x: 935, y: 200 }, { x: 965, y: 200 }, true));
+  chains.push(makeSingleChain(
+    "grid-0-2-0",
+    { x: 1010.6066017177982, y: 189.3933982822018 },
+    { x: 989.3933982822018, y: 210.6066017177982 },
+    true
+  ));
+  chains.push(makeSingleChain(
+    "grid-0-3-0",
+    { x: 1039.3933982822018, y: 189.3933982822018 },
+    { x: 1060.6066017177982, y: 210.6066017177982 },
+    true
+  ));
+  chains.push(makeSingleChain("grid-1-0-0", { x: 900, y: 235 }, { x: 900, y: 265 }, true));
+  chains.push(makeSingleChain(
+    "grid-1-1-0",
+    { x: 939.3933982822018, y: 239.3933982822018 },
+    { x: 960.6066017177982, y: 260.6066017177982 },
+    true
+  ));
+  chains.push(makeSingleChain("grid-1-2-0", { x: 985, y: 250 }, { x: 1015, y: 250 }, true));
+  chains.push(makeSingleChain(
+    "grid-1-3-0",
+    { x: 1060.6066017177982, y: 260.6066017177982 },
+    { x: 1039.3933982822018, y: 239.3933982822018 },
+    true
+  ));
+  chains.push(makeSingleChain("grid-2-0-0", { x: 915, y: 300 }, { x: 885, y: 300 }, true));
+  chains.push(makeSingleChain(
+    "grid-2-1-0",
+    { x: 960.6066017177982, y: 310.6066017177982 },
+    { x: 939.3933982822018, y: 289.3933982822018 },
+    true
+  ));
+  chains.push(makeSingleChain("grid-2-2-0", { x: 1000, y: 315 }, { x: 1000, y: 285 }, true));
+  chains.push(makeSingleChain(
+    "grid-2-3-0",
+    { x: 1060.6066017177982, y: 289.3933982822018 },
+    { x: 1039.3933982822018, y: 310.6066017177982 },
+    true
+  ));
+  chains.push(makeSingleChain(
+    "grid-3-0-0",
+    { x: 889.3933982822018, y: 339.3933982822018 },
+    { x: 910.6066017177982, y: 360.6066017177982 },
+    true
+  ));
+  chains.push(makeSingleChain(
+    "grid-3-1-0",
+    { x: 939.3933982822018, y: 339.3933982822018 },
+    { x: 960.6066017177982, y: 360.6066017177982 },
+    true
+  ));
+  chains.push(makeSingleChain("grid-3-2-0", { x: 1000, y: 365 }, { x: 1000, y: 335 }, true));
+  chains.push(makeSingleChain("grid-3-3-0", { x: 1050, y: 365 }, { x: 1050, y: 335 }, true));
+
+  return chains;
 }
 
 /**

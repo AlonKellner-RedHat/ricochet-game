@@ -23,6 +23,14 @@ import type { Ray, Vector2 } from "./types";
 // =============================================================================
 
 /**
+ * Minimal orientation info for blocking checks.
+ * Matches the crossProduct field from SurfaceOrientation.
+ */
+export interface OrientationInfo {
+  readonly crossProduct: number;
+}
+
+/**
  * Abstract base class for all source-of-truth points.
  *
  * Each point type implements its own behavior - adding new types
@@ -56,6 +64,17 @@ export abstract class SourcePoint {
    * Useful for Set/Map operations.
    */
   abstract getKey(): string;
+
+  /**
+   * Check if this point blocks light from passing through.
+   * Used to determine if a continuation ray should be cast.
+   *
+   * OCP: Each point type implements its own blocking behavior.
+   *
+   * @param _orientations Pre-computed surface orientations (used by JunctionPoint)
+   * @returns true if light is blocked, false if light can pass through
+   */
+  abstract isBlocking(_orientations: Map<string, OrientationInfo>): boolean;
 }
 
 // =============================================================================
@@ -93,6 +112,14 @@ export class OriginPoint extends SourcePoint {
 
   getKey(): string {
     return `origin:${this.value.x},${this.value.y}`;
+  }
+
+  /**
+   * OriginPoints never block - they represent window endpoints
+   * through which light passes by definition.
+   */
+  isBlocking(_orientations: Map<string, OrientationInfo>): boolean {
+    return false;
   }
 }
 
@@ -136,6 +163,15 @@ export class Endpoint extends SourcePoint {
 
   getKey(): string {
     return `endpoint:${this.surface.id}:${this.which}`;
+  }
+
+  /**
+   * Endpoints never block - a continuation ray IS cast from endpoints.
+   * The endpoint creates a shadow boundary, but light continues past it
+   * via the continuation ray.
+   */
+  isBlocking(_orientations: Map<string, OrientationInfo>): boolean {
+    return false;
   }
 }
 
@@ -189,14 +225,20 @@ export class HitPoint extends SourcePoint {
     // Note: We use s (surface parameter), not t (ray parameter),
     // because different rays hitting the same surface point should be equal
     return (
-      other instanceof HitPoint &&
-      this.hitSurface.id === other.hitSurface.id &&
-      this.s === other.s
+      other instanceof HitPoint && this.hitSurface.id === other.hitSurface.id && this.s === other.s
     );
   }
 
   getKey(): string {
     return `hit:${this.hitSurface.id}:${this.s}`;
+  }
+
+  /**
+   * HitPoints always block - a ray hitting a surface in the middle
+   * always blocks further light propagation along that ray.
+   */
+  isBlocking(_orientations: Map<string, OrientationInfo>): boolean {
+    return true;
   }
 }
 
@@ -264,4 +306,3 @@ export function endOf(surface: Surface): Endpoint {
 export function endpointsOf(surface: Surface): [Endpoint, Endpoint] {
   return [startOf(surface), endOf(surface)];
 }
-

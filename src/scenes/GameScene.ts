@@ -6,6 +6,7 @@ import { GameAdapter } from "@/trajectory-v2/GameAdapter";
 import { TrajectoryDebugLogger } from "@/trajectory-v2/TrajectoryDebugLogger";
 import {
   type SurfaceChain,
+  createMixedChain,
   createRicochetChain,
   createWallChain,
 } from "@/trajectory-v2/geometry/SurfaceChain";
@@ -471,37 +472,23 @@ export class GameScene extends Phaser.Scene {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
-    // === 1. BOUNDARIES ===
-    // Floor (non-reflective)
+    // === 1. ROOM BOUNDARIES ===
+    // Single closed chain with 4 JunctionPoints at corners for provenance-based handling
+    // Vertices in CCW order: top-left → top-right → bottom-right → bottom-left
+    // Surfaces: 0=ceiling (reflective), 1=right-wall (non-reflective),
+    //           2=floor (non-reflective), 3=left-wall (reflective)
     this.surfaceChains.push(
-      createWallChain("floor", [
-        { x: 0, y: height - 20 },
-        { x: width, y: height - 20 },
-      ])
-    );
-
-    // Ceiling (reflective, normal pointing down - segment goes left-to-right)
-    this.surfaceChains.push(
-      createRicochetChain("ceiling", [
-        { x: 0, y: 80 },
-        { x: width, y: 80 },
-      ])
-    );
-
-    // Left wall (reflective, normal pointing right - segment goes bottom-to-top)
-    this.surfaceChains.push(
-      createRicochetChain("left-wall", [
-        { x: 20, y: height - 20 },
-        { x: 20, y: 80 },
-      ])
-    );
-
-    // Right wall (non-reflective)
-    this.surfaceChains.push(
-      createWallChain("right-wall", [
-        { x: width - 20, y: 80 },
-        { x: width - 20, y: height - 20 },
-      ])
+      createMixedChain(
+        "room",
+        [
+          { x: 20, y: 80 },                    // top-left
+          { x: width - 20, y: 80 },            // top-right
+          { x: width - 20, y: height - 20 },   // bottom-right
+          { x: 20, y: height - 20 },           // bottom-left
+        ],
+        [true, false, false, true], // ceiling, right, floor, left
+        true // closed chain
+      )
     );
 
     // Simple platform for player to stand on

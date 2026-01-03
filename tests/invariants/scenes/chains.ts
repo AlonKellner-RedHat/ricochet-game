@@ -5,7 +5,7 @@
  */
 
 import { RicochetSurface } from "@/surfaces/RicochetSurface";
-import { type SurfaceChain, createRicochetChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import { type SurfaceChain, createMixedChain, createRicochetChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import { SCREEN } from "../positions";
 import type { Scene, PlannedSequence } from "../types";
 
@@ -384,20 +384,22 @@ export const CHAIN_SCENES: Scene[] = [
 function createFullDemoChains(): SurfaceChain[] {
   const chains: SurfaceChain[] = [];
 
-  // Ceiling (reflective, facing down)
+  // Room boundary: single closed chain with mixed reflectivity
+  // Vertices in CCW order: top-left → top-right → bottom-right → bottom-left
+  // Surfaces: 0=ceiling (reflective), 1=right-wall (non-reflective),
+  //           2=floor (non-reflective), 3=left-wall (reflective)
   chains.push(
-    createRicochetChain("ceiling", [
-      { x: 0, y: 80 },
-      { x: 1280, y: 80 },
-    ])
-  );
-
-  // Left wall (reflective)
-  chains.push(
-    createRicochetChain("left-wall", [
-      { x: 20, y: 700 },
-      { x: 20, y: 80 },
-    ])
+    createMixedChain(
+      "room",
+      [
+        { x: 20, y: 80 },      // top-left
+        { x: 1260, y: 80 },    // top-right
+        { x: 1260, y: 700 },   // bottom-right
+        { x: 20, y: 700 },     // bottom-left
+      ],
+      [true, false, false, true], // ceiling, right, floor, left
+      true // closed chain
+    )
   );
 
   // Parallel mirrors

@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { ValidRegionRenderer, type IValidRegionGraphics, type VisibilityStage } from "@/trajectory-v2/visibility/ValidRegionRenderer";
+import { createSingleSurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
@@ -273,7 +274,7 @@ describe("Multi-Stage Rendering", () => {
       ];
       const plannedSurfaces = [surfaces[1]!];
 
-      renderer.render(player, plannedSurfaces, surfaces, null);
+      renderer.render(player, plannedSurfaces, surfaces.map(s => createSingleSurfaceChain(s)), null);
 
       // Find fillStyle calls with the overlay color (0x000000)
       const overlayFillCalls = graphics.fillStyleCalls.filter(c => c.color === 0x000000);
@@ -302,7 +303,7 @@ describe("Multi-Stage Rendering", () => {
       ];
       const plannedSurfaces = [surfaces[1]!, surfaces[2]!]; // 2 planned surfaces
 
-      renderer.render(player, plannedSurfaces, surfaces, null);
+      renderer.render(player, plannedSurfaces, surfaces.map(s => createSingleSurfaceChain(s)), null);
 
       const stages = renderer.getVisibilityStages();
       console.log("Number of stages computed:", stages.length);
@@ -324,7 +325,7 @@ describe("Multi-Stage Rendering", () => {
       ];
       const plannedSurfaces = [surfaces[1]!, surfaces[2]!]; // ricochet-4 first, ricochet-1 second
 
-      renderer.render(player, plannedSurfaces, surfaces, null);
+      renderer.render(player, plannedSurfaces, surfaces.map(s => createSingleSurfaceChain(s)), null);
 
       const stages = renderer.getVisibilityStages();
       
@@ -354,7 +355,7 @@ describe("Multi-Stage Rendering", () => {
       ];
       const plannedSurfaces = [surfaces[1]!, surfaces[2]!];
 
-      renderer.render(player, plannedSurfaces, surfaces, null);
+      renderer.render(player, plannedSurfaces, surfaces.map(s => createSingleSurfaceChain(s)), null);
 
       const stages = renderer.getVisibilityStages();
 
@@ -387,7 +388,7 @@ describe("Multi-Stage Rendering", () => {
       ];
       const plannedSurfaces = [surfaces[1]!, surfaces[2]!];
 
-      renderer.render(player, plannedSurfaces, surfaces, null);
+      renderer.render(player, plannedSurfaces, surfaces.map(s => createSingleSurfaceChain(s)), null);
 
       // Get all fillStyle calls with the overlay color
       const overlayFillCalls = graphics.fillStyleCalls.filter(c => c.color === 0x000000);
@@ -739,7 +740,7 @@ describe("Multi-Stage Rendering", () => {
       ];
       const plannedSurfaces = [surfaces[1]!]; // 1 planned surface = 2 stages
 
-      pixelRenderer.render(player, plannedSurfaces, surfaces, null);
+      pixelRenderer.render(player, plannedSurfaces, surfaces.map(s => createSingleSurfaceChain(s)), null);
 
       // Log the stages
       const stages = pixelRenderer.getVisibilityStages();
@@ -798,7 +799,7 @@ describe("Multi-Stage Rendering", () => {
       ];
       const plannedSurfaces = [surfaces[1]!];
 
-      pixelRenderer.render(player, plannedSurfaces, surfaces, null);
+      pixelRenderer.render(player, plannedSurfaces, surfaces.map(s => createSingleSurfaceChain(s)), null);
 
       // The "center" test point at (500, 400) should be inside both Stage 0 and Stage 1
       const centerAlpha = pixelGraphics.regionAlphas.get("center") ?? 0;

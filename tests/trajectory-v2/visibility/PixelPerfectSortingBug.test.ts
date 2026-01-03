@@ -5,29 +5,18 @@
  * the sorting becomes unstable - jumping from left side to right side incorrectly.
  */
 import { describe, it, expect } from "vitest";
-import { projectConeV2, type ConeSource } from "@/trajectory-v2/visibility/ConeProjectionV2";
-import { createSingleSurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
-import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import { RicochetSurface } from "@/surfaces/RicochetSurface";
+import { projectConeV2, createFullCone, toVector2Array } from "@/trajectory-v2/visibility/ConeProjectionV2";
+import { createSingleSurfaceChain, type SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 function createTestSurface(id: string, start: Vector2, end: Vector2): SurfaceChain {
-  return createSingleSurfaceChain(id, start, end, "ricochet");
-}
-
-function toVector2Array(points: { computeXY(): Vector2 }[]): Vector2[] {
-  return points.map((p) => p.computeXY());
-}
-
-function createFullCone(origin: Vector2): ConeSource {
-  return {
-    origin,
-    leftBoundary: { x: origin.x + 1, y: origin.y },
-    rightBoundary: { x: origin.x + 1, y: origin.y - 0.0001 },
-  };
+  const surface = new RicochetSurface(id, { start, end });
+  return createSingleSurfaceChain(surface);
 }
 
 describe("Pixel Perfect Sorting Bug - Pyramid Surfaces", () => {
-  const bounds = { width: 1280, height: 720 };
+  const bounds = { minX: 0, minY: 0, maxX: 1280, maxY: 720 };
   
   // Player position from the bug report
   const player = { x: 1090.8850699188959, y: 666 };
@@ -187,14 +176,14 @@ function isOnSurfaceLine(p1: Vector2, p2: Vector2, chains: SurfaceChain[]): bool
   return false;
 }
 
-function isOnScreenBoundary(p1: Vector2, p2: Vector2, bounds: { width: number; height: number }): boolean {
-  // Top edge (y = 0)
-  if (Math.abs(p1.y) < 1 && Math.abs(p2.y) < 1) return true;
-  // Bottom edge (y = height)
-  if (Math.abs(p1.y - bounds.height) < 1 && Math.abs(p2.y - bounds.height) < 1) return true;
-  // Left edge (x = 0)
-  if (Math.abs(p1.x) < 1 && Math.abs(p2.x) < 1) return true;
-  // Right edge (x = width)
-  if (Math.abs(p1.x - bounds.width) < 1 && Math.abs(p2.x - bounds.width) < 1) return true;
+function isOnScreenBoundary(p1: Vector2, p2: Vector2, bounds: { minX: number; minY: number; maxX: number; maxY: number }): boolean {
+  // Top edge (y = minY)
+  if (Math.abs(p1.y - bounds.minY) < 1 && Math.abs(p2.y - bounds.minY) < 1) return true;
+  // Bottom edge (y = maxY)
+  if (Math.abs(p1.y - bounds.maxY) < 1 && Math.abs(p2.y - bounds.maxY) < 1) return true;
+  // Left edge (x = minX)
+  if (Math.abs(p1.x - bounds.minX) < 1 && Math.abs(p2.x - bounds.minX) < 1) return true;
+  // Right edge (x = maxX)
+  if (Math.abs(p1.x - bounds.maxX) < 1 && Math.abs(p2.x - bounds.maxX) < 1) return true;
   return false;
 }

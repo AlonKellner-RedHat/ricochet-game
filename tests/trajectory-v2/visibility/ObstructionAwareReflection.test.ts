@@ -560,7 +560,7 @@ describe("Obstruction-Aware Reflection Windows", () => {
       const renderer = new ValidRegionRenderer(mockGraphics, screenBounds);
       
       // Render with umbrella AND planned surface
-      renderer.render(player, plannedSurfaces, allSurfaces, windowConfig);
+      renderer.render(player, plannedSurfaces, toChains(allSurfaces), windowConfig);
       
       // Get the visibility stages
       const stages = renderer.getVisibilityStages();
@@ -844,7 +844,7 @@ describe("Obstruction-Aware Reflection Windows", () => {
       };
 
       const renderer = new ValidRegionRenderer(mockGraphics, screenBounds);
-      renderer.render(player, plannedSurfaces, allSurfaces, null);
+      renderer.render(player, plannedSurfaces, toChains(allSurfaces), null);
 
       const stages = renderer.getVisibilityStages();
       console.log("=== Wrong-Side Reflection Test ===");
@@ -993,7 +993,7 @@ describe("Obstruction-Aware Reflection Windows", () => {
       };
 
       const renderer = new ValidRegionRenderer(mockGraphics, screenBounds);
-      renderer.render(player, plannedSurfaces, allSurfaces, null);
+      renderer.render(player, plannedSurfaces, toChains(allSurfaces), null);
 
       const stages = renderer.getVisibilityStages();
       console.log("=== Polygon Sorting Test ===");
