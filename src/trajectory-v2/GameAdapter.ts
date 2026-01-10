@@ -311,11 +311,31 @@ export class GameAdapter {
   /**
    * Get the 1-based index of a surface in the plan.
    * Returns 0 if not in plan.
+   * Note: With multi-bounce, returns the first occurrence's position.
    */
   getSurfacePlanIndex(surface: Surface): number {
     const surfaces = this.aimingSystem.getPlannedSurfaces();
-    const index = surfaces.indexOf(surface);
+    const index = surfaces.findIndex(s => s.id === surface.id);
     return index === -1 ? 0 : index + 1;
+  }
+
+  /**
+   * Get the number of times a surface appears in the plan.
+   * Returns 0 if not in plan.
+   */
+  getSurfaceOccurrenceCount(surface: Surface): number {
+    const surfaces = this.aimingSystem.getPlannedSurfaces();
+    return surfaces.filter(s => s.id === surface.id).length;
+  }
+
+  /**
+   * Check if a surface is the last one in the plan.
+   * Used for visual highlighting of the "removable" surface.
+   */
+  isLastPlannedSurface(surface: Surface): boolean {
+    const surfaces = this.aimingSystem.getPlannedSurfaces();
+    if (surfaces.length === 0) return false;
+    return surfaces[surfaces.length - 1]?.id === surface.id;
   }
 
   /**

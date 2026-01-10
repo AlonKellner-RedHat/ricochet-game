@@ -2,19 +2,22 @@
  * SurfaceState - Centralized surface information
  *
  * This module provides a unified view of all surface information:
- * - Plan order (null if not in plan)
- * - Bypass reason (null if active)
+ * - Occurrences in the plan (with positions and bypass status)
  * - Hit result (null if not hit yet)
  *
  * DESIGN PRINCIPLE: Eliminate state fragmentation.
  * Instead of tracking planned surfaces, bypassed surfaces, and hit surfaces
  * in separate arrays, we track ALL surface state in one immutable Map.
+ *
+ * MULTI-BOUNCE SUPPORT: A surface can appear multiple times in the plan
+ * (e.g., [A, B, A] for bouncing back and forth). Each occurrence is tracked
+ * independently with its own position and bypass status.
  */
 
 import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { BypassReason } from "./types";
-import { evaluateBypass, type BypassResult } from "./BypassEvaluator";
+import { evaluateBypass } from "./BypassEvaluator";
 
 /**
  * Result of a ray hitting a surface.
@@ -31,6 +34,17 @@ export interface SurfaceHitResult {
 }
 
 /**
+ * A single occurrence of a surface in the plan.
+ * Tracks position and bypass status independently.
+ */
+export interface SurfaceOccurrence {
+  /** Position in the plan (1-indexed) */
+  readonly position: number;
+  /** Reason this occurrence was bypassed, or null if active */
+  readonly bypassReason: BypassReason | null;
+}
+
+/**
  * Complete state of a surface in the trajectory calculation.
  *
  * All surface information lives here, not scattered across
@@ -41,14 +55,25 @@ export interface SurfaceState {
   readonly surface: Surface;
 
   /**
+   * All occurrences of this surface in the plan.
+   * Empty array = not in plan.
+   * Multiple entries = surface appears multiple times (multi-bounce).
+   */
+  readonly occurrences: readonly SurfaceOccurrence[];
+
+  /**
    * Position in the plan (1-indexed).
+   * For backwards compatibility, returns first occurrence's position.
    * null = not in plan.
+   * @deprecated Use occurrences array for full information
    */
   readonly planOrder: number | null;
 
   /**
    * Reason this surface was bypassed.
+   * For backwards compatibility, returns first occurrence's bypass reason.
    * null = not bypassed (active in plan or not in plan).
+   * @deprecated Use occurrences array for full information
    */
   readonly bypassReason: BypassReason | null;
 
@@ -88,7 +113,7 @@ export interface PreparedSurfaceStates {
  *
  * @param player Player position
  * @param cursor Cursor position
- * @param plannedSurfaces Ordered list of surfaces in the plan
+ * @param plannedSurfaces Ordered list of surfaces in the plan (may contain duplicates)
  * @param allSurfaces All surfaces in the scene
  * @returns Prepared surface states
  */
@@ -104,44 +129,52 @@ export function prepareSurfaceStates(
   for (const surface of allSurfaces) {
     states.set(surface.id, {
       surface,
+      occurrences: [],
       planOrder: null,
       bypassReason: null,
       hitResult: null,
     });
   }
 
-  // Mark planned surfaces with their order
+  // Build occurrences map: surface ID -> array of positions
+  const occurrencesMap = new Map<string, number[]>();
   for (let i = 0; i < plannedSurfaces.length; i++) {
     const surface = plannedSurfaces[i]!;
-    const existing = states.get(surface.id);
-    if (existing) {
-      states.set(surface.id, {
-        ...existing,
-        planOrder: i + 1, // 1-indexed
-      });
-    } else {
-      // Surface is planned but not in allSurfaces - add it
-      states.set(surface.id, {
-        surface,
-        planOrder: i + 1,
-        bypassReason: null,
-        hitResult: null,
-      });
-    }
+    const positions = occurrencesMap.get(surface.id) ?? [];
+    positions.push(i + 1); // 1-indexed
+    occurrencesMap.set(surface.id, positions);
   }
 
   // Evaluate bypass using the existing evaluator
+  // This already handles cascade-aware evaluation for duplicates
   const bypassResult = evaluateBypass(player, cursor, plannedSurfaces, allSurfaces);
 
-  // Mark bypassed surfaces
+  // Build bypass map by original index
+  const bypassByIndex = new Map<number, BypassReason>();
   for (const bypassed of bypassResult.bypassedSurfaces) {
-    const existing = states.get(bypassed.surface.id);
-    if (existing) {
-      states.set(bypassed.surface.id, {
-        ...existing,
-        bypassReason: bypassed.reason,
-      });
-    }
+    bypassByIndex.set(bypassed.originalIndex + 1, bypassed.reason); // 1-indexed
+  }
+
+  // Update states with occurrences
+  for (const [surfaceId, positions] of occurrencesMap) {
+    const existing = states.get(surfaceId);
+    const surface = existing?.surface ?? plannedSurfaces.find(s => s.id === surfaceId)!;
+    
+    const occurrences: SurfaceOccurrence[] = positions.map(position => ({
+      position,
+      bypassReason: bypassByIndex.get(position) ?? null,
+    }));
+
+    // For backwards compatibility, use first occurrence's values
+    const firstOccurrence = occurrences[0];
+    
+    states.set(surfaceId, {
+      surface,
+      occurrences,
+      planOrder: firstOccurrence?.position ?? null,
+      bypassReason: firstOccurrence?.bypassReason ?? null,
+      hitResult: existing?.hitResult ?? null,
+    });
   }
 
   // Build bypassed list
@@ -159,14 +192,16 @@ export function prepareSurfaceStates(
 
 /**
  * Get the active (non-bypassed) planned surfaces from state map.
- * Returns surfaces in plan order.
+ * Returns surfaces in plan order, including duplicates.
  */
 export function getActivePlannedSurfaces(states: SurfaceStateMap): Surface[] {
   const planned: { surface: Surface; order: number }[] = [];
 
   for (const state of states.values()) {
-    if (state.planOrder !== null && state.bypassReason === null) {
-      planned.push({ surface: state.surface, order: state.planOrder });
+    for (const occurrence of state.occurrences) {
+      if (occurrence.bypassReason === null) {
+        planned.push({ surface: state.surface, order: occurrence.position });
+      }
     }
   }
 
@@ -188,38 +223,41 @@ export function getPlannedSurfaceAtIndex(
   planIndex: number
 ): Surface | null {
   for (const state of states.values()) {
-    if (state.planOrder === planIndex && state.bypassReason === null) {
-      return state.surface;
+    for (const occurrence of state.occurrences) {
+      if (occurrence.position === planIndex && occurrence.bypassReason === null) {
+        return state.surface;
+      }
     }
   }
   return null;
 }
 
 /**
- * Check if a surface is in the plan and not bypassed.
+ * Check if a surface is in the plan and has at least one non-bypassed occurrence.
  */
 export function isActivePlannedSurface(
   states: SurfaceStateMap,
   surfaceId: string
 ): boolean {
   const state = states.get(surfaceId);
-  return state !== null && state !== undefined && 
-         state.planOrder !== null && 
-         state.bypassReason === null;
+  if (!state) return false;
+  
+  return state.occurrences.some(occ => occ.bypassReason === null);
 }
 
 /**
- * Get the plan order of a surface, or null if not planned/bypassed.
+ * Get the plan order of a surface, or null if not planned/all bypassed.
+ * Returns the first active occurrence's position.
  */
 export function getPlanOrder(
   states: SurfaceStateMap,
   surfaceId: string
 ): number | null {
   const state = states.get(surfaceId);
-  if (!state || state.bypassReason !== null) {
-    return null;
-  }
-  return state.planOrder;
+  if (!state) return null;
+  
+  const activeOccurrence = state.occurrences.find(occ => occ.bypassReason === null);
+  return activeOccurrence?.position ?? null;
 }
 
 /**
@@ -244,4 +282,3 @@ export function withHitResult(
 
   return newStates;
 }
-

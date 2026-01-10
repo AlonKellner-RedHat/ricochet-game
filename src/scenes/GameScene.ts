@@ -662,6 +662,10 @@ export class GameScene extends Phaser.Scene {
       const isPlanned = planIndex > 0;
       const isBypassed = isPlanned && bypassedIds.has(surface.id);
       const isHovered = this.hoveredSurface?.id === surface.id && surface.isPlannable();
+      
+      // Multi-bounce indicators
+      const occurrenceCount = this.trajectoryAdapter.getSurfaceOccurrenceCount(surface);
+      const isLastPlanned = this.trajectoryAdapter.isLastPlannedSurface(surface);
 
       // Determine visual properties based on state
       let color = props.color;
@@ -674,6 +678,11 @@ export class GameScene extends Phaser.Scene {
           color = 0xff6600; // Orange for bypassed
           lineWidth = props.lineWidth + 1;
           alpha = 0.6;
+        } else if (isLastPlanned) {
+          // Last planned surface: cyan (indicates "click to remove")
+          color = 0x00ffff;
+          lineWidth = props.lineWidth + 2;
+          alpha = 1;
         } else {
           // Active planned surface: yellow
           color = 0xffff00;
@@ -703,7 +712,7 @@ export class GameScene extends Phaser.Scene {
 
       // Add glow effect for ricochet surfaces or hovered surfaces (not for bypassed)
       if ((props.glow || isPlanned || isHovered) && !isBypassed) {
-        const glowColor = isPlanned ? 0xffff00 : isHovered ? 0xffffff : props.color;
+        const glowColor = isLastPlanned ? 0x00ffff : isPlanned ? 0xffff00 : isHovered ? 0xffffff : props.color;
         const glowAlpha = isPlanned ? 0.4 : isHovered ? 0.5 : 0.2;
         const glowWidth = isHovered ? lineWidth + 8 : lineWidth + 4;
 
@@ -731,6 +740,60 @@ export class GameScene extends Phaser.Scene {
       if (surface.isPlannable()) {
         this.drawDirectionIndicator(surface, isPlanned && !isBypassed, isHovered);
       }
+
+      // Draw occurrence count badge for multi-bounce surfaces
+      if (occurrenceCount > 1) {
+        this.drawOccurrenceBadge(surface, occurrenceCount);
+      }
+    }
+  }
+
+  /**
+   * Draw a badge showing the number of times a surface appears in the plan.
+   */
+  private drawOccurrenceBadge(surface: Surface, count: number): void {
+    const midX = (surface.segment.start.x + surface.segment.end.x) / 2;
+    const midY = (surface.segment.start.y + surface.segment.end.y) / 2;
+    
+    // Get surface normal to offset badge
+    const normal = surface.getNormal();
+    const offsetX = normal.x * 15;
+    const offsetY = normal.y * 15;
+    
+    const badgeX = midX + offsetX;
+    const badgeY = midY + offsetY;
+    const radius = 10;
+
+    // Draw circle background
+    this.surfaceGraphics.fillStyle(0x333333, 0.9);
+    this.surfaceGraphics.fillCircle(badgeX, badgeY, radius);
+    
+    // Draw border
+    this.surfaceGraphics.lineStyle(2, 0xffff00, 1);
+    this.surfaceGraphics.strokeCircle(badgeX, badgeY, radius);
+
+    // For count display, we'll use simple shapes since Graphics doesn't have text
+    // Draw dots or ticks based on count (max 5 displayed)
+    const displayCount = Math.min(count, 5);
+    
+    if (displayCount <= 4) {
+      // Draw small dots
+      const dotRadius = 2;
+      const spacing = 5;
+      const startX = badgeX - (displayCount - 1) * spacing / 2;
+      
+      this.surfaceGraphics.fillStyle(0xffffff, 1);
+      for (let i = 0; i < displayCount; i++) {
+        this.surfaceGraphics.fillCircle(startX + i * spacing, badgeY, dotRadius);
+      }
+    } else {
+      // For 5+, draw a cross pattern
+      this.surfaceGraphics.fillStyle(0xffffff, 1);
+      this.surfaceGraphics.fillCircle(badgeX, badgeY, 2);
+      this.surfaceGraphics.fillCircle(badgeX - 4, badgeY, 2);
+      this.surfaceGraphics.fillCircle(badgeX + 4, badgeY, 2);
+      this.surfaceGraphics.fillCircle(badgeX, badgeY - 4, 2);
+      this.surfaceGraphics.fillCircle(badgeX, badgeY + 4, 2);
     }
   }
 

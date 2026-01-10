@@ -93,33 +93,56 @@ export class AimingSystem
 
   /**
    * Add a surface to the plan.
+   * Allows duplicates as long as they're not consecutive (multi-bounce support).
    */
   addSurface(surface: Surface): void {
-    if (!this.plannedSurfaces.includes(surface)) {
+    const lastSurface = this.plannedSurfaces[this.plannedSurfaces.length - 1];
+    // Only add if not consecutive (would be same surface twice in a row)
+    if (lastSurface?.id !== surface.id) {
       this.plannedSurfaces.push(surface);
       this.emitPlanChanged();
     }
   }
 
   /**
-   * Remove a surface from the plan.
+   * Remove the last occurrence of a surface from the plan.
    */
   removeSurface(surface: Surface): void {
-    const index = this.plannedSurfaces.indexOf(surface);
-    if (index !== -1) {
-      this.plannedSurfaces.splice(index, 1);
+    // Find last occurrence (for multi-bounce support)
+    let lastIndex = -1;
+    for (let i = this.plannedSurfaces.length - 1; i >= 0; i--) {
+      if (this.plannedSurfaces[i]?.id === surface.id) {
+        lastIndex = i;
+        break;
+      }
+    }
+    if (lastIndex !== -1) {
+      this.plannedSurfaces.splice(lastIndex, 1);
       this.emitPlanChanged();
     }
   }
 
   /**
    * Toggle a surface in the plan.
+   * 
+   * Multi-bounce behavior:
+   * - If surface is the LAST in the plan: remove it
+   * - Otherwise: add it (creates duplicate for bounce-back)
+   * 
+   * This naturally prevents consecutive duplicates since clicking the last
+   * surface removes it instead of adding.
    */
   toggleSurface(surface: Surface): void {
-    if (this.plannedSurfaces.includes(surface)) {
-      this.removeSurface(surface);
+    const lastSurface = this.plannedSurfaces[this.plannedSurfaces.length - 1];
+    
+    if (lastSurface?.id === surface.id) {
+      // Clicking last planned surface: remove it
+      this.plannedSurfaces.pop();
+      this.emitPlanChanged();
     } else {
-      this.addSurface(surface);
+      // Clicking any other surface: add it (can't be consecutive)
+      this.plannedSurfaces.push(surface);
+      this.emitPlanChanged();
     }
   }
 
