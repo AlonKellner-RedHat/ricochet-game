@@ -1,0 +1,49 @@
+---
+alwaysApply: true
+---
+
+# Ricochet Game Rules
+
+## Core Principle: Floating-Point Stability
+
+All calculations must be **exact and stable**. Never introduce floating-point instability.
+
+### Forbidden Patterns
+
+- **No epsilons**: Never use tolerance-based comparisons (`Math.abs(x) < 1e-6`)
+- **No collinearity checks**: Never check if points are collinear geometrically
+- **No atan2/angles**: Use cross-product sign comparisons with reference direction instead
+- **No re-calculation**: If a property was computed, store and retrieve via provenance
+
+### Required Patterns
+
+- **Use provenance**: `SourcePoint` types (`HitPoint`, `Endpoint`, `JunctionPoint`, `OriginPoint`) carry their origin info - use it instead of geometric inference
+- **CCW comparisons**: For sorting/ordering, use cross-product signs with a reference direction to break 180° symmetry
+- **Store decisions**: When computing blocking status, store it and reuse - don't recalculate
+
+## Key Abstractions
+
+- **SourcePoint**: Abstract base for polygon vertices with type-specific behavior
+- **SurfaceChain**: Connected surfaces sharing junctions (room boundaries are one closed chain)
+- **WindowContext**: Passed to `isBlocking()` for context-aware junction decisions
+
+## Design Principles
+
+- **TDD**: Write failing test first, then implement
+- **OCP**: Extend through abstraction, don't modify existing code
+- **KISS**: Simplest solution that works, no over-engineering
+- **Occam's Razor**: Simpler solutions are more likely correct - prefer them
+- **First principle reasoning**: Derive solutions from fundamental truths, not pattern matching
+- **Provenance over geometry**: Trust the source type, not recalculated positions
+
+## Invariant Testing
+
+Invariants are properties that must **always** hold (e.g., edges follow rays/surfaces, no self-intersection). Run across many positions to catch edge cases: `npx vitest run tests/invariants/`
+
+## Visual States
+
+| State | Color |
+|-------|-------|
+| Planned | Yellow `0xffff00` |
+| Last planned | Green `0x00ff00` |
+| Bypassed | Orange `0xff6600` |

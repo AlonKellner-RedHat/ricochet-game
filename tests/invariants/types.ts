@@ -10,6 +10,7 @@
  */
 
 import type { Surface } from "@/surfaces/Surface";
+import type { SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
@@ -75,6 +76,14 @@ export interface VisibilityStage {
 
   /** The window segment for windowed cones */
   readonly startLine?: { start: Vector2; end: Vector2 };
+
+  /**
+   * Source points with provenance for robust invariant checks.
+   * Each source point corresponds to a polygon vertex and contains
+   * type information (HitPoint, Endpoint, JunctionPoint, OriginPoint)
+   * that enables provenance-based validation without epsilon tolerances.
+   */
+  readonly sourcePoints?: readonly SourcePoint[];
 }
 
 /**

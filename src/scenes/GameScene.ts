@@ -679,8 +679,8 @@ export class GameScene extends Phaser.Scene {
           lineWidth = props.lineWidth + 1;
           alpha = 0.6;
         } else if (isLastPlanned) {
-          // Last planned surface: cyan (indicates "click to remove")
-          color = 0x00ffff;
+          // Last planned surface: green (indicates "click to remove")
+          color = 0x00ff00;
           lineWidth = props.lineWidth + 2;
           alpha = 1;
         } else {
@@ -712,7 +712,7 @@ export class GameScene extends Phaser.Scene {
 
       // Add glow effect for ricochet surfaces or hovered surfaces (not for bypassed)
       if ((props.glow || isPlanned || isHovered) && !isBypassed) {
-        const glowColor = isLastPlanned ? 0x00ffff : isPlanned ? 0xffff00 : isHovered ? 0xffffff : props.color;
+        const glowColor = isLastPlanned ? 0x00ff00 : isPlanned ? 0xffff00 : isHovered ? 0xffffff : props.color;
         const glowAlpha = isPlanned ? 0.4 : isHovered ? 0.5 : 0.2;
         const glowWidth = isHovered ? lineWidth + 8 : lineWidth + 4;
 

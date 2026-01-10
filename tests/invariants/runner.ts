@@ -254,6 +254,8 @@ function computeVisibilityStageWithSources(
       isWindowed: !!(windowStart && windowEnd),
       excludeSurfaceId,
       startLine: windowStart && windowEnd ? { start: windowStart, end: windowEnd } : undefined,
+      // Include source points for provenance-based invariant checks
+      sourcePoints,
     },
     sourcePoints,
   };
@@ -355,6 +357,8 @@ function computeVisibilityStages(
         visibleSegments.length > 0
           ? { start: visibleSegments[0]!.start, end: visibleSegments[0]!.end }
           : undefined,
+      // Include source points for provenance-based invariant checks
+      sourcePoints: stageSourcePoints,
     });
 
     currentSourcePoints = stageSourcePoints;

@@ -279,8 +279,8 @@ export function checkCollisions(
   const halfWidth = width / 2;
   const halfHeight = height / 2;
 
-  // Only check against non-plannable surfaces (walls)
-  const collisionSurfaces = surfaces.filter((s) => !s.isPlannable());
+  // Check against all surfaces (both walls and reflective surfaces block player)
+  const collisionSurfaces = surfaces;
 
   // Ground check - cast rays both downward and upward
   checkGroundDown(position, halfWidth, halfHeight, collisionSurfaces, result);
