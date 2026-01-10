@@ -16,11 +16,11 @@
 import { RicochetSurface } from "@/surfaces/RicochetSurface";
 import type { Surface } from "@/surfaces/Surface";
 import { WallSurface } from "@/surfaces/WallSurface";
-import { Endpoint, type OrientationInfo, SourcePoint } from "./SourcePoint";
+import { Endpoint, type OrientationInfo, SourcePoint, type WindowContext } from "./SourcePoint";
 import type { Vector2 } from "./types";
 
-// Re-export OrientationInfo for backwards compatibility
-export type { OrientationInfo } from "./SourcePoint";
+// Re-export types for backwards compatibility
+export type { OrientationInfo, WindowContext } from "./SourcePoint";
 
 // =============================================================================
 // TYPES
@@ -184,11 +184,102 @@ export class JunctionPoint extends SourcePoint {
    * OCP: JunctionPoint implements its own blocking behavior based on
    * the surface orientations at the junction.
    *
+   * When windowContext is provided and this junction is connected to the
+   * window surface, uses the geometric "between" test for provenance-based
+   * blocking determination.
+   *
    * @param orientations Pre-computed surface orientations
+   * @param windowContext Optional context for window junctions
    * @returns true if light is blocked, false if light can pass through
    */
-  isBlocking(orientations: Map<string, OrientationInfo>): boolean {
+  isBlocking(
+    orientations: Map<string, OrientationInfo>,
+    windowContext?: WindowContext
+  ): boolean {
+    const beforeSurface = this.getSurfaceBefore();
+    const afterSurface = this.getSurfaceAfter();
+
+    // Check if this junction is connected to the window surface
+    if (windowContext) {
+      const isConnectedToWindow =
+        beforeSurface.id === windowContext.windowSurfaceId ||
+        afterSurface.id === windowContext.windowSurfaceId;
+
+      if (isConnectedToWindow) {
+        // Use geometric "between" test for window junctions
+        return this.isBlockingForWindow(windowContext, beforeSurface, afterSurface);
+      }
+    }
+
+    // Default: use surface orientation logic
     return !this.canLightPassWithOrientations(orientations);
+  }
+
+  /**
+   * Determine blocking for a window junction using the geometric "between" test.
+   *
+   * The adjacent surface blocks light if its direction is "between" the ray
+   * direction and the window direction (using CCW comparison with reference direction).
+   *
+   * No angles, epsilons, or collinearity checks - uses only cross products.
+   */
+  private isBlockingForWindow(
+    ctx: WindowContext,
+    beforeSurface: Surface,
+    afterSurface: Surface
+  ): boolean {
+    const junction = this.computeXY();
+
+    // Determine which surface is the window and which is adjacent
+    const isBeforeWindow = beforeSurface.id === ctx.windowSurfaceId;
+    const windowSurface = isBeforeWindow ? beforeSurface : afterSurface;
+    const adjacentSurface = isBeforeWindow ? afterSurface : beforeSurface;
+
+    // Compute ray direction (from origin to junction)
+    const rayDir = { x: junction.x - ctx.origin.x, y: junction.y - ctx.origin.y };
+
+    // Compute window direction (from junction toward other end of window)
+    // If window is "before", it ends at junction, so other end is start
+    // If window is "after", it starts at junction, so other end is end
+    const windowOther = isBeforeWindow
+      ? windowSurface.segment.start
+      : windowSurface.segment.end;
+    const windowDir = { x: windowOther.x - junction.x, y: windowOther.y - junction.y };
+
+    // Compute adjacent direction (from junction toward other end of adjacent)
+    const adjStart = adjacentSurface.segment.start;
+    const adjEnd = adjacentSurface.segment.end;
+    const adjOther =
+      adjStart.x === junction.x && adjStart.y === junction.y ? adjEnd : adjStart;
+    const adjacentDir = { x: adjOther.x - junction.x, y: adjOther.y - junction.y };
+
+    // Use CCW comparison to determine if adjacent is "between" ray and window
+    const cmpRayAdj = this.compareDirectionsCCW(rayDir, adjacentDir, ctx.refDirection);
+    const cmpWindowAdj = this.compareDirectionsCCW(windowDir, adjacentDir, ctx.refDirection);
+
+    // Adjacent blocks if it's on different sides of ray vs window
+    // (i.e., it's "between" them in angular sense)
+    return (cmpRayAdj < 0) !== (cmpWindowAdj < 0);
+  }
+
+  /**
+   * Compare two directions using CCW ordering with a reference direction.
+   *
+   * Uses cross products only - no angles, epsilons, or trigonometry.
+   *
+   * @returns -1 if a comes before b in CCW order, 1 otherwise
+   */
+  private compareDirectionsCCW(a: Vector2, b: Vector2, ref: Vector2): number {
+    const aRef = ref.x * a.y - ref.y * a.x;
+    const bRef = ref.x * b.y - ref.y * b.x;
+
+    const oppositeSides = (aRef > 0 && bRef < 0) || (aRef < 0 && bRef > 0);
+    if (oppositeSides) {
+      return aRef > 0 ? -1 : 1;
+    }
+
+    const crossAB = a.x * b.y - a.y * b.x;
+    return crossAB > 0 ? -1 : 1;
   }
 }
 

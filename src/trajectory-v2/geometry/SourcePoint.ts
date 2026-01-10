@@ -31,6 +31,23 @@ export interface OrientationInfo {
 }
 
 /**
+ * Context for determining blocking at window junctions.
+ * When provided, junctions connected to the window surface use
+ * the geometric "between" test instead of surface orientations.
+ *
+ * This enables encapsulated, provenance-based blocking decisions
+ * within JunctionPoint without the caller needing special-case logic.
+ */
+export interface WindowContext {
+  /** The origin point for ray casting (reflected origin for windowed cones) */
+  readonly origin: Vector2;
+  /** The ID of the window/excluded surface */
+  readonly windowSurfaceId: string;
+  /** Reference direction for CCW comparisons (opposite to window midpoint) */
+  readonly refDirection: Vector2;
+}
+
+/**
  * Abstract base class for all source-of-truth points.
  *
  * Each point type implements its own behavior - adding new types
@@ -72,9 +89,13 @@ export abstract class SourcePoint {
    * OCP: Each point type implements its own blocking behavior.
    *
    * @param _orientations Pre-computed surface orientations (used by JunctionPoint)
+   * @param _windowContext Optional context for window junctions (used by JunctionPoint)
    * @returns true if light is blocked, false if light can pass through
    */
-  abstract isBlocking(_orientations: Map<string, OrientationInfo>): boolean;
+  abstract isBlocking(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): boolean;
 }
 
 // =============================================================================
@@ -118,7 +139,10 @@ export class OriginPoint extends SourcePoint {
    * OriginPoints never block - they represent window endpoints
    * through which light passes by definition.
    */
-  isBlocking(_orientations: Map<string, OrientationInfo>): boolean {
+  isBlocking(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): boolean {
     return false;
   }
 }
@@ -170,7 +194,10 @@ export class Endpoint extends SourcePoint {
    * The endpoint creates a shadow boundary, but light continues past it
    * via the continuation ray.
    */
-  isBlocking(_orientations: Map<string, OrientationInfo>): boolean {
+  isBlocking(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): boolean {
     return false;
   }
 }
@@ -237,7 +264,10 @@ export class HitPoint extends SourcePoint {
    * HitPoints always block - a ray hitting a surface in the middle
    * always blocks further light propagation along that ray.
    */
-  isBlocking(_orientations: Map<string, OrientationInfo>): boolean {
+  isBlocking(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): boolean {
     return true;
   }
 }

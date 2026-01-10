@@ -55,6 +55,25 @@ export interface Segment {
 }
 
 /**
+ * A segment that preserves SourcePoint provenance.
+ *
+ * When extracting visible segments from a polygon, we want to preserve
+ * the original SourcePoint (JunctionPoint, Endpoint, HitPoint) so that
+ * provenance flows through the reflection cascade.
+ *
+ * This enables `extractVisibleSurfaceSegments` to correctly identify
+ * JunctionPoints as being on both adjacent surfaces.
+ */
+export interface SourceSegment {
+  readonly start: Vector2;
+  readonly end: Vector2;
+  /** Original SourcePoint for start, if available */
+  readonly startSource?: SourcePoint;
+  /** Original SourcePoint for end, if available */
+  readonly endSource?: SourcePoint;
+}
+
+/**
  * Configuration for a cone of light.
  */
 export interface ConeSource {
@@ -66,6 +85,10 @@ export interface ConeSource {
   readonly rightBoundary: Vector2;
   /** If set, rays start from this line segment, not from origin */
   readonly startLine: Segment | null;
+  /** Original SourcePoint for left boundary, preserves JunctionPoint provenance */
+  readonly leftBoundarySource?: SourcePoint;
+  /** Original SourcePoint for right boundary, preserves JunctionPoint provenance */
+  readonly rightBoundarySource?: SourcePoint;
 }
 
 /**
@@ -248,29 +271,43 @@ export function isFullCone(cone: ConeSource): boolean {
 
 /**
  * Create a cone that projects through a window (line segment).
+ *
+ * @param origin Where rays converge toward
+ * @param windowStart First endpoint of the window
+ * @param windowEnd Second endpoint of the window
+ * @param windowStartSource Optional SourcePoint for windowStart (preserves JunctionPoint provenance)
+ * @param windowEndSource Optional SourcePoint for windowEnd (preserves JunctionPoint provenance)
  */
 export function createConeThroughWindow(
   origin: Vector2,
   windowStart: Vector2,
-  windowEnd: Vector2
+  windowEnd: Vector2,
+  windowStartSource?: SourcePoint,
+  windowEndSource?: SourcePoint
 ): ConeSource {
   const cross = crossProduct(origin, windowStart, windowEnd);
   const startLine: Segment = { start: windowStart, end: windowEnd };
 
   if (cross >= 0) {
+    // leftBoundary = windowEnd, rightBoundary = windowStart
     return {
       origin,
       leftBoundary: windowEnd,
       rightBoundary: windowStart,
       startLine,
+      leftBoundarySource: windowEndSource,
+      rightBoundarySource: windowStartSource,
     };
   }
 
+  // leftBoundary = windowStart, rightBoundary = windowEnd
   return {
     origin,
     leftBoundary: windowStart,
     rightBoundary: windowEnd,
     startLine,
+    leftBoundarySource: windowStartSource,
+    rightBoundarySource: windowEndSource,
   };
 }
 
@@ -646,10 +683,93 @@ export function projectConeV2(
   const screenBoundaries = createScreenBoundaries(bounds);
   const screenChain = createScreenBoundaryChain(bounds);
 
-  // Filter out excluded surface
-  const effectiveObstacles = excludeSurfaceId
-    ? obstacles.filter((o) => o.id !== excludeSurfaceId)
-    : obstacles;
+  // Compute reference direction (same as used for sorting)
+  // For windowed cones: points opposite to window midpoint
+  // This ensures consistent CCW ordering without 180° ambiguity
+  let refDirection: Vector2;
+  if (startLine !== null) {
+    const windowMidX = (startLine.start.x + startLine.end.x) / 2;
+    const windowMidY = (startLine.start.y + startLine.end.y) / 2;
+    refDirection = { x: origin.x - windowMidX, y: origin.y - windowMidY };
+  } else {
+    refDirection = { x: 1, y: 0 };
+  }
+
+  // Build WindowContext for JunctionPoint.isBlocking()
+  // This enables encapsulated, provenance-based blocking decisions within junctions
+  const windowContext = excludeSurfaceId
+    ? { origin, windowSurfaceId: excludeSurfaceId, refDirection }
+    : undefined;
+
+  // Build set of surface IDs to exclude
+  // Always exclude the planned surface (window)
+  // Selectively exclude adjacent surfaces based on geometric test
+  const excludedIds = new Set<string>();
+
+  // Track which surfaces at each window endpoint are non-blocking (for cone boundary rays)
+  // These are reused later via provenance to avoid recalculating
+  const nonBlockingAtLeftBoundary = new Set<string>();
+  const nonBlockingAtRightBoundary = new Set<string>();
+
+  if (excludeSurfaceId) {
+    excludedIds.add(excludeSurfaceId);
+
+    // Find adjacent surfaces and test if they should block light
+    for (const chain of chains) {
+      const surfaces = chain.getSurfaces();
+      for (let i = 0; i < surfaces.length; i++) {
+        if (surfaces[i]!.id === excludeSurfaceId) {
+          const windowSurface = surfaces[i]!;
+
+          // Check adjacent surface BEFORE (at window start = left boundary)
+          const prevIndex = i > 0 ? i - 1 : chain.isClosed ? surfaces.length - 1 : -1;
+          if (prevIndex >= 0) {
+            const adjSurface = surfaces[prevIndex]!;
+            const junction = windowSurface.segment.start;
+
+            // Compute directions from junction
+            const rayDir = { x: junction.x - origin.x, y: junction.y - origin.y };
+            const windowOther = windowSurface.segment.end;
+            const windowDir = { x: windowOther.x - junction.x, y: windowOther.y - junction.y };
+            const adjOther =
+              adjSurface.segment.start.x === junction.x && adjSurface.segment.start.y === junction.y
+                ? adjSurface.segment.end
+                : adjSurface.segment.start;
+            const adjacentDir = { x: adjOther.x - junction.x, y: adjOther.y - junction.y };
+
+            if (!shouldAdjacentBlockLight(rayDir, windowDir, adjacentDir, refDirection)) {
+              excludedIds.add(adjSurface.id);
+              nonBlockingAtLeftBoundary.add(adjSurface.id);
+            }
+          }
+
+          // Check adjacent surface AFTER (at window end = right boundary)
+          const nextIndex = i < surfaces.length - 1 ? i + 1 : chain.isClosed ? 0 : -1;
+          if (nextIndex >= 0 && nextIndex !== prevIndex) {
+            const adjSurface = surfaces[nextIndex]!;
+            const junction = windowSurface.segment.end;
+
+            // Compute directions from junction
+            const rayDir = { x: junction.x - origin.x, y: junction.y - origin.y };
+            const windowOther = windowSurface.segment.start;
+            const windowDir = { x: windowOther.x - junction.x, y: windowOther.y - junction.y };
+            const adjOther =
+              adjSurface.segment.start.x === junction.x && adjSurface.segment.start.y === junction.y
+                ? adjSurface.segment.end
+                : adjSurface.segment.start;
+            const adjacentDir = { x: adjOther.x - junction.x, y: adjOther.y - junction.y };
+
+            if (!shouldAdjacentBlockLight(rayDir, windowDir, adjacentDir, refDirection)) {
+              excludedIds.add(adjSurface.id);
+              nonBlockingAtRightBoundary.add(adjSurface.id);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const effectiveObstacles = obstacles.filter((o) => !excludedIds.has(o.id));
 
   // Collect all ray targets (Endpoints and JunctionPoints)
   type RayTarget = Endpoint | JunctionPoint;
@@ -708,9 +828,10 @@ export function projectConeV2(
   }
 
   // For windowed cones, add window endpoints to polygon
-  // Track which OriginPoint corresponds to left vs right boundary for PreComputedPairs
-  let leftWindowOrigin: OriginPoint | null = null;
-  let rightWindowOrigin: OriginPoint | null = null;
+  // Track which SourcePoint corresponds to left vs right boundary for PreComputedPairs
+  // Preserves JunctionPoint/Endpoint provenance if provided via ConeSource
+  let leftWindowOrigin: SourcePoint | null = null;
+  let rightWindowOrigin: SourcePoint | null = null;
 
   if (isWindowed && startLine) {
     // Determine which window point is left vs right boundary
@@ -721,12 +842,13 @@ export function projectConeV2(
 
     if (boundaryCross >= 0) {
       // leftBoundary = end, rightBoundary = start
-      leftWindowOrigin = new OriginPoint(startLine.end);
-      rightWindowOrigin = new OriginPoint(startLine.start);
+      // Use provided SourcePoints if available, otherwise create OriginPoints
+      leftWindowOrigin = source.leftBoundarySource ?? new OriginPoint(startLine.end);
+      rightWindowOrigin = source.rightBoundarySource ?? new OriginPoint(startLine.start);
     } else {
       // leftBoundary = start, rightBoundary = end
-      leftWindowOrigin = new OriginPoint(startLine.start);
-      rightWindowOrigin = new OriginPoint(startLine.end);
+      leftWindowOrigin = source.leftBoundarySource ?? new OriginPoint(startLine.start);
+      rightWindowOrigin = source.rightBoundarySource ?? new OriginPoint(startLine.end);
     }
 
     vertices.push(leftWindowOrigin);
@@ -793,15 +915,19 @@ export function projectConeV2(
 
     // Handle JunctionPoints - junction can block its own ray
     if (isJunctionPoint(target)) {
-      // Check if junction blocks its own ray using isBlocking (OCP pattern)
-      // isBlocking() returns true when no continuation ray should be cast
-      const shouldCastContinuation = !target.isBlocking(surfaceOrientations);
-
       // Get the junction's surfaces for provenance-based checks
       const beforeSurface = target.getSurfaceBefore();
       const afterSurface = target.getSurfaceAfter();
       const beforeSurfaceId = beforeSurface?.id;
       const afterSurfaceId = afterSurface?.id;
+
+      // Determine if continuation ray should be cast.
+      // JunctionPoint.isBlocking() now encapsulates window-aware logic via WindowContext:
+      // - For non-window junctions: uses surface orientation logic
+      // - For window junctions: uses geometric "between" test
+      // This eliminates the need for special-case reversal in the caller.
+      const isBlocking = target.isBlocking(surfaceOrientations, windowContext);
+      const shouldCastContinuation = !isBlocking;
 
       // Filter out the junction's own surfaces from obstacles
       // This ensures we only detect BLOCKING by OTHER surfaces
@@ -920,10 +1046,7 @@ export function projectConeV2(
           // This is a Type 2 pair: endpoint + continuation
           const orientation = surfaceOrientations.get(targetEndpoint.surface.id);
           if (orientation) {
-            const shadowOrder = getShadowBoundaryOrderFromOrientation(
-              targetEndpoint,
-              orientation
-            );
+            const shadowOrder = getShadowBoundaryOrderFromOrientation(targetEndpoint, orientation);
             // shadowOrder > 0: continuation before endpoint → 1
             // shadowOrder < 0: endpoint before continuation → -1
             const order = shadowOrder > 0 ? 1 : -1;
@@ -940,65 +1063,83 @@ export function projectConeV2(
   // IMPORTANT: We need to exclude surfaces that start/end at the window endpoints
   // to prevent HitPoints at junction positions (e.g., s≈0 on a surface starting
   // at the junction). The window endpoints are already represented by OriginPoints.
+  //
+  // ALSO IMPORTANT: If a boundary targets a blocking junction, skip that boundary ray.
+  // The ray only touches the adjacent surface at s=1.0, which is skipped by castRayToTarget.
+  // This would cause the ray to pass through and hit surfaces beyond (e.g., ceiling).
   let leftHit: SourcePoint | null = null;
   let rightHit: SourcePoint | null = null;
 
-  if (!isFullCone(source)) {
-    // Build set of surfaces to exclude (those starting/ending at window endpoints)
-    const windowEndpointSurfaces = new Set<string>();
+  // Helper to check if a boundary target is a blocking junction
+  const isBoundaryTargetBlockingJunction = (boundaryTarget: Vector2): boolean => {
+    if (!windowContext) return false;
+
+    // Find if this boundary target is a junction
     for (const chain of chains) {
-      for (const surface of chain.getSurfaces()) {
-        const startKey = `${surface.segment.start.x},${surface.segment.start.y}`;
-        const endKey = `${surface.segment.end.x},${surface.segment.end.y}`;
-        const leftKey = `${source.leftBoundary.x},${source.leftBoundary.y}`;
-        const rightKey = `${source.rightBoundary.x},${source.rightBoundary.y}`;
-        if (
-          startKey === leftKey ||
-          endKey === leftKey ||
-          startKey === rightKey ||
-          endKey === rightKey
-        ) {
-          windowEndpointSurfaces.add(surface.id);
+      for (const jp of chain.getJunctionPoints()) {
+        const jpXY = jp.computeXY();
+        if (jpXY.x === boundaryTarget.x && jpXY.y === boundaryTarget.y) {
+          // Check if this junction is blocking
+          return jp.isBlocking(surfaceOrientations, windowContext);
         }
       }
     }
+    return false;
+  };
 
-    // Filter out surfaces at window endpoints
-    const obstaclesExcludingWindowEndpoints = effectiveObstacles.filter(
-      (o) => !windowEndpointSurfaces.has(o.id)
+  if (!isFullCone(source)) {
+    // Use stored blocking status (provenance) - only exclude surfaces that are non-blocking at THIS boundary
+    // This ensures each boundary ray only ignores surfaces that light can pass through at its junction
+    const leftRayObstacles = effectiveObstacles.filter((o) => !nonBlockingAtLeftBoundary.has(o.id));
+    const rightRayObstacles = effectiveObstacles.filter(
+      (o) => !nonBlockingAtRightBoundary.has(o.id)
     );
 
-    leftHit = castRayToTarget(
-      origin,
-      source.leftBoundary,
-      obstaclesExcludingWindowEndpoints,
-      screenBoundaries,
-      startLine
-    );
-    if (leftHit) {
-      vertices.push(leftHit);
+    // Skip left boundary ray if it targets a blocking junction
+    // The ray would only touch the adjacent surface at s=1.0, which gets skipped
+    const leftTargetsBlockingJunction = isBoundaryTargetBlockingJunction(source.leftBoundary);
+    if (!leftTargetsBlockingJunction) {
+      leftHit = castRayToTarget(
+        origin,
+        source.leftBoundary,
+        leftRayObstacles,
+        screenBoundaries,
+        startLine
+      );
+      if (leftHit) {
+        vertices.push(leftHit);
+      }
     }
 
-    rightHit = castRayToTarget(
-      origin,
-      source.rightBoundary,
-      obstaclesExcludingWindowEndpoints,
-      screenBoundaries,
-      startLine
-    );
-    if (rightHit) {
-      vertices.push(rightHit);
+    // Skip right boundary ray if it targets a blocking junction
+    const rightTargetsBlockingJunction = isBoundaryTargetBlockingJunction(source.rightBoundary);
+    if (!rightTargetsBlockingJunction) {
+      rightHit = castRayToTarget(
+        origin,
+        source.rightBoundary,
+        rightRayObstacles,
+        screenBoundaries,
+        startLine
+      );
+      if (rightHit) {
+        vertices.push(rightHit);
+      }
     }
 
     // Pre-compute ALL pairwise orderings for cone boundary points (provenance-based)
-    // CCW order: rightWindowOrigin → rightHit → leftHit → leftWindowOrigin
-    // This avoids floating-point errors in cross product calculations
+    // CCW order for polygon shape: rightWindowOrigin → rightHit → ... → leftHit → leftWindowOrigin
+    //
+    // Key insight: The polygon closes from leftWindowOrigin back to rightWindowOrigin.
+    // So leftHit must come BEFORE leftWindowOrigin to avoid self-intersection.
+    // The edge from leftHit → leftWindowOrigin follows the boundary ray back to the window.
+    //
+    // This avoids floating-point errors in cross product calculations for near-collinear points.
     if (leftWindowOrigin && rightWindowOrigin) {
       // Right boundary: rightWindowOrigin before rightHit
       if (rightHit) {
         preComputedPairs.set(rightWindowOrigin, rightHit, -1);
       }
-      // Left boundary: leftHit before leftWindowOrigin
+      // Left boundary: leftHit before leftWindowOrigin (for correct polygon shape)
       if (leftHit) {
         preComputedPairs.set(leftHit, leftWindowOrigin, -1);
       }
@@ -1017,7 +1158,7 @@ export function projectConeV2(
         preComputedPairs.set(rightHit, leftWindowOrigin, -1);
       }
     }
-    
+
     // NOTE: No additional PreComputedPairs needed for cone boundary hits.
     // The reference direction now points OPPOSITE to the window midpoint,
     // so neither left nor right boundary hit is on the reference ray.
@@ -1132,6 +1273,50 @@ function sortPolygonVerticesSourcePoint(
   }
 
   return sorted;
+}
+
+/**
+ * Compare two direction vectors using CCW ordering with a reference direction.
+ * Returns negative if a comes before b, positive if b comes before a.
+ *
+ * Uses the same half-plane logic as point sorting to ensure consistency.
+ */
+function compareDirectionsCCW(a: Vector2, b: Vector2, refDirection: Vector2): number {
+  // Cross with reference direction for half-plane handling
+  const aRef = refDirection.x * a.y - refDirection.y * a.x;
+  const bRef = refDirection.x * b.y - refDirection.y * b.x;
+
+  // Directions on opposite sides of reference
+  const oppositeSides = (aRef > 0 && bRef < 0) || (aRef < 0 && bRef > 0);
+  if (oppositeSides) {
+    return aRef > 0 ? -1 : 1;
+  }
+
+  // Same side: use cross product between the two directions
+  const crossAB = a.x * b.y - a.y * b.x;
+  return crossAB > 0 ? -1 : 1;
+}
+
+/**
+ * Determine if an adjacent surface should block light.
+ *
+ * Returns true if adjacentDir is BETWEEN rayDir and windowDir in CCW order.
+ * Uses the reference direction to ensure consistent ordering.
+ *
+ * The adjacent surface blocks light if its direction falls in the angular
+ * region between the boundary ray and the window surface.
+ */
+function shouldAdjacentBlockLight(
+  rayDir: Vector2,
+  windowDir: Vector2,
+  adjacentDir: Vector2,
+  refDirection: Vector2
+): boolean {
+  const cmpRayAdj = compareDirectionsCCW(rayDir, adjacentDir, refDirection);
+  const cmpWindowAdj = compareDirectionsCCW(windowDir, adjacentDir, refDirection);
+
+  // Between = after one but not the other (XOR on comparison signs)
+  return cmpRayAdj < 0 !== cmpWindowAdj < 0;
 }
 
 /**

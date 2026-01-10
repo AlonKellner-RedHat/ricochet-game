@@ -21,6 +21,7 @@ import {
   createFullCone,
   projectConeV2,
   toVector2Array,
+  type SourceSegment,
 } from "./ConeProjectionV2";
 import type { ValidRegionOutline } from "./OutlineBuilder";
 import { preparePolygonForRendering } from "./RenderingDedup";
@@ -302,9 +303,9 @@ export class ValidRegionRenderer {
    * 2. Highlight cone rendering (each segment = a cone)
    *
    * @param targetSurfaceId The surface to find visible segments for
-   * @returns Array of visible segments (may be 0, 1, or multiple)
+   * @returns Array of visible segments with preserved SourcePoint provenance
    */
-  getVisibleSurfaceSegments(targetSurfaceId: string): readonly Segment[] {
+  getVisibleSurfaceSegments(targetSurfaceId: string): readonly SourceSegment[] {
     if (this.lastSourcePoints.length === 0) {
       return [];
     }
@@ -339,10 +340,13 @@ export class ValidRegionRenderer {
     targetSurfaceId: string,
     sourcePoints: readonly SourcePoint[],
     _surfaceSegment: Segment
-  ): Segment[] {
-    const segments: Segment[] = [];
+  ): SourceSegment[] {
+    const segments: SourceSegment[] = [];
     let currentRunStart: Vector2 | null = null;
     let currentRunEnd: Vector2 | null = null;
+    // Preserve SourcePoint provenance for segment boundaries
+    let currentRunStartSource: SourcePoint | undefined = undefined;
+    let currentRunEndSource: SourcePoint | undefined = undefined;
 
     for (const sp of sourcePoints) {
       // Check if this point is on the target surface using provenance
@@ -381,11 +385,13 @@ export class ValidRegionRenderer {
       }
 
       if (isOnTarget && coords) {
-        // Extend current run
+        // Extend current run, preserving SourcePoint provenance
         if (currentRunStart === null) {
           currentRunStart = coords;
+          currentRunStartSource = sp;
         }
         currentRunEnd = coords;
+        currentRunEndSource = sp;
       } else {
         // Gap detected - emit current run as segment if valid
         if (
@@ -393,10 +399,17 @@ export class ValidRegionRenderer {
           currentRunEnd &&
           (currentRunStart.x !== currentRunEnd.x || currentRunStart.y !== currentRunEnd.y)
         ) {
-          segments.push({ start: currentRunStart, end: currentRunEnd });
+          segments.push({
+            start: currentRunStart,
+            end: currentRunEnd,
+            startSource: currentRunStartSource,
+            endSource: currentRunEndSource,
+          });
         }
         currentRunStart = null;
         currentRunEnd = null;
+        currentRunStartSource = undefined;
+        currentRunEndSource = undefined;
       }
     }
 
@@ -406,7 +419,12 @@ export class ValidRegionRenderer {
       currentRunEnd &&
       (currentRunStart.x !== currentRunEnd.x || currentRunStart.y !== currentRunEnd.y)
     ) {
-      segments.push({ start: currentRunStart, end: currentRunEnd });
+      segments.push({
+        start: currentRunStart,
+        end: currentRunEnd,
+        startSource: currentRunStartSource,
+        endSource: currentRunEndSource,
+      });
     }
 
     return segments;
@@ -542,7 +560,15 @@ export class ValidRegionRenderer {
         const stagePolygons: (readonly Vector2[])[] = [];
 
         for (const window of visibleSegments) {
-          const cone = createConeThroughWindow(currentOrigin, window.start, window.end);
+          // Pass SourcePoint provenance through the cascade
+          // This preserves JunctionPoint info so segment extraction works correctly
+          const cone = createConeThroughWindow(
+            currentOrigin,
+            window.start,
+            window.end,
+            window.startSource,  // Preserved JunctionPoint/Endpoint/HitPoint
+            window.endSource
+          );
           const sourcePoints = projectConeV2(
             cone,
             allChains,
