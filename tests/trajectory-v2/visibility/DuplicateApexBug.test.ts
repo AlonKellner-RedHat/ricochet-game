@@ -376,7 +376,7 @@ describe("Duplicate Apex Bug", () => {
       for (let x = 1100; x <= 1110; x += 0.1) {
         const player = { x, y: 666 };
         const cone = createFullCone(player);
-        const sourcePoints = projectConeV2(cone, [chain], SCREEN_BOUNDS);
+        const sourcePoints = projectConeV2(cone, chainWithScreen);
 
         const apexCount = sourcePoints.filter((sp) => {
           const coords = sp.computeXY();

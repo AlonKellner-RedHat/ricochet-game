@@ -197,14 +197,14 @@ export class GameAdapter {
     this.lastPlayer = player;
     this.lastWindowConfig = windowConfig;
 
-    // Extract all surfaces from chains for the engine
-    const allSurfaces = allChains.flatMap((c) => c.getSurfaces());
-
     // Update engine inputs
     this.engine.setPlayer(player);
     this.engine.setCursor(cursor);
     this.engine.setPlannedSurfaces(plannedSurfaces);
-    this.engine.setAllSurfaces(allSurfaces);
+    
+    // Use setChains for unified trajectory/visibility handling
+    // This internally extracts surfaces for backward compatibility
+    this.engine.setChains(allChains);
 
     // Trigger recalculation if needed
     this.engine.invalidateAll();

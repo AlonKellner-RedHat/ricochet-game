@@ -7,6 +7,7 @@
 
 import type { Surface } from "@/surfaces/Surface";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
+import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { type SourcePoint, isEndpoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
 import { type SurfaceChain, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
@@ -202,11 +203,12 @@ function extractVisibleSurfaceSegments(
 /**
  * Compute visibility polygon for a single stage.
  * Returns both the stage info and the raw source points for segment extraction.
+ *
+ * NOTE: allChains should include the screen boundary chain - no special handling.
  */
 function computeVisibilityStageWithSources(
   origin: Vector2,
   allChains: readonly SurfaceChain[],
-  screenBounds: ScreenBounds,
   excludeSurfaceId: string | null,
   stageIndex: number,
   surfaceId: string | null,
@@ -218,11 +220,11 @@ function computeVisibilityStageWithSources(
   if (windowStart && windowEnd) {
     // Windowed cone through a surface
     const cone = createConeThroughWindow(origin, windowStart, windowEnd);
-    sourcePoints = projectConeV2(cone, allChains, screenBounds, excludeSurfaceId ?? undefined);
+    sourcePoints = projectConeV2(cone, allChains, excludeSurfaceId ?? undefined);
   } else {
     // Full 360° cone
     const cone = createFullCone(origin);
-    sourcePoints = projectConeV2(cone, allChains, screenBounds, excludeSurfaceId ?? undefined);
+    sourcePoints = projectConeV2(cone, allChains, excludeSurfaceId ?? undefined);
   }
 
   const rawPolygon = toVector2Array(sourcePoints);
@@ -287,11 +289,15 @@ function computeVisibilityStages(
   // Use provided planned surfaces or scene's default
   const surfaces = plannedSurfaces ?? scene.plannedSurfaces;
 
+  // Combine scene chains with screen boundary chain
+  // Screen boundaries are just another SurfaceChain - no special handling
+  const screenChain = createScreenBoundaryChain(screenBounds);
+  const allChainsWithScreen: readonly SurfaceChain[] = [...scene.allChains, screenChain];
+
   // Stage 0: Direct visibility from player
   const stage0Result = computeVisibilityStageWithSources(
     player,
-    scene.allChains,
-    screenBounds,
+    allChainsWithScreen,
     null,
     0,
     null
@@ -307,7 +313,7 @@ function computeVisibilityStages(
     const surface = surfaces[i]!;
 
     // Extract visible segments on this surface from the PREVIOUS stage's source points
-    const visibleSegments = extractVisibleSurfaceSegments(surface.id, currentSourcePoints, scene.allChains);
+    const visibleSegments = extractVisibleSurfaceSegments(surface.id, currentSourcePoints, allChainsWithScreen);
 
     if (visibleSegments.length === 0) {
       // No light reaches this surface - stop cascading
@@ -330,8 +336,7 @@ function computeVisibilityStages(
     for (const window of visibleSegments) {
       const result = computeVisibilityStageWithSources(
         reflectedOrigin,
-        scene.allChains,
-        screenBounds,
+        allChainsWithScreen,
         surface.id,
         i + 1,
         surface.id,

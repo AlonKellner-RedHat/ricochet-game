@@ -11,13 +11,25 @@
  * The actual path shows what physically happens when the arrow is shot.
  * It has NO knowledge of the planned path or which surfaces were "planned".
  *
- * ~80 lines of pure physics.
+ * UNIFIED TYPES:
+ * - Uses SourcePoint for waypoints (OriginPoint, HitPoint) for provenance
+ * - Uses unified RayCasting primitives
+ * - Supports both Surface[] and SurfaceChain[]
  */
 
 import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { distance } from "@/trajectory-v2/geometry/GeometryOps";
-import { raycastForward, reflectDirection } from "./ValidityChecker";
+import {
+  raycastForwardWithProvenance,
+  extractSurfacesFromChains,
+} from "@/trajectory-v2/geometry/RayCasting";
+import {
+  OriginPoint,
+  type SourcePoint,
+} from "@/trajectory-v2/geometry/SourcePoint";
+import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import { reflectDirection } from "./ValidityChecker";
 
 /**
  * Information about a surface hit during actual path calculation.
@@ -39,10 +51,21 @@ export interface ActualHit {
  *
  * FIRST PRINCIPLE: Waypoints go from player to cursor (or termination).
  * Forward projection is stored separately for rendering.
+ *
+ * PROVENANCE: waypointSources contains SourcePoint[] with provenance:
+ * - OriginPoint for player/cursor positions
+ * - HitPoint for surface hits with ray/surface/t/s info
  */
 export interface ActualPath {
   /** Waypoints from player to cursor/termination (NOT including forward projection) */
   readonly waypoints: readonly Vector2[];
+  /** 
+   * Waypoints with provenance (SourcePoint types).
+   * - First element is always OriginPoint (player)
+   * - HitPoints carry ray/surface/t/s provenance
+   * - Last may be OriginPoint (cursor) if reachedCursor is true
+   */
+  readonly waypointSources: readonly SourcePoint[];
   /** Information about each surface hit */
   readonly hits: readonly ActualHit[];
   /** Index of segment containing cursor (-1 if cursor not on path) */
@@ -55,6 +78,8 @@ export interface ActualPath {
   readonly blockedBy: Surface | null;
   /** Forward projection waypoints (beyond cursor, for rendering only) */
   readonly forwardProjection: readonly Vector2[];
+  /** Forward projection with provenance */
+  readonly forwardProjectionSources: readonly SourcePoint[];
 }
 
 /**
@@ -117,7 +142,9 @@ export function calculateActualPath(
   maxDistance: number = 2000
 ): ActualPath {
   const waypoints: Vector2[] = [player];
+  const waypointSources: SourcePoint[] = [new OriginPoint(player)];
   const forwardProjection: Vector2[] = [];
+  const forwardProjectionSources: SourcePoint[] = [];
   const hits: ActualHit[] = [];
 
   let currentPoint = player;
@@ -131,9 +158,9 @@ export function calculateActualPath(
   let afterCursor = false;
 
   for (let i = 0; i < maxReflections && remainingDistance > 0; i++) {
-    // Cast ray forward
+    // Cast ray forward using unified ray casting
     const excludeSurfaces = lastHitSurface ? [lastHitSurface] : [];
-    const hit = raycastForward(
+    const hitResult = raycastForwardWithProvenance(
       currentPoint,
       currentDirection,
       allSurfaces,
@@ -141,7 +168,9 @@ export function calculateActualPath(
       remainingDistance
     );
 
-    const hitDist = hit ? distance(currentPoint, hit.point) : remainingDistance;
+    const hitDist = hitResult
+      ? distance(currentPoint, hitResult.hitPoint.computeXY())
+      : remainingDistance;
 
     // Check if cursor is on this segment (only if not already past cursor)
     const cursorCheck = !afterCursor 
@@ -151,6 +180,7 @@ export function calculateActualPath(
     if (cursorCheck.isOnPath) {
       // Cursor is on path - add cursor as final waypoint
       waypoints.push(cursor);
+      waypointSources.push(new OriginPoint(cursor));
       cursorIndex = waypoints.length - 2;
       cursorT = hitDist > 0 ? cursorCheck.distToCursor / hitDist : 1;
       reachedCursor = true;
@@ -159,20 +189,21 @@ export function calculateActualPath(
       // Calculate forward projection from cursor
       const projRemaining = remainingDistance - cursorCheck.distToCursor;
       if (projRemaining > 0) {
-        calculateForwardProjection(
+        calculateForwardProjectionWithProvenance(
           cursor,
           currentDirection,
           allSurfaces,
           lastHitSurface,
           projRemaining,
           maxReflections - i,
-          forwardProjection
+          forwardProjection,
+          forwardProjectionSources
         );
       }
       break;
     }
 
-    if (!hit) {
+    if (!hitResult) {
       // No hit - extend to remaining distance
       const endpoint = {
         x: currentPoint.x + currentDirection.x * remainingDistance,
@@ -180,66 +211,107 @@ export function calculateActualPath(
       };
       if (afterCursor) {
         forwardProjection.push(endpoint);
+        forwardProjectionSources.push(new OriginPoint(endpoint));
       } else {
         waypoints.push(endpoint);
+        waypointSources.push(new OriginPoint(endpoint));
       }
       break;
     }
 
-    // Add hit point
+    // Add hit point with provenance
+    const hitXY = hitResult.hitPoint.computeXY();
     if (afterCursor) {
-      forwardProjection.push(hit.point);
+      forwardProjection.push(hitXY);
+      forwardProjectionSources.push(hitResult.hitPoint);
     } else {
-      waypoints.push(hit.point);
+      waypoints.push(hitXY);
+      waypointSources.push(hitResult.hitPoint);
     }
     remainingDistance -= hitDist;
 
-    if (!hit.canReflect) {
+    if (!hitResult.canReflect) {
       // Wall hit - stop here
       hits.push({
-        point: hit.point,
-        surface: hit.surface,
+        point: hitXY,
+        surface: hitResult.hitPoint.hitSurface,
         reflected: false,
       });
-      blockedBy = hit.surface;
+      blockedBy = hitResult.hitPoint.hitSurface;
       break;
     }
 
     // Reflect and continue
     hits.push({
-      point: hit.point,
-      surface: hit.surface,
+      point: hitXY,
+      surface: hitResult.hitPoint.hitSurface,
       reflected: true,
     });
 
-    currentDirection = reflectDirection(currentDirection, hit.surface);
-    currentPoint = hit.point;
-    lastHitSurface = hit.surface;
+    currentDirection = reflectDirection(currentDirection, hitResult.hitPoint.hitSurface);
+    currentPoint = hitXY;
+    lastHitSurface = hitResult.hitPoint.hitSurface;
   }
 
   return {
     waypoints,
+    waypointSources,
     hits,
     cursorIndex,
     cursorT,
     reachedCursor,
     blockedBy,
     forwardProjection,
+    forwardProjectionSources,
   };
 }
 
 /**
- * Calculate forward projection from a point.
+ * Calculate the actual physical path using SurfaceChains.
+ *
+ * This version uses SurfaceChain[] instead of Surface[],
+ * enabling junction handling and unified provenance.
+ *
+ * @param player Player position
+ * @param cursor Cursor position (path ends here if reached)
+ * @param initialDirection Initial shooting direction (normalized)
+ * @param chains All surface chains in the scene
+ * @param maxReflections Maximum number of reflections (default 10)
+ * @param maxDistance Maximum total path distance (default 2000)
+ * @returns ActualPath with waypoints and hit info
+ */
+export function calculateActualPathWithChains(
+  player: Vector2,
+  cursor: Vector2,
+  initialDirection: Vector2,
+  chains: readonly SurfaceChain[],
+  maxReflections: number = 10,
+  maxDistance: number = 2000
+): ActualPath {
+  const allSurfaces = extractSurfacesFromChains(chains);
+  return calculateActualPath(
+    player,
+    cursor,
+    initialDirection,
+    allSurfaces,
+    maxReflections,
+    maxDistance
+  );
+}
+
+/**
+ * Calculate forward projection from a point with provenance.
  * Used to continue the path beyond cursor for visualization.
  */
-function calculateForwardProjection(
+function calculateForwardProjectionWithProvenance(
   start: Vector2,
   direction: Vector2,
   surfaces: readonly Surface[],
   lastHitSurface: Surface | null,
   maxDistance: number,
   maxReflections: number,
-  result: Vector2[]
+  result: Vector2[],
+  resultSources: SourcePoint[]
 ): void {
   let currentPoint = start;
   let currentDirection = direction;
@@ -248,7 +320,7 @@ function calculateForwardProjection(
 
   for (let i = 0; i < maxReflections && remainingDistance > 0; i++) {
     const excludeSurfaces = excludeSurface ? [excludeSurface] : [];
-    const hit = raycastForward(
+    const hitResult = raycastForwardWithProvenance(
       currentPoint,
       currentDirection,
       surfaces,
@@ -256,25 +328,28 @@ function calculateForwardProjection(
       remainingDistance
     );
 
-    if (!hit) {
+    if (!hitResult) {
       const endpoint = {
         x: currentPoint.x + currentDirection.x * remainingDistance,
         y: currentPoint.y + currentDirection.y * remainingDistance,
       };
       result.push(endpoint);
+      resultSources.push(new OriginPoint(endpoint));
       break;
     }
 
-    result.push(hit.point);
-    remainingDistance -= distance(currentPoint, hit.point);
+    const hitXY = hitResult.hitPoint.computeXY();
+    result.push(hitXY);
+    resultSources.push(hitResult.hitPoint);
+    remainingDistance -= distance(currentPoint, hitXY);
 
-    if (!hit.canReflect) {
+    if (!hitResult.canReflect) {
       break;
     }
 
-    currentDirection = reflectDirection(currentDirection, hit.surface);
-    currentPoint = hit.point;
-    excludeSurface = hit.surface;
+    currentDirection = reflectDirection(currentDirection, hitResult.hitPoint.hitSurface);
+    currentPoint = hitXY;
+    excludeSurface = hitResult.hitPoint.hitSurface;
   }
 }
 

@@ -24,6 +24,11 @@ import {
   lineLineIntersection,
 } from "@/trajectory-v2/geometry/GeometryOps";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import {
+  HitPoint,
+  OriginPoint,
+  type SourcePoint,
+} from "@/trajectory-v2/geometry/SourcePoint";
 import type { Surface } from "@/surfaces/Surface";
 import { evaluateBypass, type BypassResult } from "./BypassEvaluator";
 import {
@@ -1202,6 +1207,10 @@ export function tracePhysicalPath(
   // Step 6: Find where actual physics diverges from planned path
   const physicsDivergenceIndex = findPhysicsDivergenceIndex(segments, actualPhysics.segments);
 
+  // Step 7: Build waypointSources with provenance for arrow system
+  // Uses segments to create SourcePoints with proper provenance
+  const waypointSources = buildWaypointSources(player, cursor, segments, cursorReachable);
+
   return {
     segments,
     cursorSegmentIndex,
@@ -1213,7 +1222,72 @@ export function tracePhysicalPath(
     totalLength,
     actualPhysicsSegments: actualPhysics.segments,
     physicsDivergenceIndex,
+    waypointSources,
   };
+}
+
+/**
+ * Build waypointSources with provenance for arrow system.
+ *
+ * UNIFIED TYPES: Creates SourcePoints matching trajectory/visibility systems.
+ * - First element is OriginPoint (player position)
+ * - HitPoints carry surface/ray info for each reflection point
+ * - Last may be OriginPoint (cursor) if cursorReachable
+ *
+ * @param player Player position
+ * @param cursor Cursor position
+ * @param segments Path segments
+ * @param cursorReachable Whether cursor is reachable
+ * @returns Array of SourcePoints with provenance
+ */
+function buildWaypointSources(
+  player: Vector2,
+  cursor: Vector2,
+  segments: readonly PathSegment[],
+  cursorReachable: boolean
+): SourcePoint[] {
+  const sources: SourcePoint[] = [];
+
+  // First waypoint is always the player (OriginPoint)
+  sources.push(new OriginPoint(player));
+
+  // Add HitPoints for each segment endpoint that hits a surface
+  for (const segment of segments) {
+    if (segment.endSurface) {
+      // Create a HitPoint with provenance
+      // Note: We create a ray from segment start to end for context
+      const ray = { from: segment.start, to: segment.end };
+      
+      // Calculate parametric position on the surface segment
+      const surf = segment.endSurface;
+      const dx = surf.segment.end.x - surf.segment.start.x;
+      const dy = surf.segment.end.y - surf.segment.start.y;
+      const segLen = Math.sqrt(dx * dx + dy * dy);
+      
+      let s = 0.5; // Default to midpoint
+      if (segLen > 0) {
+        const hx = segment.end.x - surf.segment.start.x;
+        const hy = segment.end.y - surf.segment.start.y;
+        s = (hx * dx + hy * dy) / (segLen * segLen);
+        s = Math.max(0, Math.min(1, s));
+      }
+
+      // Calculate t as distance ratio from ray start to hit
+      const rayDx = segment.end.x - segment.start.x;
+      const rayDy = segment.end.y - segment.start.y;
+      const rayLen = Math.sqrt(rayDx * rayDx + rayDy * rayDy);
+      const t = rayLen > 0 ? 1 : 0; // t=1 at the segment end
+
+      sources.push(new HitPoint(ray, segment.endSurface, t, s));
+    }
+  }
+
+  // Add cursor as final OriginPoint if reachable
+  if (cursorReachable) {
+    sources.push(new OriginPoint(cursor));
+  }
+
+  return sources;
 }
 
 /**

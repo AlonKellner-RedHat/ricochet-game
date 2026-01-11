@@ -115,7 +115,7 @@ describe("Top-Right Triangle Bug", () => {
     const chains = createAllChains();
     const cone = createFullCone(BUG_PLAYER);
 
-    const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS);
+    const sourcePoints = projectConeV2(cone, chainsWithScreen);
     const vertices = toVector2Array(sourcePoints);
 
     console.log("=== BUG CASE (FIXED) ===");
@@ -147,7 +147,7 @@ describe("Top-Right Triangle Bug", () => {
     const chains = createAllChains();
     const cone = createFullCone(WORKING_PLAYER);
 
-    const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS);
+    const sourcePoints = projectConeV2(cone, chainsWithScreen);
     const vertices = toVector2Array(sourcePoints);
 
     console.log("=== WORKING CASE ===");
@@ -172,7 +172,7 @@ describe("Top-Right Triangle Bug", () => {
     const chains = createAllChains();
     const cone = createFullCone(BUG_PLAYER);
 
-    const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS);
+    const sourcePoints = projectConeV2(cone, chainsWithScreen);
 
     console.log("=== SOURCE POINT VERIFICATION ===");
 

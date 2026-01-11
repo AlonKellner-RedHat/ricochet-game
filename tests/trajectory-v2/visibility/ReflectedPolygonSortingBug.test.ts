@@ -213,7 +213,7 @@ describe("Reflected Polygon Sorting Bug", () => {
       const mirror = getMirrorRightSurface();
       const cone = createConeThroughWindow(origin, mirror.segment.start, mirror.segment.end);
 
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, mirror.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, mirror.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\nPolygon vertices (${vertices.length}):`);
@@ -244,7 +244,7 @@ describe("Reflected Polygon Sorting Bug", () => {
       const mirror = getMirrorRightSurface();
       const cone = createConeThroughWindow(origin, mirror.segment.start, mirror.segment.end);
 
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, mirror.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, mirror.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\nPolygon vertices (${vertices.length}):`);

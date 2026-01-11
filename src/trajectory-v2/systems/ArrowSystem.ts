@@ -3,10 +3,20 @@
  *
  * Manages arrows in flight, following waypoint paths.
  * Consumes arrow_shot events from AimingSystem.
+ *
+ * UNIFIED TYPES:
+ * - Uses SourcePoint[] for waypointSources (same as trajectory/visibility)
+ * - HitPoints carry surface provenance for each waypoint
+ * - Enables queries like "what surface will the arrow hit next"
  */
 
 import { distance } from "@/trajectory-v2/geometry/GeometryOps";
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import type { Ray, Vector2 } from "@/trajectory-v2/geometry/types";
+import {
+  isHitPoint,
+  type SourcePoint,
+} from "@/trajectory-v2/geometry/SourcePoint";
+import type { Surface } from "@/surfaces/Surface";
 import type { EngineResults } from "@/trajectory-v2/engine/types";
 import type {
   AimingEvent,
@@ -35,13 +45,20 @@ export const DEFAULT_ARROW_CONFIG: ArrowConfig = {
 
 /**
  * State of a flying arrow.
+ *
+ * PROVENANCE: waypointSources carries SourcePoint[] with provenance:
+ * - First element is always OriginPoint (player position)
+ * - HitPoints carry surface/ray/t/s for each reflection point
+ * - Last may be OriginPoint (cursor) if reachedCursor
  */
 export interface ArrowState {
   readonly id: string;
   /** Current position */
   position: Vector2;
-  /** Path waypoints to follow */
+  /** Path waypoints to follow (Vector2 coordinates) */
   readonly waypoints: readonly Vector2[];
+  /** Waypoints with provenance - each HitPoint carries surface/ray info */
+  readonly waypointSources: readonly SourcePoint[];
   /** Current waypoint index (heading toward this waypoint) */
   waypointIndex: number;
   /** Whether the arrow is still active */
@@ -107,7 +124,7 @@ export class ArrowSystem
   handleEvent(event: AimingEvent): void {
     if (event.type === "arrow_shot") {
       const data = event.data as ArrowShotData;
-      this.createArrow(data.waypoints, data.isFullyAligned);
+      this.createArrow(data.waypoints, data.waypointSources, data.isFullyAligned);
     }
   }
 
@@ -116,10 +133,15 @@ export class ArrowSystem
   // =========================================================================
 
   /**
-   * Create a new arrow with the given waypoints.
+   * Create a new arrow with the given waypoints and provenance.
+   *
+   * @param waypoints Path coordinates (Vector2[])
+   * @param waypointSources Waypoints with provenance (SourcePoint[])
+   * @param wasAligned Whether the shot was fully aligned
    */
   createArrow(
     waypoints: readonly Vector2[],
+    waypointSources: readonly SourcePoint[] = [],
     wasAligned = true
   ): ArrowState | null {
     if (waypoints.length < 2) {
@@ -141,6 +163,7 @@ export class ArrowSystem
       id,
       position: { x: startPos.x, y: startPos.y },
       waypoints,
+      waypointSources,
       waypointIndex: 1, // Heading toward first waypoint after start
       active: true,
       wasAligned,
@@ -173,6 +196,57 @@ export class ArrowSystem
     this.eventCallbacks.add(callback);
     return () => {
       this.eventCallbacks.delete(callback);
+    };
+  }
+
+  // =========================================================================
+  // Provenance Queries (Unified with Trajectory/Visibility)
+  // =========================================================================
+
+  /**
+   * Get the surface that will be hit at the next waypoint.
+   * Uses HitPoint provenance to determine surface without recalculation.
+   *
+   * @param arrow The arrow to query
+   * @returns The surface at the next waypoint, or null if not a HitPoint
+   */
+  getNextHitSurface(arrow: ArrowState): Surface | null {
+    const source = arrow.waypointSources[arrow.waypointIndex];
+    if (source && isHitPoint(source)) {
+      return source.hitSurface;
+    }
+    return null;
+  }
+
+  /**
+   * Get the current segment's source points.
+   * Useful for understanding where the arrow is going and what it will hit.
+   *
+   * @param arrow The arrow to query
+   * @returns From and to SourcePoints, or null if at end of path
+   */
+  getCurrentSegmentSource(arrow: ArrowState): { from: SourcePoint; to: SourcePoint } | null {
+    if (arrow.waypointIndex <= 0 || arrow.waypointIndex >= arrow.waypointSources.length) {
+      return null;
+    }
+    const from = arrow.waypointSources[arrow.waypointIndex - 1];
+    const to = arrow.waypointSources[arrow.waypointIndex];
+    if (!from || !to) return null;
+    return { from, to };
+  }
+
+  /**
+   * Get the ray from current position to next waypoint.
+   * Compatible with RayCasting module types.
+   *
+   * @param arrow The arrow to query
+   * @returns Ray from current position to next waypoint
+   */
+  getCurrentRay(arrow: ArrowState): Ray | null {
+    if (arrow.waypointIndex >= arrow.waypoints.length) return null;
+    return {
+      from: arrow.position,
+      to: arrow.waypoints[arrow.waypointIndex]!,
     };
   }
 

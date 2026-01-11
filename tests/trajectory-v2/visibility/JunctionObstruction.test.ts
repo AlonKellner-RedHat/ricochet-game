@@ -73,7 +73,7 @@ describe("Junction Point Obstruction", () => {
 
     const chains = [vShape, blockingWall];
     const cone = createFullCone(player);
-    const polygon = projectConeV2(cone, chains, SCREEN_BOUNDS);
+    const polygon = projectConeV2(cone, chainsWithScreen);
     const vertices = toVector2Array(polygon);
 
     // The apex junction (640, 300) should NOT be in the polygon
@@ -110,7 +110,7 @@ describe("Junction Point Obstruction", () => {
     // No blocking wall - apex should be visible
     const chains = [vShape];
     const cone = createFullCone(player);
-    const polygon = projectConeV2(cone, chains, SCREEN_BOUNDS);
+    const polygon = projectConeV2(cone, chainsWithScreen);
     const vertices = toVector2Array(polygon);
 
     // The apex junction (640, 300) SHOULD be in the polygon (it's visible)
@@ -143,7 +143,7 @@ describe("Junction Point Obstruction", () => {
 
     const chains = [vShape, blockingWall];
     const cone = createFullCone(player);
-    const polygon = projectConeV2(cone, chains, SCREEN_BOUNDS);
+    const polygon = projectConeV2(cone, chainsWithScreen);
     const vertices = toVector2Array(polygon);
 
     // The junction (900, 300) should NOT be visible from player (100, 360)

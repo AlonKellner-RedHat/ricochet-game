@@ -8,6 +8,7 @@
  */
 
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import { OriginPoint, type SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { Surface } from "@/surfaces/Surface";
 import type { EngineResults, PathResult } from "@/trajectory-v2/engine/types";
 import type {
@@ -205,6 +206,7 @@ export class AimingSystem
 
     // Get waypoints for the arrow
     const waypoints = this.getArrowWaypoints(actualPath);
+    const waypointSources = this.getArrowWaypointSources();
 
     if (waypoints.length < 2) {
       return false;
@@ -213,9 +215,10 @@ export class AimingSystem
     // Start cooldown
     this.cooldownRemaining = this.config.shootCooldown;
 
-    // Emit arrow shot event
+    // Emit arrow shot event with provenance
     const data: ArrowShotData = {
       waypoints,
+      waypointSources,
       isFullyAligned: alignment.isFullyAligned,
     };
     this.emit({ type: "arrow_shot", data });
@@ -271,6 +274,29 @@ export class AimingSystem
     }
 
     return waypoints;
+  }
+
+  /**
+   * Get the waypoint sources with provenance for the arrow.
+   *
+   * UNIFIED TYPES: Uses same SourcePoint types as trajectory/visibility systems.
+   * - OriginPoint for player/cursor positions
+   * - HitPoint for surface reflection points with ray/surface/t/s info
+   */
+  getArrowWaypointSources(): readonly SourcePoint[] {
+    if (!this.lastResults) {
+      return [];
+    }
+
+    // Get waypointSources from unifiedPath if available
+    const unifiedPath = this.lastResults.unifiedPath;
+    if (unifiedPath?.waypointSources && unifiedPath.waypointSources.length > 0) {
+      return unifiedPath.waypointSources;
+    }
+
+    // Fallback: create OriginPoints from waypoints (no provenance)
+    const waypoints = this.getArrowWaypoints();
+    return waypoints.map((p) => new OriginPoint(p));
   }
 
   /**

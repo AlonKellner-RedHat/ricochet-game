@@ -11,6 +11,7 @@ import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import { Endpoint, HitPoint, isEndpoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
+import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { projectConeV2, createFullCone, createConeThroughWindow, toVector2Array } from "@/trajectory-v2/visibility/ConeProjectionV2";
 import { segmentsToCones } from "@/trajectory-v2/visibility/HighlightMode";
 import { ValidRegionRenderer } from "@/trajectory-v2/visibility/ValidRegionRenderer";

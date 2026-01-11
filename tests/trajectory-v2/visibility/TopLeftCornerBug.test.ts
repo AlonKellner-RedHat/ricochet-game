@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { projectConeV2, createFullCone, toVector2Array } from "@/trajectory-v2/visibility/ConeProjectionV2";
 import {
   createRicochetChain,

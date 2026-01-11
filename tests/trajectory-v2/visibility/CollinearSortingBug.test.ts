@@ -68,7 +68,7 @@ describe("Collinear Sorting Bug Investigation", () => {
     const cone = createConeThroughWindow(reflectedOrigin, window.start, window.end);
 
     // Get polygon vertices
-    const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, surface.id);
+    const sourcePoints = projectConeV2(cone, chainsWithScreen, surface.id);
     const vertices = toVector2Array(sourcePoints);
 
     console.log("\n=== POLYGON VERTICES ===");

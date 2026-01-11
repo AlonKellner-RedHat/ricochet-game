@@ -6,6 +6,13 @@ import type { ArrowConfig } from "./Arrow";
 /**
  * ArrowManager - Manages all active arrows, updates, and rendering
  *
+ * @deprecated Use ArrowSystem from trajectory-v2/systems instead.
+ * This class will be removed in a future version.
+ * The ArrowSystem provides:
+ * - Unified SourcePoint types for provenance tracking
+ * - Integration with trajectory/visibility systems
+ * - Helper methods like getNextHitSurface() and getCurrentSegmentSource()
+ *
  * Arrows follow pre-computed waypoint paths (from trajectory calculation).
  * Stuck arrows persist up to MAX_STUCK_ARROWS (100).
  */

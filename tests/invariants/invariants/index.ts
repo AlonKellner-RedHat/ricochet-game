@@ -10,6 +10,7 @@ import { polygonVerticesInvariant } from "./polygon-vertices";
 import { polygonEdgesInvariant } from "./polygon-edges";
 import { noSelfIntersectionInvariant } from "./polygon-self-intersection";
 import { noUnobstructedPathInvariant } from "./no-unobstructed-path";
+import { adjacentVerticesRelatedInvariant } from "./adjacent-vertices-related";
 
 /**
  * All invariants to test.
@@ -25,6 +26,7 @@ export const ALL_INVARIANTS: Invariant[] = [
   polygonEdgesInvariant,
   noSelfIntersectionInvariant,
   noUnobstructedPathInvariant,
+  adjacentVerticesRelatedInvariant,
 ];
 
 export { v5CursorReachabilityInvariant } from "./V5-cursor-reachability";
@@ -32,4 +34,5 @@ export { polygonVerticesInvariant } from "./polygon-vertices";
 export { polygonEdgesInvariant } from "./polygon-edges";
 export { noSelfIntersectionInvariant } from "./polygon-self-intersection";
 export { noUnobstructedPathInvariant } from "./no-unobstructed-path";
+export { adjacentVerticesRelatedInvariant } from "./adjacent-vertices-related";
 

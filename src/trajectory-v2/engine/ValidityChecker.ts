@@ -5,6 +5,15 @@
  * - Check if a hit is on the segment (vs extended line)
  * - Count obstructions between two points
  * - Determine which side of a surface a point is on
+ *
+ * @deprecated Many functions in this module are superseded by the unified
+ * RayCasting module (src/trajectory-v2/geometry/RayCasting.ts) which provides
+ * provenance-aware ray casting shared between trajectory and visibility systems.
+ *
+ * Prefer using:
+ * - castRay() / castRayInChains() for ray casting with HitPoint provenance
+ * - raycastForwardWithProvenance() for trajectory physics with RayHitResult
+ * - findClosestHit() for low-level ray-segment intersection
  */
 
 import {
@@ -358,6 +367,12 @@ export function rayLineIntersect(
   };
 }
 
+/**
+ * Cast a ray forward and find the first intersection with any surface SEGMENT.
+ *
+ * @deprecated Use raycastForwardWithProvenance() from RayCasting.ts instead
+ * for provenance-aware ray casting that returns HitPoint with surface/t/s info.
+ */
 export function raycastForward(
   from: Vector2,
   direction: Vector2,

@@ -216,7 +216,7 @@ describe("projectConeV2 preserves SourcePoint provenance", () => {
     console.log(`Cone rightBoundarySource: ${cone.rightBoundarySource?.type}`);
 
     // Project the cone
-    const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, "chain2-1");
+    const sourcePoints = projectConeV2(cone, chainsWithScreen, "chain2-1");
 
     console.log(`\nPolygon source points: ${sourcePoints.length}`);
     for (const sp of sourcePoints) {
@@ -251,7 +251,7 @@ describe("projectConeV2 preserves SourcePoint provenance", () => {
     const cone = createConeThroughWindow(origin, windowStart, windowEnd);
 
     // Project the cone
-    const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, "chain2-1");
+    const sourcePoints = projectConeV2(cone, chainsWithScreen, "chain2-1");
 
     console.log("\n=== projectConeV2 without SourcePoints ===");
     console.log(`Polygon source points: ${sourcePoints.length}`);
@@ -277,7 +277,7 @@ describe("SourceSegment Provenance Preservation", () => {
 
       // Get player visibility
       const cone = createFullCone(player);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen);
 
       // Extract segments on chain2-0
       const chain20Segments = extractSourceSegments("chain2-0", sourcePoints);
@@ -325,7 +325,7 @@ describe("SourceSegment Provenance Preservation", () => {
 
       // Get player visibility
       const cone = createFullCone(player);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen);
 
       // Extract segments on chain2-0
       const chain20Segments = extractSourceSegments("chain2-0", sourcePoints);
@@ -360,7 +360,7 @@ describe("SourceSegment Provenance Preservation", () => {
 
       // Get player visibility
       const cone = createFullCone(player);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen);
 
       // Find HitPoints on chain2
       const hitPoints = sourcePoints.filter(sp => 
@@ -394,7 +394,7 @@ describe("SourceSegment Provenance Preservation", () => {
 
       const player = { x: 750, y: 400 };
       const cone = createFullCone(player);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen);
 
       // Find the junction at (750, 250)
       const junctionPoint = sourcePoints.find(sp => {
@@ -432,7 +432,7 @@ describe("SourceSegment Provenance Preservation", () => {
 
       const player = { x: 750, y: 400 };
       const cone = createFullCone(player);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen);
 
       // Extract segments on both surfaces
       const chain20Segments = extractSourceSegments("chain2-0", sourcePoints);

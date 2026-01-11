@@ -255,7 +255,7 @@ describe("Junction Sorting Bug", () => {
       const chains = getAllChains();
 
       const source = createFullCone(PLAYER);
-      const sourcePoints = projectConeV2(source, chains, SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(source, chainsWithScreen);
       const polygon = toVector2Array(sourcePoints);
 
       console.log("=== Visibility Polygon ===");
@@ -304,7 +304,7 @@ describe("Junction Sorting Bug", () => {
       const chains = getAllChains();
 
       const source = createFullCone(PLAYER);
-      const sourcePoints = projectConeV2(source, chains, SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(source, chainsWithScreen);
 
       console.log("=== Source Points Analysis ===");
 
@@ -362,7 +362,7 @@ describe("Junction Sorting Bug", () => {
       const chains = getAllChains();
 
       const source = createFullCone(PLAYER);
-      const sourcePoints = projectConeV2(source, chains, SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(source, chainsWithScreen);
 
       // Find the apex junction
       const apexPoint = sourcePoints.find((p) => {
@@ -406,7 +406,7 @@ describe("Junction Sorting Bug", () => {
       const chains = getAllChains();
 
       const source = createFullCone(PLAYER);
-      const sourcePoints = projectConeV2(source, chains, SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(source, chainsWithScreen);
 
       // Find indices of apex and ceiling points on the same ray
       let apexIndex = -1;
@@ -448,7 +448,7 @@ describe("Junction Sorting Bug", () => {
     it("VERIFICATION: sorting order is now correct for junction pairs (FIXED)", () => {
       const chains = getAllChains();
       const source = createFullCone(PLAYER);
-      const sourcePoints = projectConeV2(source, chains, SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(source, chainsWithScreen);
 
       // Find indices
       let apexIndex = -1;
@@ -545,7 +545,7 @@ describe("Junction Sorting Bug", () => {
     function analyzePosition(player: Vector2, positionName: string) {
       const chains = getAllChains();
       const source = createFullCone(player);
-      const sourcePoints = projectConeV2(source, chains, SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(source, chainsWithScreen);
       const polygon = toVector2Array(sourcePoints);
 
       // Find apex and its continuation in the polygon

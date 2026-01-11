@@ -19,12 +19,6 @@
 import type { Surface } from "@/surfaces/Surface";
 import { lineLineIntersection } from "@/trajectory-v2/geometry/GeometryOps";
 import {
-  type ScreenBoundaries,
-  type ScreenBoundsConfig,
-  createScreenBoundaries,
-  createScreenBoundaryChain,
-} from "@/trajectory-v2/geometry/ScreenBoundaries";
-import {
   type Endpoint,
   HitPoint,
   OriginPoint,
@@ -370,12 +364,12 @@ function isPointPastWindow(origin: Vector2, point: Vector2, window: Segment): bo
 
 /**
  * Cast a ray to an endpoint target.
+ * All obstacles (including screen boundaries) should be in the obstacles array.
  */
 function castRayToEndpoint(
   origin: Vector2,
   targetEndpoint: Endpoint,
   obstacles: readonly Surface[],
-  screenBoundaries: ScreenBoundaries,
   startLine: Segment | null,
   windowSurfaceId?: string
 ): SourcePoint | null {
@@ -412,7 +406,7 @@ function castRayToEndpoint(
   let closestSurface: Surface | null = null;
   let closestS = 0;
 
-  // Check game obstacles (skip for window endpoints)
+  // Check all obstacles (includes screen boundaries) - skip for window endpoints
   if (!windowSurfaceId || targetEndpoint.surface.id !== windowSurfaceId) {
     for (const obstacle of obstacles) {
       if (targetEndpoint.surface.id === obstacle.id) continue;
@@ -427,24 +421,6 @@ function castRayToEndpoint(
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
         closestT = hit.t;
         closestSurface = obstacle;
-        closestS = hit.s;
-      }
-    }
-  }
-
-  // Check screen boundaries (skip for window endpoints)
-  if (!windowSurfaceId || targetEndpoint.surface.id !== windowSurfaceId) {
-    for (const boundary of screenBoundaries.all) {
-      const hit = lineLineIntersection(
-        origin,
-        rayEnd,
-        boundary.segment.start,
-        boundary.segment.end
-      );
-
-      if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
-        closestT = hit.t;
-        closestSurface = boundary;
         closestS = hit.s;
       }
     }
@@ -467,12 +443,12 @@ function pointsEqual(a: Vector2, b: Vector2): boolean {
 /**
  * Cast a ray to an arbitrary target (not necessarily an endpoint).
  * Used for cone boundary rays.
+ * All obstacles (including screen boundaries) should be in the obstacles array.
  */
 function castRayToTarget(
   origin: Vector2,
   target: Vector2,
   obstacles: readonly Surface[],
-  screenBoundaries: ScreenBoundaries,
   startLine: Segment | null
 ): SourcePoint | null {
   const dx = target.x - origin.x;
@@ -516,15 +492,6 @@ function castRayToTarget(
     }
   }
 
-  for (const boundary of screenBoundaries.all) {
-    const hit = lineLineIntersection(origin, rayEnd, boundary.segment.start, boundary.segment.end);
-    if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
-      closestT = hit.t;
-      closestSurface = boundary;
-      closestS = hit.s;
-    }
-  }
-
   if (closestSurface) {
     return new HitPoint(ray, closestSurface, closestT, closestS);
   }
@@ -539,7 +506,6 @@ function castContinuationRay(
   origin: Vector2,
   throughEndpoint: Endpoint,
   allObstacles: readonly Surface[],
-  _screenBoundaries: ScreenBoundaries,
   startLine: Segment | null,
   windowSurfaceId?: string
 ): SourcePoint | null {
@@ -600,7 +566,6 @@ function castContinuationRayForJunction(
   origin: Vector2,
   junction: JunctionPoint,
   allObstacles: readonly Surface[],
-  _screenBoundaries: ScreenBoundaries,
   startLine: Segment | null
 ): SourcePoint | null {
   const target = junction.computeXY();
@@ -662,26 +627,24 @@ function castContinuationRayForJunction(
  * Project a cone through obstacles to create a visibility polygon.
  *
  * Returns SourcePoint[] for exact operations, with computeXY() for rendering.
+ *
+ * NOTE: The chains array should include ALL obstacles including the screen boundary chain.
+ * Screen boundaries are just another SurfaceChain - no special handling.
  */
 export function projectConeV2(
   source: ConeSource,
   chains: readonly SurfaceChain[],
-  bounds: ScreenBoundsConfig,
   excludeSurfaceId?: string
 ): SourcePoint[] {
   const { origin, startLine } = source;
   const isWindowed = startLine !== null;
   const vertices: SourcePoint[] = [];
 
-  // Extract surfaces from chains
+  // Extract surfaces from all chains (includes screen boundaries)
   const obstacles: Surface[] = [];
   for (const chain of chains) {
     obstacles.push(...chain.getSurfaces());
   }
-
-  // Create screen boundaries - both old format (for ray casting) and chain (for corners)
-  const screenBoundaries = createScreenBoundaries(bounds);
-  const screenChain = createScreenBoundaryChain(bounds);
 
   // Compute reference direction (same as used for sorting)
   // For windowed cones: points opposite to window midpoint
@@ -801,28 +764,9 @@ export function projectConeV2(
     }
   }
 
-  // Add game chain JunctionPoints (internal vertices where surfaces meet)
+  // Add JunctionPoints from all chains (including screen boundary corners)
   for (const chain of chains) {
     for (const junction of chain.getJunctionPoints()) {
-      rayTargets.push(junction);
-    }
-  }
-
-  // Add screen boundary ray targets
-  // For closed chains (like screen boundary), all vertices are JunctionPoints
-  // For open chains, we add both endpoints (exposed ends) and JunctionPoints (internal vertices)
-  if (screenChain.isClosed) {
-    // Closed chain: only JunctionPoints (all 4 corners)
-    for (const junction of screenChain.getJunctionPoints()) {
-      rayTargets.push(junction);
-    }
-  } else {
-    // Open chain: add endpoints for exposed ends
-    for (const screenSurface of screenChain.getSurfaces()) {
-      rayTargets.push(startOf(screenSurface));
-      rayTargets.push(endOf(screenSurface));
-    }
-    for (const junction of screenChain.getJunctionPoints()) {
       rayTargets.push(junction);
     }
   }
@@ -864,7 +808,8 @@ export function projectConeV2(
   const preComputedPairs = new PreComputedPairs();
 
   // Compute orientations for all surfaces AND store endpoint pairs
-  for (const surface of [...obstacles, ...screenChain.getSurfaces()]) {
+  // obstacles includes all surfaces from all chains (including screen boundaries)
+  for (const surface of obstacles) {
     if (!surfaceOrientations.has(surface.id)) {
       const orientation = computeSurfaceOrientation(surface, origin);
       surfaceOrientations.set(surface.id, orientation);
@@ -936,11 +881,11 @@ export function projectConeV2(
       );
 
       // Cast ray to the junction point, excluding junction's surfaces
+      // Note: effectiveObstacles includes ALL surfaces (including screen boundaries)
       const blockingHit = castRayToTarget(
         origin,
         targetXY,
         obstaclesExcludingJunction,
-        screenBoundaries,
         startLine
       );
 
@@ -977,8 +922,7 @@ export function projectConeV2(
           const continuation = castContinuationRayForJunction(
             origin,
             target,
-            [...effectiveObstacles, ...screenBoundaries.all],
-            screenBoundaries,
+            effectiveObstacles,
             startLine
           );
           if (continuation) {
@@ -1017,7 +961,6 @@ export function projectConeV2(
       origin,
       targetEndpoint,
       effectiveObstacles,
-      screenBoundaries,
       startLine,
       excludeSurfaceId
     );
@@ -1032,8 +975,7 @@ export function projectConeV2(
         const continuation = castContinuationRay(
           origin,
           targetEndpoint,
-          [...effectiveObstacles, ...screenBoundaries.all],
-          screenBoundaries,
+          effectiveObstacles,
           startLine,
           excludeSurfaceId
         );
@@ -1103,7 +1045,6 @@ export function projectConeV2(
         origin,
         source.leftBoundary,
         leftRayObstacles,
-        screenBoundaries,
         startLine
       );
       if (leftHit) {
@@ -1118,7 +1059,6 @@ export function projectConeV2(
         origin,
         source.rightBoundary,
         rightRayObstacles,
-        screenBoundaries,
         startLine
       );
       if (rightHit) {

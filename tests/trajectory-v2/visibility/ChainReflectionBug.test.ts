@@ -171,7 +171,7 @@ describe("Chain Reflection Bug", () => {
     it("should include both endpoints of chain1-0 in visibility polygon", () => {
       const chain = createChain1();
       const cone = createFullCone(PLAYER);
-      const sourcePoints = projectConeV2(cone, [chain], SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(cone, chainWithScreen);
       const polygon = toVector2Array(sourcePoints);
 
       // The LEFT endpoint should be in the polygon
@@ -199,7 +199,7 @@ describe("Chain Reflection Bug", () => {
     it("should extract visible segment covering full surface", () => {
       const chain = createChain1();
       const cone = createFullCone(PLAYER);
-      const sourcePoints = projectConeV2(cone, [chain], SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(cone, chainWithScreen);
 
       // Extract visible segments for chain1-0
       const segments = extractVisibleSurfaceSegments("chain1-0", sourcePoints, [chain]);
@@ -336,7 +336,7 @@ describe("Chain Reflection Bug", () => {
     it("should log all source points on chain1-0", () => {
       const chain = createChain1();
       const cone = createFullCone(PLAYER);
-      const sourcePoints = projectConeV2(cone, [chain], SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(cone, chainWithScreen);
 
       console.log("\nAll source points:");
       sourcePoints.forEach((sp, i) => {
@@ -397,7 +397,7 @@ describe("Chain Reflection Bug", () => {
     it("proves the root cause: apex is HitPoint on chain1-1, not Endpoint on chain1-0", () => {
       const chain = createChain1();
       const cone = createFullCone(PLAYER);
-      const sourcePoints = projectConeV2(cone, [chain], SCREEN_BOUNDS);
+      const sourcePoints = projectConeV2(cone, chainWithScreen);
 
       // Find apex point
       const apexPoint = sourcePoints.find((sp) => {
@@ -465,7 +465,7 @@ describe("Chain Reflection Bug", () => {
       for (const player of testPositions) {
         // Stage 0: Full visibility
         const stage0Cone = createFullCone(player);
-        const stage0SourcePoints = projectConeV2(stage0Cone, chains, SCREEN_BOUNDS);
+        const stage0SourcePoints = projectConeV2(stage0Cone, chainsWithScreen);
 
         // Check apex representation in Stage 0
         const apexPoints = stage0SourcePoints.filter((sp) => {
@@ -520,7 +520,7 @@ describe("Chain Reflection Bug", () => {
 
         for (const window of visibleSegments) {
           const cone = createConeThroughWindow(reflectedOrigin, window.start, window.end);
-          const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, "chain1-0");
+          const sourcePoints = projectConeV2(cone, chainsWithScreen, "chain1-0");
           stage1SourcePoints.push(...sourcePoints);
           const polygon = toVector2Array(sourcePoints);
           if (polygon.length >= 3) {
@@ -583,7 +583,7 @@ describe("Chain Reflection Bug", () => {
       const player = { x: 650, y: 500 }; // Directly below apex
 
       const stage0Cone = createFullCone(player);
-      const stage0SourcePoints = projectConeV2(stage0Cone, chains, SCREEN_BOUNDS);
+      const stage0SourcePoints = projectConeV2(stage0Cone, chainsWithScreen);
 
       // Log source points for debugging
       console.log("\n=== Stage 0 Source Points ===");
@@ -635,7 +635,7 @@ describe("Chain Reflection Bug", () => {
 
       // Stage 0
       const stage0Cone = createFullCone(player);
-      const stage0SourcePoints = projectConeV2(stage0Cone, chains, SCREEN_BOUNDS);
+      const stage0SourcePoints = projectConeV2(stage0Cone, chainsWithScreen);
 
       // Extract visible segments
       const visibleSegments = extractVisibleSurfaceSegments("chain1-0", stage0SourcePoints, chains);
@@ -651,7 +651,7 @@ describe("Chain Reflection Bug", () => {
 
       for (const window of visibleSegments) {
         const cone = createConeThroughWindow(reflectedOrigin, window.start, window.end);
-        const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, "chain1-0");
+        const sourcePoints = projectConeV2(cone, chainsWithScreen, "chain1-0");
         const polygon = toVector2Array(sourcePoints);
 
         console.log("\n=== Stage 1 Polygon Analysis ===");
@@ -698,7 +698,7 @@ describe("Chain Reflection Bug", () => {
 
       // Stage 0
       const stage0Cone = createFullCone(player);
-      const stage0SourcePoints = projectConeV2(stage0Cone, chains, SCREEN_BOUNDS);
+      const stage0SourcePoints = projectConeV2(stage0Cone, chainsWithScreen);
 
       // Find apex point in Stage 0
       const stage0Apex = stage0SourcePoints.find((sp) => {
@@ -737,7 +737,7 @@ describe("Chain Reflection Bug", () => {
       );
 
       const cone = createConeThroughWindow(reflectedOrigin, window.start, window.end);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, "chain1-0");
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, "chain1-0");
 
       // Find all apex-related source points in Stage 1
       const stage1ApexPoints = sourcePoints.filter((sp) => {

@@ -9,11 +9,20 @@
  * DESIGN PRINCIPLE: This is an INDEPENDENT calculation.
  * The planned path shows what would happen if all reflections worked.
  * It has NO knowledge of obstructions or actual physics.
+ *
+ * UNIFIED TYPES:
+ * - Uses SourcePoint for waypoints (OriginPoint, HitPoint) for provenance
+ * - HitPoint carries ray/surface/t/s for reflection points
  */
 
 import type { Surface } from "@/surfaces/Surface";
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import type { Ray, Vector2 } from "@/trajectory-v2/geometry/types";
 import { lineLineIntersection } from "@/trajectory-v2/geometry/GeometryOps";
+import {
+  HitPoint,
+  OriginPoint,
+  type SourcePoint,
+} from "@/trajectory-v2/geometry/SourcePoint";
 import {
   buildBackwardImages,
   buildForwardImages,
@@ -38,10 +47,21 @@ export interface PlannedHit {
  *
  * DESIGN PRINCIPLE: Calculated independently of actual path.
  * Shows the "ideal" trajectory if all reflections worked.
+ *
+ * PROVENANCE: waypointSources contains SourcePoint[] with provenance:
+ * - OriginPoint for player/cursor positions
+ * - HitPoint for surface reflection points with ray/surface/t/s info
  */
 export interface PlannedPath {
   /** Waypoints from player to cursor */
   readonly waypoints: readonly Vector2[];
+  /**
+   * Waypoints with provenance (SourcePoint types).
+   * - First element is always OriginPoint (player)
+   * - HitPoints carry ray/surface/t/s for reflection points
+   * - Last is always OriginPoint (cursor)
+   */
+  readonly waypointSources: readonly SourcePoint[];
   /** Information about each surface interaction */
   readonly hits: readonly PlannedHit[];
   /** Index of segment containing cursor (0-based) */
@@ -105,6 +125,7 @@ export function calculatePlannedPath(
   if (dist < 0.1) {
     return {
       waypoints: [player],
+      waypointSources: [new OriginPoint(player)],
       hits: [],
       cursorIndex: 0,
       cursorT: 0,
@@ -115,6 +136,7 @@ export function calculatePlannedPath(
   if (activeSurfaces.length === 0) {
     return {
       waypoints: [player, cursor],
+      waypointSources: [new OriginPoint(player), new OriginPoint(cursor)],
       hits: [],
       cursorIndex: 0,
       cursorT: 1,
@@ -126,6 +148,7 @@ export function calculatePlannedPath(
   const cursorImages = buildBackwardImages(cursor, activeSurfaces);
 
   const waypoints: Vector2[] = [player];
+  const waypointSources: SourcePoint[] = [new OriginPoint(player)];
   const hits: PlannedHit[] = [];
 
   // For each surface, find intersection using bidirectional images
@@ -154,6 +177,9 @@ export function calculatePlannedPath(
         y: (segment.start.y + segment.end.y) / 2,
       };
       waypoints.push(midpoint);
+      // Create a ray from playerImage to cursorImage for provenance
+      const ray: Ray = { from: playerImage, to: cursorImage };
+      waypointSources.push(new HitPoint(ray, surface, 1, 0.5)); // Midpoint
       hits.push({
         point: midpoint,
         surface,
@@ -169,6 +195,11 @@ export function calculatePlannedPath(
     const onSegment = isOnSegment(segmentT);
 
     waypoints.push(hitPoint);
+    
+    // Create HitPoint with provenance: ray from playerImage to cursorImage
+    const ray: Ray = { from: playerImage, to: cursorImage };
+    waypointSources.push(new HitPoint(ray, surface, intersection.t, segmentT));
+    
     hits.push({
       point: hitPoint,
       surface,
@@ -178,6 +209,7 @@ export function calculatePlannedPath(
 
   // Add cursor as final waypoint
   waypoints.push(cursor);
+  waypointSources.push(new OriginPoint(cursor));
 
   // Calculate cursor position info
   // Cursor is at the end of the last segment
@@ -186,6 +218,7 @@ export function calculatePlannedPath(
 
   return {
     waypoints,
+    waypointSources,
     hits,
     cursorIndex,
     cursorT,

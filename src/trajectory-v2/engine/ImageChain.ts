@@ -25,6 +25,11 @@ import {
   pointSideOfLine,
 } from "@/trajectory-v2/geometry/GeometryOps";
 import type { Ray } from "@/trajectory-v2/geometry/RayCore";
+import {
+  HitPoint,
+  OriginPoint,
+  type SourcePoint,
+} from "@/trajectory-v2/geometry/SourcePoint";
 
 /**
  * ImageChain interface - the contract for the single source of truth.
@@ -119,6 +124,34 @@ export interface ImageChain {
    * For empty plan, returns single ray: player → cursor
    */
   getAllRays(): readonly Ray[];
+
+  // ==========================================================================
+  // SourcePoint Interface - Provenance for unified types
+  // ==========================================================================
+
+  /**
+   * Get the reflection point as a HitPoint with full provenance.
+   *
+   * The HitPoint contains:
+   * - ray: from playerImage[i] to cursorImage[n-i]
+   * - hitSurface: surface[i]
+   * - t: parametric position along ray
+   * - s: parametric position along surface (for on-segment check)
+   *
+   * @param surfaceIndex Which surface
+   * @returns HitPoint with provenance
+   */
+  getReflectionSourcePoint(surfaceIndex: number): HitPoint;
+
+  /**
+   * Get all waypoints as SourcePoints with provenance.
+   *
+   * Returns n+2 SourcePoints for n surfaces:
+   * - [0]: OriginPoint (player)
+   * - [1..n]: HitPoint for each reflection
+   * - [n+1]: OriginPoint (cursor)
+   */
+  getAllWaypointSources(): readonly SourcePoint[];
 }
 
 /**
@@ -279,6 +312,58 @@ export function createImageChain(
       });
 
       return rays;
+    },
+
+    // SourcePoint interface methods
+    getReflectionSourcePoint(surfaceIndex: number): HitPoint {
+      if (surfaceIndex < 0 || surfaceIndex >= surfaces.length) {
+        throw new Error(
+          `Invalid surface index ${surfaceIndex}, max is ${surfaces.length - 1}`
+        );
+      }
+
+      const n = surfaces.length;
+      const surface = surfaces[surfaceIndex]!;
+      const playerImage = playerImages[surfaceIndex]!;
+      const cursorImage = cursorImages[n - surfaceIndex]!;
+
+      // Create ray for provenance
+      const ray: Ray = { source: playerImage, target: cursorImage };
+
+      // Get parametric position on surface (s parameter)
+      const point = reflectionPoints[surfaceIndex]!;
+      const { start, end } = surface.segment;
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const lengthSq = dx * dx + dy * dy;
+
+      let s = 0.5; // Default to midpoint
+      if (lengthSq > 0) {
+        s = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSq;
+      }
+
+      // Find intersection for t parameter
+      const intersection = lineLineIntersection(
+        playerImage,
+        cursorImage,
+        start,
+        end
+      );
+      const t = intersection.valid ? intersection.t : 1;
+
+      return new HitPoint(ray, surface, t, s);
+    },
+
+    getAllWaypointSources(): readonly SourcePoint[] {
+      const waypointSources: SourcePoint[] = [new OriginPoint(player)];
+
+      for (let i = 0; i < surfaces.length; i++) {
+        waypointSources.push(this.getReflectionSourcePoint(i));
+      }
+
+      waypointSources.push(new OriginPoint(cursor));
+
+      return waypointSources;
     },
   };
 }

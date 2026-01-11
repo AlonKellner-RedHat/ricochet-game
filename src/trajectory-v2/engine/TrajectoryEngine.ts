@@ -7,6 +7,8 @@
 
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
+import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import { extractSurfacesFromChains } from "@/trajectory-v2/geometry/RayCasting";
 import { TrajectoryDebugLogger } from "../TrajectoryDebugLogger";
 
 /**
@@ -77,6 +79,9 @@ export class TrajectoryEngine implements ITrajectoryEngine {
   private cursor: Vector2 = { x: 0, y: 0 };
   private plannedSurfaces: readonly Surface[] = [];
   private allSurfaces: readonly Surface[] = [];
+  
+  // SurfaceChain support (unified with visibility system)
+  private allChains: readonly SurfaceChain[] = [];
 
   // Cache management
   private dirty: DirtyFlags = {
@@ -163,6 +168,36 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     this.dirty.alignment = true;
     this.dirty.ghost = true;
     this.dirty.unifiedPath = true;
+  }
+
+  /**
+   * Set all surface chains for unified trajectory/visibility calculation.
+   *
+   * SurfaceChains are the unified input type shared by both trajectory
+   * and visibility systems. This method extracts Surface[] for backward
+   * compatibility while storing chains for future unified operations.
+   *
+   * @param chains SurfaceChains containing all obstacles
+   */
+  setChains(chains: readonly SurfaceChain[]): void {
+    if (this.allChains === chains) {
+      return;
+    }
+    this.allChains = chains;
+    // Extract surfaces for backward compatibility
+    this.allSurfaces = extractSurfacesFromChains(chains);
+    this.dirty.bypass = true;
+    this.dirty.actualPath = true;
+    this.dirty.alignment = true;
+    this.dirty.ghost = true;
+    this.dirty.unifiedPath = true;
+  }
+
+  /**
+   * Get the current surface chains.
+   */
+  getChains(): readonly SurfaceChain[] {
+    return this.allChains;
   }
 
   // =========================================================================

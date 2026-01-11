@@ -9,8 +9,10 @@ import {
   type SurfaceChain,
   createRicochetChain,
   createWallChain,
+  createMixedChain,
 } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Scene, PlannedSequence } from "../types";
+import { SCREEN } from "../positions";
 
 /** Empty sequence baseline */
 const EMPTY_SEQUENCE: PlannedSequence = { name: "empty", surfaces: [] };
@@ -104,15 +106,15 @@ export const EDGE_SCENES: Scene[] = [
   // Scene 12: Near-parallel surfaces (numerical stability test)
   {
     name: "near-parallel",
-    description: "Two almost parallel surfaces",
+    description: "Two almost parallel surfaces (p2 is 2px below p1)",
     allChains: [
       createRicochetChain("p1", [
         { x: 400, y: 300 },
         { x: 600, y: 300 },
       ]),
       createRicochetChain("p2", [
-        { x: 400, y: 302 }, // 2 pixels apart, nearly parallel
-        { x: 600, y: 298 },
+        { x: 400, y: 302 }, // 2 pixels below p1, truly parallel
+        { x: 600, y: 302 },
       ]),
     ],
     plannedSurfaces: [

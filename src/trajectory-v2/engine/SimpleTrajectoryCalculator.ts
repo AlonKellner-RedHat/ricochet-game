@@ -20,9 +20,13 @@
 
 import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
+import type { SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
+import { extractSurfacesFromChains } from "@/trajectory-v2/geometry/RayCasting";
 import { type BypassResult } from "./BypassEvaluator";
 import { 
-  calculateActualPath, 
+  calculateActualPath,
+  calculateActualPathWithChains,
   getInitialDirection,
   type ActualPath 
 } from "./ActualPathCalculator";
@@ -50,6 +54,11 @@ export interface SimpleTrajectoryResult {
   readonly renderSegments: readonly RenderSegment[];
   /** Bypass evaluation result */
   readonly bypass: BypassResult;
+  /**
+   * Waypoint sources with provenance (from actual path).
+   * Contains OriginPoint/HitPoint types for unified type handling.
+   */
+  readonly waypointSources: readonly SourcePoint[];
 }
 
 /**
@@ -120,6 +129,7 @@ export function calculateSimpleTrajectory(
   // Adapt to existing PlannedPath interface for compatibility
   const planned: PlannedPath = {
     waypoints: chainPlanned.waypoints,
+    waypointSources: chainBypass.chain.getAllWaypointSources(),
     hits: chainPlanned.hits.map(h => ({
       point: h.point,
       surface: h.surface,
@@ -164,6 +174,100 @@ export function calculateSimpleTrajectory(
     divergence,
     renderSegments,
     bypass,
+    waypointSources: actual.waypointSources,
+  };
+}
+
+/**
+ * Calculate complete trajectory using SurfaceChains.
+ *
+ * This version uses the unified SurfaceChain[] type shared with
+ * the visibility system, enabling provenance tracking and
+ * junction handling for aligned behavior.
+ *
+ * @param player Player position
+ * @param cursor Cursor position
+ * @param plannedSurfaces Surfaces in the plan
+ * @param chains All surface chains in the scene
+ * @returns Complete trajectory result
+ */
+export function calculateSimpleTrajectoryWithChains(
+  player: Vector2,
+  cursor: Vector2,
+  plannedSurfaces: readonly Surface[],
+  chains: readonly SurfaceChain[]
+): SimpleTrajectoryResult {
+  // Extract surfaces for backward-compatible calculation
+  const allSurfaces = extractSurfacesFromChains(chains);
+  
+  // Log the input (if debug enabled)
+  TrajectoryDebugLogger.logTrajectory(player, cursor, plannedSurfaces, allSurfaces);
+
+  // Step 1: Evaluate bypass using ImageChain (single source of truth)
+  const chainBypass = evaluateBypassFromChain(player, cursor, plannedSurfaces);
+  
+  // Adapt to existing BypassResult interface for compatibility
+  const bypass: BypassResult = {
+    activeSurfaces: chainBypass.activeSurfaces,
+    bypassedSurfaces: chainBypass.bypassedSurfaces,
+  };
+  TrajectoryDebugLogger.logBypass(bypass);
+
+  // Step 2: Calculate shared initial direction using ImageChain
+  const initialDirection = getSharedInitialDirection(player, cursor, chainBypass);
+
+  // Step 3: Calculate planned path from ImageChain (single source of truth)
+  const chainPlanned = buildPlannedPathFromChain(chainBypass.chain);
+  
+  // Adapt to existing PlannedPath interface for compatibility
+  const planned: PlannedPath = {
+    waypoints: chainPlanned.waypoints,
+    waypointSources: chainBypass.chain.getAllWaypointSources(),
+    hits: chainPlanned.hits.map(h => ({
+      point: h.point,
+      surface: h.surface,
+      onSegment: h.onSegment,
+    })),
+    cursorIndex: chainPlanned.cursorIndex,
+    cursorT: chainPlanned.cursorT,
+  };
+  TrajectoryDebugLogger.logPlannedPath(planned);
+
+  // Step 4: Calculate actual path using chains (forward physics with provenance)
+  const actual = calculateActualPathWithChains(player, cursor, initialDirection, chains);
+  TrajectoryDebugLogger.logActualPath(actual);
+
+  // Step 5: Find divergence (simple waypoint comparison)
+  const divergence = findDivergence(
+    { waypoints: actual.waypoints },
+    { waypoints: planned.waypoints }
+  );
+  TrajectoryDebugLogger.logDivergence(divergence);
+
+  // Step 6: Derive render segments (simple color rules)
+  const renderSegments = renderDualPath(
+    {
+      waypoints: actual.waypoints,
+      cursorIndex: actual.cursorIndex,
+      cursorT: actual.cursorT,
+    },
+    {
+      waypoints: planned.waypoints,
+      cursorIndex: planned.cursorIndex,
+      cursorT: planned.cursorT,
+    },
+    divergence,
+    cursor
+  );
+  TrajectoryDebugLogger.logRenderSegments(renderSegments);
+
+  return {
+    actual,
+    planned,
+    divergence,
+    renderSegments,
+    bypass,
+    waypointSources: actual.waypointSources,
   };
 }
 

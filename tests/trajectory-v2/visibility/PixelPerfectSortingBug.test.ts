@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { RicochetSurface } from "@/surfaces/RicochetSurface";
+import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { projectConeV2, createFullCone, toVector2Array } from "@/trajectory-v2/visibility/ConeProjectionV2";
 import { createSingleSurfaceChain, type SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";

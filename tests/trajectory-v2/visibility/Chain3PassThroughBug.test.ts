@@ -347,7 +347,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
 
       // Get the actual projection result
       const cone = createConeThroughWindow(origin, windowStart, windowEnd);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\n--- Actual Polygon Vertices ---`);
@@ -573,7 +573,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
 
       // Get the polygon and look for hits that match window boundary directions
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\nWindow boundaries:`);
@@ -819,7 +819,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
 
       // Get the polygon vertices
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       // Find chain3-0 hit and ceiling hits
@@ -919,7 +919,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
 
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
 
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\nPolygon vertices (${vertices.length}):`);
@@ -950,7 +950,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
 
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
 
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\nPolygon vertices (${vertices.length}):`);
@@ -1018,7 +1018,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
       const origin = calculateReflectedOrigin(player);
 
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       // Calculate right boundary direction
@@ -1071,7 +1071,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
       console.log(`Reflected origin: (${origin.x.toFixed(4)}, ${origin.y.toFixed(4)})`);
 
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       // Find the problematic vertices
@@ -1246,7 +1246,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
 
       // Get vertices
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
-      const points = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const points = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(points);
 
       console.log("\nVertex positions relative to reference direction:");
@@ -1328,7 +1328,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
       const origin = calculateReflectedOrigin(PLAYER_CASE_4);
 
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log("\n=== TDD TEST: Case 4 junction continuation fix ===");
@@ -1393,7 +1393,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
       const origin = calculateReflectedOrigin(PLAYER_CASE_5);
 
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log("\n=== TDD TEST: Case 5 polygon shape ===");
@@ -1435,7 +1435,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
       console.log(`Reflected origin: (${origin.x.toFixed(2)}, ${origin.y.toFixed(2)})`);
 
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\nPolygon vertices (${vertices.length}):`);
@@ -1515,7 +1515,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
       const chains = createChains();
       const origin = calculateReflectedOrigin(PLAYER_CASE_6);
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
 
       console.log("\n=== CHAIN3-0 HIT SOURCE ANALYSIS ===");
 
@@ -1674,7 +1674,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
 
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
 
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\nPolygon vertices (${vertices.length}):`);
@@ -1718,7 +1718,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
       console.log("\n=== RAY ANALYSIS FOR CASE 4 ===");
 
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       // Find all HitPoints on chain3-0
@@ -1873,7 +1873,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
 
       // Get the polygon and check for continuation
       const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\n--- Checking for continuation hit past junction ---`);
@@ -2041,7 +2041,7 @@ describe("Chain3-0 Pass-Through Bug Investigation", () => {
         const origin = calculateReflectedOrigin(player);
 
         const cone = createConeThroughWindow(origin, PLANNED_SURFACE.start, PLANNED_SURFACE.end);
-        const points = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+        const points = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
         const vertices = toVector2Array(points);
 
         // Find chain3-0 hit and ceiling hits

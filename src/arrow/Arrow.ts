@@ -6,11 +6,17 @@ import type { Vector2 } from "@/types";
  * - flying: Normal flight, full speed
  * - exhausted: Past distance limit, slowing down rapidly
  * - stuck: Embedded in surface, no longer moving
+ *
+ * @deprecated Use ArrowSystem from trajectory-v2/systems instead.
+ * This module will be removed in a future version.
+ * The ArrowSystem uses unified SourcePoint types for provenance tracking.
  */
 export type ArrowState = "flying" | "exhausted" | "stuck";
 
 /**
  * Arrow configuration
+ *
+ * @deprecated Use ArrowSystem from trajectory-v2/systems instead.
  */
 export interface ArrowConfig {
   initialSpeed: number; // Initial speed in pixels per second
@@ -30,6 +36,11 @@ export const DEFAULT_ARROW_CONFIG: ArrowConfig = {
 
 /**
  * Arrow - Projectile that follows pre-computed waypoint path
+ *
+ * @deprecated Use ArrowSystem from trajectory-v2/systems instead.
+ * This class will be removed in a future version.
+ * The ArrowSystem uses unified SourcePoint types for provenance tracking,
+ * enabling queries like "what surface will the arrow hit next".
  *
  * Physics:
  * - Starts at high speed (5000 px/s)

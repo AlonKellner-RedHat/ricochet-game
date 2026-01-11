@@ -6,6 +6,7 @@
  */
 
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import type { SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { Surface } from "@/surfaces/Surface";
 
 /**
@@ -350,6 +351,25 @@ export interface UnifiedPath {
    * - Actual arrow goes straight through (no physical surface to hit)
    */
   readonly physicsDivergenceIndex: number;
+
+  // ==========================================================================
+  // UNIFIED PROVENANCE (Shared with Arrow System)
+  // ==========================================================================
+
+  /**
+   * Waypoints with provenance for arrow system.
+   *
+   * UNIFIED TYPES: Same SourcePoint types used by trajectory and visibility systems.
+   * - First element is OriginPoint (player position)
+   * - HitPoints carry surface/ray/t/s for each reflection point
+   * - Last may be OriginPoint (cursor) if cursorReachable
+   *
+   * This enables the arrow to know:
+   * - Which surface it will hit at each waypoint
+   * - The ray that produced each hit
+   * - Parametric position on the surface
+   */
+  readonly waypointSources?: readonly SourcePoint[];
 }
 
 /**

@@ -65,6 +65,8 @@ export interface AimingEvent {
 
 export interface ArrowShotData {
   readonly waypoints: readonly import("@/trajectory-v2/geometry/types").Vector2[];
+  /** Waypoints with provenance (unified with trajectory/visibility systems) */
+  readonly waypointSources: readonly import("@/trajectory-v2/geometry/SourcePoint").SourcePoint[];
   readonly isFullyAligned: boolean;
 }
 

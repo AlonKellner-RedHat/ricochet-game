@@ -11,6 +11,7 @@
 
 import type { Surface } from "@/surfaces/Surface";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
+import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { type SourcePoint, isEndpoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
 import { type SurfaceChain, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
@@ -111,6 +112,7 @@ export class ValidRegionRenderer {
   private graphics: IValidRegionGraphics;
   private config: ValidRegionConfig;
   private screenBounds: ScreenBounds;
+  private screenChain: SurfaceChain;
   private lastOutline: ValidRegionOutline | null = null;
   private lastSourcePoints: readonly SourcePoint[] = [];
   private lastOrigin: Vector2 | null = null;
@@ -132,6 +134,7 @@ export class ValidRegionRenderer {
   ) {
     this.graphics = graphics;
     this.screenBounds = screenBounds;
+    this.screenChain = createScreenBoundaryChain(screenBounds);
     this.config = { ...DEFAULT_VALID_REGION_CONFIG, ...config };
   }
 
@@ -174,6 +177,7 @@ export class ValidRegionRenderer {
    */
   setScreenBounds(bounds: ScreenBounds): void {
     this.screenBounds = bounds;
+    this.screenChain = createScreenBoundaryChain(bounds);
   }
 
   /**
@@ -458,9 +462,13 @@ export class ValidRegionRenderer {
     allChains: readonly SurfaceChain[],
     windowConfig: WindowConfig | null = null
   ): void {
+    // Combine user chains with screen boundary chain
+    // Screen boundaries are just another SurfaceChain - no special handling
+    const allChainsWithScreen: readonly SurfaceChain[] = [...allChains, this.screenChain];
+
     // Store chains for junction provenance detection in extractVisibleSurfaceSegments
-    this.lastAllChains = allChains;
-    this.buildJunctionMapping(allChains);
+    this.lastAllChains = allChainsWithScreen;
+    this.buildJunctionMapping(allChainsWithScreen);
 
     // Unified ConeProjection algorithm for all cases:
     // - 360° visibility: full cone from player
@@ -488,7 +496,7 @@ export class ValidRegionRenderer {
       const umbrellaWindows = getWindowSegments(windowConfig);
       for (const window of umbrellaWindows) {
         const cone = createConeThroughWindow(player, window.start, window.end);
-        const sourcePoints = projectConeV2(cone, allChains, this.screenBounds);
+        const sourcePoints = projectConeV2(cone, allChainsWithScreen);
         stage1SourcePoints.push(...sourcePoints);
         const polygon = preparePolygonForRendering(sourcePoints);
         if (polygon.length >= 3) {
@@ -498,7 +506,7 @@ export class ValidRegionRenderer {
     } else {
       // Full 360° visibility from player
       const cone = createFullCone(player);
-      const sourcePoints = projectConeV2(cone, allChains, this.screenBounds);
+      const sourcePoints = projectConeV2(cone, allChainsWithScreen);
       stage1SourcePoints.push(...sourcePoints);
       const polygon = preparePolygonForRendering(sourcePoints);
       if (polygon.length >= 3) {
@@ -571,8 +579,7 @@ export class ValidRegionRenderer {
           );
           const sourcePoints = projectConeV2(
             cone,
-            allChains,
-            this.screenBounds,
+            allChainsWithScreen,
             currentSurface.id // Exclude the current reflection surface
           );
           stageSourcePoints.push(...sourcePoints);

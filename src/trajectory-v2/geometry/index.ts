@@ -32,4 +32,27 @@ export {
 } from "./ScreenBoundaries";
 
 // Geometry operations
-export { lineLineIntersection, getRayToSegmentHit } from "./GeometryOps";
+export { lineLineIntersection } from "./GeometryOps";
+
+// Unified ray casting
+export {
+  findClosestHit,
+  findClosestHitInChains,
+  castRay,
+  castRayInChains,
+  castRayToEndpoint,
+  castRayToEndpointInChains,
+  castContinuationRay,
+  castContinuationRayForJunction,
+  raycastForwardWithProvenance,
+  raycastForwardInChains,
+  castRayThroughWindow,
+  extractSurfacesFromChains,
+  toOriginPoint,
+  toVector2Array,
+  pointsEqual,
+  type Segment,
+  type ClosestHitResult,
+  type RayHitResult,
+  type RayCastOptions,
+} from "./RayCasting";

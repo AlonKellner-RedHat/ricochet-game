@@ -254,7 +254,7 @@ describe("Adjacent Surface Spike Bug", () => {
       );
 
       // Project the cone
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\nPolygon vertices (${vertices.length}):`);
@@ -298,7 +298,7 @@ describe("Adjacent Surface Spike Bug", () => {
         PLANNED_SURFACE.end
       );
 
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log("\n=== VERTEX SOURCE ANALYSIS ===");
@@ -337,7 +337,7 @@ describe("Adjacent Surface Spike Bug", () => {
         PLANNED_SURFACE.end
       );
 
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       console.log("\n=== CHECKING IF SPIKES ARE ON ADJACENT SURFACE ===");
@@ -548,7 +548,7 @@ describe("Adjacent Surface Spike Bug", () => {
         PLANNED_SURFACE.end
       );
 
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
       const vertices = toVector2Array(sourcePoints);
 
       // Count HitPoints on chain3-0 (the adjacent surface)
@@ -609,7 +609,7 @@ describe("Adjacent Surface Spike Bug", () => {
         PLANNED_SURFACE.start,
         PLANNED_SURFACE.end
       );
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, PLANNED_SURFACE.id);
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, PLANNED_SURFACE.id);
 
       // Find all HitPoints on chain3-0
       const chain3_0Hits: { s: number; pos: Vector2; index: number }[] = [];

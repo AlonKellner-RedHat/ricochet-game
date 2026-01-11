@@ -318,7 +318,7 @@ describe("Reflected Visibility Cascade Bug Investigation", () => {
         // Compute visibility through window
         const window = visibleSegments[0]!;
         const cone = createConeThroughWindow(currentOrigin, window.start, window.end);
-        currentPoints = projectConeV2(cone, chains, SCREEN_BOUNDS, surface.id);
+        currentPoints = projectConeV2(cone, chainsWithScreen, surface.id);
         console.log(`  Stage ${i + 2} source points: ${currentPoints.length}`);
       }
     });
@@ -355,7 +355,7 @@ describe("Reflected Visibility Cascade Bug Investigation", () => {
       }
 
       // Project the cone
-      const stage2Points = projectConeV2(cone, chains, SCREEN_BOUNDS, "room-3");
+      const stage2Points = projectConeV2(cone, chainsWithScreen, "room-3");
       const stage2Vertices = toVector2Array(stage2Points);
 
       console.log(`\nStage 2 polygon vertices: ${stage2Vertices.length}`);
@@ -590,7 +590,7 @@ describe("Reflected Visibility Cascade Bug Investigation", () => {
 
         const window = visibleSegments[0]!;
         const cone = createConeThroughWindow(currentOrigin, window.start, window.end);
-        currentPoints = projectConeV2(cone, chains, SCREEN_BOUNDS, surface.id);
+        currentPoints = projectConeV2(cone, chainsWithScreen, surface.id);
         console.log(`  Stage ${i + 2} source points: ${currentPoints.length}`);
       }
     });
@@ -673,7 +673,7 @@ describe("Reflected Visibility Cascade Bug Investigation", () => {
 
         const window = visibleSegments[0]!;
         const cone = createConeThroughWindow(currentOrigin, window.start, window.end);
-        currentPoints = projectConeV2(cone, chains, SCREEN_BOUNDS, surface.id);
+        currentPoints = projectConeV2(cone, chainsWithScreen, surface.id);
         console.log(`  Stage ${i + 2} source points: ${currentPoints.length}`);
       }
     });
@@ -882,7 +882,7 @@ describe("Reflected Visibility Cascade Bug Investigation", () => {
       console.log(`\nWindow (chain2-1): (${windowStart.x}, ${windowStart.y}) -> (${windowEnd.x.toFixed(2)}, ${windowEnd.y.toFixed(2)})`);
 
       const cone = createConeThroughWindow(REFLECTED_ORIGIN, windowStart, windowEnd);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, "chain2-1");
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, "chain2-1");
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\nVisibility polygon vertices: ${vertices.length}`);
@@ -945,7 +945,7 @@ describe("Reflected Visibility Cascade Bug Investigation", () => {
       console.log(`Right boundary is junction (750, 250)? ${rightIsJunction}`);
 
       // Project the cone
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, "chain2-1");
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, "chain2-1");
 
       // Find OriginPoints (window boundaries)
       console.log(`\nOriginPoints in polygon:`);
@@ -1007,7 +1007,7 @@ describe("Reflected Visibility Cascade Bug Investigation", () => {
       console.log(`If the boundary ray is cast toward (750, 250), it might hit chain2-0 along the way!`);
       
       // Actually project and see what happens
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, "chain2-1");
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, "chain2-1");
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\n--- Polygon result ---`);
@@ -1229,7 +1229,7 @@ describe("Reflected Visibility Cascade Bug Investigation", () => {
       console.log(`  End: (${windowEnd.x.toFixed(4)}, ${windowEnd.y.toFixed(4)})`);
 
       const cone = createConeThroughWindow(REFLECTED_ORIGIN, partialWindowStart, windowEnd);
-      const sourcePoints = projectConeV2(cone, chains, SCREEN_BOUNDS, "chain2-1");
+      const sourcePoints = projectConeV2(cone, chainsWithScreen, "chain2-1");
       const vertices = toVector2Array(sourcePoints);
 
       console.log(`\nPolygon with partial window:`);

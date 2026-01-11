@@ -14,6 +14,7 @@ All calculations must be **exact and stable**. Never introduce floating-point in
 - **No collinearity checks**: Never check if points are collinear geometrically
 - **No atan2/angles**: Use cross-product sign comparisons with reference direction instead
 - **No re-calculation**: If a property was computed, store and retrieve via provenance
+- **No screen boundary special cases**: Screen boundaries are a regular `SurfaceChain` - same code paths as all obstacles
 
 ### Required Patterns
 

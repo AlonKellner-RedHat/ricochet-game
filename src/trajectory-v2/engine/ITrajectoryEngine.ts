@@ -7,6 +7,7 @@
 
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
+import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type {
   AlignmentResult,
   EngineResults,
@@ -53,6 +54,22 @@ export interface ITrajectoryEngine {
    * Invalidates: actual path, alignment
    */
   setAllSurfaces(surfaces: readonly Surface[]): void;
+
+  /**
+   * Set all surface chains for unified trajectory/visibility calculation.
+   *
+   * SurfaceChains are the unified input type shared by both trajectory
+   * and visibility systems. This enables provenance tracking and
+   * junction handling for aligned behavior.
+   *
+   * Invalidates: actual path, alignment
+   */
+  setChains(chains: readonly SurfaceChain[]): void;
+
+  /**
+   * Get the current surface chains.
+   */
+  getChains(): readonly SurfaceChain[];
 
   // =========================================================================
   // CACHED GETTERS
