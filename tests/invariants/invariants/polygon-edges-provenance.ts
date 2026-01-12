@@ -159,6 +159,11 @@ export function validateEdgeByProvenance(
     const id1 = s1.surface.id;
     const id2 = s2.surface.id;
     
+    // Check if they share a continuation ray (collinear from origin)
+    if (s1.continuationRay && s2.continuationRay && s1.continuationRay.id === s2.continuationRay.id) {
+      return { valid: true };
+    }
+    
     // Check if they're at the same physical location (junction)
     const p1 = s1.computeXY();
     const p2 = s2.computeXY();

@@ -133,19 +133,20 @@ describe("RenderingDedup", () => {
       expect(result.length).toBe(3);
     });
 
-    it("always keeps Endpoints", () => {
+    it("merges Endpoints with HitPoints on same surface", () => {
       const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
       const points = [
         new HitPoint(ray, surfaceA, 0.1, 0.1),
-        new Endpoint(surfaceA, "start"), // Endpoint - always kept
+        new Endpoint(surfaceA, "start"), // Same surface as HitPoints
         new HitPoint(ray, surfaceA, 0.3, 0.3),
       ];
 
       const result = dedupeConsecutiveHits(points);
 
-      // Endpoint breaks the run and is always kept
-      expect(result.length).toBe(3);
-      expect(result[1]).toBeInstanceOf(Endpoint);
+      // All points on same surface - merged to first and last
+      expect(result.length).toBe(2);
+      expect(result[0]).toBe(points[0]); // First HitPoint
+      expect(result[1]).toBe(points[2]); // Last HitPoint
     });
 
     it("always keeps OriginPoints", () => {
@@ -175,26 +176,24 @@ describe("RenderingDedup", () => {
       expect(result.length).toBe(1);
     });
 
-    it("handles mixed point types", () => {
+    it("handles mixed point types with surface grouping", () => {
       const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
       const points = [
-        new Endpoint(surfaceA, "start"),
-        new HitPoint(ray, surfaceA, 0.1, 0.1),
-        new HitPoint(ray, surfaceA, 0.2, 0.2),
-        new HitPoint(ray, surfaceA, 0.3, 0.3),
-        new Endpoint(surfaceA, "end"),
-        new HitPoint(ray, surfaceB, 0.4, 0.4),
+        new Endpoint(surfaceA, "start"),    // First on surfaceA
+        new HitPoint(ray, surfaceA, 0.1, 0.1), // Middle - removed
+        new HitPoint(ray, surfaceA, 0.2, 0.2), // Middle - removed
+        new HitPoint(ray, surfaceA, 0.3, 0.3), // Middle - removed
+        new Endpoint(surfaceA, "end"),      // Last on surfaceA
+        new HitPoint(ray, surfaceB, 0.4, 0.4), // Different surface - kept
       ];
 
       const result = dedupeConsecutiveHits(points);
 
-      // Endpoints always kept, middle HitPoints on surfaceA removed
-      expect(result.length).toBe(5);
-      expect(result[0]).toBeInstanceOf(Endpoint);
-      expect(result[1]).toBeInstanceOf(HitPoint); // First of run
-      expect(result[2]).toBeInstanceOf(HitPoint); // Last of run (before endpoint)
-      expect(result[3]).toBeInstanceOf(Endpoint);
-      expect(result[4]).toBeInstanceOf(HitPoint);
+      // All surfaceA points merged to first and last, surfaceB kept
+      expect(result.length).toBe(3);
+      expect(result[0]).toBeInstanceOf(Endpoint); // First of surfaceA run
+      expect(result[1]).toBeInstanceOf(Endpoint); // Last of surfaceA run
+      expect(result[2]).toBeInstanceOf(HitPoint); // surfaceB (different surface)
     });
   });
 

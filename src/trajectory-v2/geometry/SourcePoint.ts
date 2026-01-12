@@ -48,6 +48,79 @@ export interface WindowContext {
 }
 
 /**
+ * Minimal interface for ContinuationRay reference.
+ * Defined here to avoid circular imports.
+ */
+export interface ContinuationRayRef {
+  readonly id: string;
+}
+
+/**
+ * Directional blocking status for a point.
+ *
+ * Each point can block rays from CW direction, CCW direction, both, or neither.
+ * This is determined by the surface orientations relative to the origin.
+ *
+ * - CW blocking: blocks rays approaching from the CW (clockwise) direction
+ * - CCW blocking: blocks rays approaching from the CCW (counter-clockwise) direction
+ */
+export interface BlockingStatus {
+  readonly isCWBlocking: boolean;
+  readonly isCCWBlocking: boolean;
+}
+
+/**
+ * Non-blocking status constant - used by OriginPoint and collinear endpoints.
+ */
+export const NON_BLOCKING: BlockingStatus = {
+  isCWBlocking: false,
+  isCCWBlocking: false,
+};
+
+/**
+ * Fully blocking status constant - used by HitPoint.
+ */
+export const FULLY_BLOCKING: BlockingStatus = {
+  isCWBlocking: true,
+  isCCWBlocking: true,
+};
+
+/**
+ * Compute blocking contribution from a surface to one of its endpoints.
+ *
+ * Based on surface orientation (crossProduct) and which endpoint:
+ * - CCW surface (cross > 0): start → CCW blocking, end → CW blocking
+ * - CW surface (cross < 0): start → CW blocking, end → CCW blocking
+ * - Collinear surface (cross = 0): neither blocking
+ *
+ * @param orientation The surface orientation info (crossProduct)
+ * @param which Which endpoint ("start" or "end")
+ * @returns BlockingStatus for this endpoint from this surface
+ */
+export function getEndpointBlockingContribution(
+  orientation: OrientationInfo | undefined,
+  which: "start" | "end"
+): BlockingStatus {
+  if (!orientation || orientation.crossProduct === 0) {
+    return NON_BLOCKING;
+  }
+
+  const isCCW = orientation.crossProduct > 0;
+
+  if (which === "start") {
+    // Start endpoint: CCW surface → CCW blocking, CW surface → CW blocking
+    return isCCW
+      ? { isCWBlocking: false, isCCWBlocking: true }
+      : { isCWBlocking: true, isCCWBlocking: false };
+  } else {
+    // End endpoint: CCW surface → CW blocking, CW surface → CCW blocking
+    return isCCW
+      ? { isCWBlocking: true, isCCWBlocking: false }
+      : { isCWBlocking: false, isCCWBlocking: true };
+  }
+}
+
+/**
  * Abstract base class for all source-of-truth points.
  *
  * Each point type implements its own behavior - adding new types
@@ -56,6 +129,17 @@ export interface WindowContext {
 export abstract class SourcePoint {
   /** Type discriminator for runtime checks */
   abstract readonly type: string;
+
+  /**
+   * Optional reference to the continuation ray this point belongs to.
+   *
+   * Set by projectConeV2 when creating continuation chains.
+   * Points not on a continuation ray have this undefined.
+   *
+   * Used for provenance-based deduplication: consecutive points
+   * with the same continuationRay.id can be merged.
+   */
+  continuationRay?: ContinuationRayRef;
 
   /**
    * Compute actual x,y coordinates for rendering.
@@ -96,6 +180,60 @@ export abstract class SourcePoint {
     _orientations: Map<string, OrientationInfo>,
     _windowContext?: WindowContext
   ): boolean;
+
+  /**
+   * Get surface IDs that should be excluded when casting a ray through this point.
+   *
+   * OCP: Each point type defines which surfaces to exclude:
+   * - Endpoint: excludes its own surface
+   * - JunctionPoint: excludes both adjacent surfaces
+   * - HitPoint: excludes its hit surface
+   * - OriginPoint: excludes nothing (not on any surface)
+   *
+   * Used by the unified castRay function to skip the target's own surfaces.
+   */
+  abstract getExcludedSurfaceIds(): string[];
+
+  /**
+   * Get directional blocking status for this point.
+   *
+   * Returns { isCWBlocking, isCCWBlocking } based on the surface orientations.
+   * This replaces the single isBlocking() boolean with direction-aware blocking.
+   *
+   * @param _orientations Pre-computed surface orientations
+   * @param _windowContext Optional context for window junctions
+   * @returns BlockingStatus with CW and CCW blocking flags
+   */
+  abstract getBlockingStatus(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): BlockingStatus;
+
+  /**
+   * Get the shadow boundary order for this point.
+   *
+   * Based on blocking status:
+   * - CCW blocking only → positive (far-before-near, entering shadow)
+   * - CW blocking only → negative (near-before-far, exiting shadow)
+   * - Both or neither → 0 (no clear shadow direction)
+   *
+   * @param orientations Pre-computed surface orientations
+   * @returns Positive for far-before-near, negative for near-before-far, 0 for none
+   */
+  getShadowBoundaryOrder(
+    orientations: Map<string, OrientationInfo>,
+    windowContext?: WindowContext
+  ): number {
+    const status = this.getBlockingStatus(orientations, windowContext);
+
+    if (status.isCCWBlocking && !status.isCWBlocking) {
+      return 1; // far-before-near
+    }
+    if (status.isCWBlocking && !status.isCCWBlocking) {
+      return -1; // near-before-far
+    }
+    return 0; // both or neither
+  }
 }
 
 // =============================================================================
@@ -144,6 +282,23 @@ export class OriginPoint extends SourcePoint {
     _windowContext?: WindowContext
   ): boolean {
     return false;
+  }
+
+  /**
+   * OriginPoints are not on any surface - exclude nothing.
+   */
+  getExcludedSurfaceIds(): string[] {
+    return [];
+  }
+
+  /**
+   * OriginPoints have no blocking in either direction.
+   */
+  getBlockingStatus(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): BlockingStatus {
+    return NON_BLOCKING;
   }
 }
 
@@ -199,6 +354,29 @@ export class Endpoint extends SourcePoint {
     _windowContext?: WindowContext
   ): boolean {
     return false;
+  }
+
+  /**
+   * Exclude this endpoint's surface when casting rays through it.
+   */
+  getExcludedSurfaceIds(): string[] {
+    return [this.surface.id];
+  }
+
+  /**
+   * Get blocking status from this endpoint's surface orientation.
+   *
+   * Based on surface orientation and which endpoint:
+   * - CCW surface (cross > 0): start → CCW blocking, end → CW blocking
+   * - CW surface (cross < 0): start → CW blocking, end → CCW blocking
+   * - Collinear surface (cross = 0): neither blocking
+   */
+  getBlockingStatus(
+    orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): BlockingStatus {
+    const orientation = orientations.get(this.surface.id);
+    return getEndpointBlockingContribution(orientation, this.which);
   }
 }
 
@@ -270,6 +448,24 @@ export class HitPoint extends SourcePoint {
   ): boolean {
     return true;
   }
+
+  /**
+   * Exclude this hit's surface when casting rays through it.
+   */
+  getExcludedSurfaceIds(): string[] {
+    return [this.hitSurface.id];
+  }
+
+  /**
+   * HitPoints are fully blocking (both CW and CCW).
+   * A ray hitting a surface in the middle blocks from all directions.
+   */
+  getBlockingStatus(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): BlockingStatus {
+    return FULLY_BLOCKING;
+  }
 }
 
 // =============================================================================
@@ -314,6 +510,25 @@ export function isScreenBoundary(point: SourcePoint): boolean {
     return point.hitSurface.id.startsWith("screen-");
   }
   return false;
+}
+
+/**
+ * Get the surface ID for a point, if it has one.
+ *
+ * - Endpoint: returns surface.id
+ * - HitPoint: returns hitSurface.id
+ * - OriginPoint: returns undefined (not on a surface)
+ *
+ * Used for provenance-based deduplication of consecutive points on same surface.
+ */
+export function getSurfaceId(point: SourcePoint): string | undefined {
+  if (point instanceof Endpoint) {
+    return point.surface.id;
+  }
+  if (point instanceof HitPoint) {
+    return point.hitSurface.id;
+  }
+  return undefined;
 }
 
 /**

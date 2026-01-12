@@ -16,7 +16,14 @@
 import { RicochetSurface } from "@/surfaces/RicochetSurface";
 import type { Surface } from "@/surfaces/Surface";
 import { WallSurface } from "@/surfaces/WallSurface";
-import { Endpoint, type OrientationInfo, SourcePoint, type WindowContext } from "./SourcePoint";
+import {
+  type BlockingStatus,
+  Endpoint,
+  getEndpointBlockingContribution,
+  type OrientationInfo,
+  SourcePoint,
+  type WindowContext,
+} from "./SourcePoint";
 import type { Vector2 } from "./types";
 
 // Re-export types for backwards compatibility
@@ -184,6 +191,10 @@ export class JunctionPoint extends SourcePoint {
    * OCP: JunctionPoint implements its own blocking behavior based on
    * the surface orientations at the junction.
    *
+   * A junction is fully blocking only when BOTH isCWBlocking AND isCCWBlocking.
+   * This correctly handles collinear surfaces (crossProduct === 0) which don't
+   * contribute to either direction.
+   *
    * When windowContext is provided and this junction is connected to the
    * window surface, uses the geometric "between" test for provenance-based
    * blocking determination.
@@ -211,8 +222,9 @@ export class JunctionPoint extends SourcePoint {
       }
     }
 
-    // Default: use surface orientation logic
-    return !this.canLightPassWithOrientations(orientations);
+    // Use directional blocking: fully blocking only when both CW and CCW
+    const status = this.getBlockingStatus(orientations, windowContext);
+    return status.isCWBlocking && status.isCCWBlocking;
   }
 
   /**
@@ -280,6 +292,43 @@ export class JunctionPoint extends SourcePoint {
 
     const crossAB = a.x * b.y - a.y * b.x;
     return crossAB > 0 ? -1 : 1;
+  }
+
+  /**
+   * Exclude both adjacent surfaces when casting rays through this junction.
+   */
+  getExcludedSurfaceIds(): string[] {
+    return [this.getSurfaceBefore().id, this.getSurfaceAfter().id];
+  }
+
+  /**
+   * Get directional blocking status by aggregating from both adjacent surfaces.
+   *
+   * The "before" surface ends at this junction → use "end" endpoint contribution
+   * The "after" surface starts at this junction → use "start" endpoint contribution
+   *
+   * Aggregate: CW blocking if either surface contributes CW, CCW if either contributes CCW.
+   */
+  getBlockingStatus(
+    orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): BlockingStatus {
+    const beforeSurface = this.getSurfaceBefore();
+    const afterSurface = this.getSurfaceAfter();
+
+    // Before surface ends at this junction
+    const beforeOrientation = orientations.get(beforeSurface.id);
+    const beforeContribution = getEndpointBlockingContribution(beforeOrientation, "end");
+
+    // After surface starts at this junction
+    const afterOrientation = orientations.get(afterSurface.id);
+    const afterContribution = getEndpointBlockingContribution(afterOrientation, "start");
+
+    // Aggregate: blocking in a direction if EITHER surface contributes to that direction
+    return {
+      isCWBlocking: beforeContribution.isCWBlocking || afterContribution.isCWBlocking,
+      isCCWBlocking: beforeContribution.isCCWBlocking || afterContribution.isCCWBlocking,
+    };
   }
 }
 

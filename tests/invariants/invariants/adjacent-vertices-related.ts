@@ -3,7 +3,7 @@
  *
  * Validates that all adjacent polygon vertices have a direct provenance relationship:
  * 1. Shared surface - both points are on the same surface
- * 2. Continuation ray - Endpoint/Junction → HitPoint via ray through the target
+ * 2. Continuation ray - Endpoint/Junction → HitPoint or blocking JunctionPoint via ray
  * 3. Origin relationships - OriginPoint ↔ any point
  *
  * This invariant detects missing intermediate vertices in the polygon.
@@ -22,62 +22,64 @@ import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { sharesAnySurface, getSourceSurfaceIds } from "./polygon-edges-provenance";
 
 /**
- * Check if a ray from origin through hitPos passes through targetPos.
+ * Check if two points are collinear with the origin (lie on the same ray).
  * Used to detect continuation ray relationships.
  *
+ * Both points must be on the same ray from origin in the same direction.
+ * Order doesn't matter - either point can be closer or farther from origin.
+ *
  * @param origin - Ray origin
- * @param hitPos - Where the ray hit a surface (HitPoint position)
- * @param targetPos - The potential target (Endpoint/Junction position)
- * @returns true if targetPos lies on the ray from origin to hitPos
+ * @param p1 - First point on potential ray
+ * @param p2 - Second point on potential ray
+ * @returns true if both points lie on the same ray from origin
  */
 function isRayThroughPoint(
   origin: Vector2,
-  hitPos: Vector2,
-  targetPos: Vector2
+  p1: Vector2,
+  p2: Vector2
 ): boolean {
-  // Vector from origin to hit
-  const toHitX = hitPos.x - origin.x;
-  const toHitY = hitPos.y - origin.y;
+  // Vector from origin to p1
+  const toP1X = p1.x - origin.x;
+  const toP1Y = p1.y - origin.y;
 
-  // Vector from origin to target
-  const toTargetX = targetPos.x - origin.x;
-  const toTargetY = targetPos.y - origin.y;
+  // Vector from origin to p2
+  const toP2X = p2.x - origin.x;
+  const toP2Y = p2.y - origin.y;
 
   // Cross product - should be zero for collinear points
-  const cross = toHitX * toTargetY - toHitY * toTargetX;
+  const cross = toP1X * toP2Y - toP1Y * toP2X;
 
   // Normalize by magnitudes for relative tolerance
-  const magHit = Math.sqrt(toHitX * toHitX + toHitY * toHitY);
-  const magTarget = Math.sqrt(toTargetX * toTargetX + toTargetY * toTargetY);
+  const magP1 = Math.sqrt(toP1X * toP1X + toP1Y * toP1Y);
+  const magP2 = Math.sqrt(toP2X * toP2X + toP2Y * toP2Y);
 
-  if (magHit < 1e-10 || magTarget < 1e-10) {
+  if (magP1 < 1e-10 || magP2 < 1e-10) {
     return true; // One point is at origin
   }
 
-  const normalizedCross = Math.abs(cross) / (magHit * magTarget);
+  const normalizedCross = Math.abs(cross) / (magP1 * magP2);
 
   // sin(angle) < 0.001 means angle < ~0.06 degrees
   if (normalizedCross >= 0.001) {
     return false; // Not collinear
   }
 
-  // Also check that target is between origin and hit (or beyond hit in same direction)
-  // Dot product should be positive (same direction)
-  const dot = toHitX * toTargetX + toHitY * toTargetY;
+  // Check that points are in the same direction from origin (not opposite)
+  // Dot product should be positive
+  const dot = toP1X * toP2X + toP1Y * toP2Y;
   if (dot < 0) {
-    return false; // Target is behind origin relative to hit direction
+    return false; // Points are in opposite directions from origin
   }
 
-  // Target should be closer to or at the same distance as hit (not beyond)
-  // For continuation: target is BEFORE hit on the ray
-  return magTarget <= magHit + 1e-6;
+  return true;
 }
 
 /**
- * Check if two points form a continuation pair:
- * - One is an Endpoint or JunctionPoint (the target)
- * - The other is a HitPoint (the continuation hit)
- * - The ray from origin through the HitPoint passes through the target
+ * Check if two points are on the same ray from origin (collinear continuation path).
+ * This covers:
+ * - Endpoint → Endpoint (intermediate points on same ray)
+ * - Endpoint/Junction → HitPoint (direct continuation)
+ * - Endpoint/Junction → blocking JunctionPoint (continuation to blocking junction)
  *
  * Note: HitPoints do NOT have continuation rays. Only Endpoints and JunctionPoints
  * can be the source of a continuation ray.
@@ -87,18 +89,35 @@ function isContinuationPair(
   s2: SourcePoint,
   origin: Vector2
 ): boolean {
-  // Check: s1 is Endpoint/Junction, s2 is its continuation HitPoint
-  if ((isEndpoint(s1) || isJunctionPoint(s1)) && isHitPoint(s2)) {
-    const targetPos = s1.computeXY();
+  // Helper to check if a point could be a continuation result
+  // This includes Endpoints because multiple endpoints may lie on the same ray
+  const isContinuationResult = (sp: SourcePoint): boolean =>
+    isHitPoint(sp) || isJunctionPoint(sp) || isEndpoint(sp);
+
+  // Helper to check if a point could be a continuation source
+  const isContinuationSource = (sp: SourcePoint): boolean =>
+    isEndpoint(sp) || isJunctionPoint(sp);
+
+  // Check: s1 is source, s2 is its continuation result
+  if (isContinuationSource(s1) && isContinuationResult(s2)) {
+    const sourcePos = s1.computeXY();
     const hitPos = s2.computeXY();
-    return isRayThroughPoint(origin, hitPos, targetPos);
+    // Don't accept if they're the same point (a junction can't continue to itself)
+    if (sourcePos.x === hitPos.x && sourcePos.y === hitPos.y) {
+      return false;
+    }
+    return isRayThroughPoint(origin, hitPos, sourcePos);
   }
 
-  // Check reverse: s2 is Endpoint/Junction, s1 is its continuation HitPoint
-  if ((isEndpoint(s2) || isJunctionPoint(s2)) && isHitPoint(s1)) {
-    const targetPos = s2.computeXY();
+  // Check reverse: s2 is source, s1 is its continuation result
+  if (isContinuationSource(s2) && isContinuationResult(s1)) {
+    const sourcePos = s2.computeXY();
     const hitPos = s1.computeXY();
-    return isRayThroughPoint(origin, hitPos, targetPos);
+    // Don't accept if they're the same point
+    if (sourcePos.x === hitPos.x && sourcePos.y === hitPos.y) {
+      return false;
+    }
+    return isRayThroughPoint(origin, hitPos, sourcePos);
   }
 
   return false;
@@ -145,7 +164,7 @@ export function validateAdjacentRelationship(
     return { valid: true };
   }
 
-  // Case 3: Continuation ray (Endpoint/Junction → HitPoint only)
+  // Case 3: Continuation ray (Endpoint/Junction → HitPoint or blocking JunctionPoint)
   if (isContinuationPair(s1, s2, origin)) {
     return { valid: true };
   }

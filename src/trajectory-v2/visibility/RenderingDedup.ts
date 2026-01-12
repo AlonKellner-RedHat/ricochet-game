@@ -11,7 +11,11 @@
  * - This separation keeps the math exact while allowing practical rendering
  */
 
-import { type SourcePoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
+import {
+  type SourcePoint,
+  isOriginPoint,
+  getSurfaceId,
+} from "@/trajectory-v2/geometry/SourcePoint";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 /**
@@ -78,69 +82,60 @@ export function dedupeForRendering(vertices: Vector2[], _tolerance?: number): Ve
 }
 
 /**
- * Remove consecutive HitPoints on the same surface, keeping only extremes.
- *
- * PROVENANCE-BASED DEDUPLICATION:
- * - For each run of consecutive HitPoints on the same surface, keep only the
- *   first and last (the "extremes" of the run)
- * - Endpoints, JunctionPoints, and OriginPoints are ALWAYS kept
- *
- * This approach uses the source-of-truth (surface ID) rather than geometric
- * calculations, avoiding floating-point precision issues.
- *
- * Example:
- *   Input:  [Hit(A), Hit(A), Hit(A), Endpoint(A), Hit(B), Hit(B)]
- *   Output: [Hit(A), Hit(A), Endpoint(A), Hit(B), Hit(B)]
- *           (middle Hit(A) removed, but first/last of each run kept)
- *
- * @param points - SourcePoints from visibility polygon
- * @returns Deduplicated SourcePoints with only extreme HitPoints per surface run
+ * Check if two points share the same surface.
  */
-export function dedupeConsecutiveHits(points: SourcePoint[]): SourcePoint[] {
+function hasSameSurface(a: SourcePoint, b: SourcePoint): boolean {
+  if (isOriginPoint(a) || isOriginPoint(b)) return false;
+  const surfaceA = getSurfaceId(a);
+  const surfaceB = getSurfaceId(b);
+  return !!(surfaceA && surfaceB && surfaceA === surfaceB);
+}
+
+/**
+ * Check if two points share the same continuation ray.
+ */
+function hasSameRay(a: SourcePoint, b: SourcePoint): boolean {
+  if (isOriginPoint(a) || isOriginPoint(b)) return false;
+  const rayA = a.continuationRay?.id;
+  const rayB = b.continuationRay?.id;
+  return !!(rayA && rayB && rayA === rayB);
+}
+
+/**
+ * Remove consecutive points that match a grouping predicate, keeping only extremes.
+ *
+ * For each run of consecutive points where predicate(a, b) is true,
+ * keep only the first and last points.
+ */
+function dedupeByPredicate(
+  points: SourcePoint[],
+  predicate: (a: SourcePoint, b: SourcePoint) => boolean
+): SourcePoint[] {
   if (points.length <= 2) return points;
 
   const result: SourcePoint[] = [];
-
-  // Track runs of consecutive HitPoints on the same surface
   let runStart: number | null = null;
-  let runSurfaceId: string | null = null;
 
   for (let i = 0; i < points.length; i++) {
     const point = points[i]!;
 
-    if (isHitPoint(point)) {
-      const surfaceId = point.hitSurface.id;
-
-      if (runStart === null) {
-        // Start a new run
-        runStart = i;
-        runSurfaceId = surfaceId;
-      } else if (surfaceId !== runSurfaceId) {
-        // End current run and start a new one
-        // Add the last point of the previous run if it's different from the first
+    if (runStart !== null) {
+      const prevPoint = points[i - 1]!;
+      if (predicate(prevPoint, point)) {
+        // Continue the run - don't add middle points
+        continue;
+      } else {
+        // End current run - add the last point of the run
         if (runStart < i - 1) {
           result.push(points[i - 1]!);
         }
         // Start new run
         runStart = i;
-        runSurfaceId = surfaceId;
-      }
-      // If same surface, we're continuing the run - don't add yet
-
-      // Always add the first point of a run
-      if (runStart === i) {
         result.push(point);
       }
     } else {
-      // Non-HitPoint (Endpoint, JunctionPoint, OriginPoint) - always keep
-      // But first, close any open run
-      if (runStart !== null && runStart < i - 1) {
-        // Add the last HitPoint of the run (if not already added as first)
-        result.push(points[i - 1]!);
-      }
-      runStart = null;
-      runSurfaceId = null;
-
+      // Start a new run
+      runStart = i;
       result.push(point);
     }
   }
@@ -151,6 +146,41 @@ export function dedupeConsecutiveHits(points: SourcePoint[]): SourcePoint[] {
   }
 
   return result;
+}
+
+/**
+ * Remove consecutive points that share the same provenance, keeping only extremes.
+ *
+ * PROVENANCE-BASED DEDUPLICATION (two passes):
+ * 1. First pass: dedupe consecutive points on the same SURFACE
+ * 2. Second pass: dedupe consecutive points on the same RAY
+ *
+ * This two-pass approach ensures:
+ * - Surface edge merging works correctly (user's issue)
+ * - Ray-based merging works correctly (continuation rays)
+ * - No transitive chaining across different grouping types
+ *
+ * Example 1 - Same surface:
+ *   Input:  [HitPoint(A), HitPoint(A), Endpoint(A)]
+ *   Output: [HitPoint(A), Endpoint(A)]
+ *
+ * Example 2 - Same continuation ray:
+ *   Input:  [Endpoint(A), Endpoint(B), HitPoint(C)] (all on same ray)
+ *   Output: [Endpoint(A), HitPoint(C)]
+ *
+ * @param points - SourcePoints from visibility polygon
+ * @returns Deduplicated SourcePoints with only extreme points per run
+ */
+export function dedupeConsecutiveHits(points: SourcePoint[]): SourcePoint[] {
+  if (points.length <= 2) return points;
+
+  // Pass 1: Dedupe by surface
+  const afterSurfaceDedup = dedupeByPredicate(points, hasSameSurface);
+
+  // Pass 2: Dedupe by ray
+  const afterRayDedup = dedupeByPredicate(afterSurfaceDedup, hasSameRay);
+
+  return afterRayDedup;
 }
 
 /**

@@ -35,6 +35,7 @@ import {
   isJunctionPoint,
 } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Ray, Vector2 } from "@/trajectory-v2/geometry/types";
+import { ContinuationRay } from "@/trajectory-v2/geometry/ContinuationRay";
 
 // =============================================================================
 // TYPES
@@ -363,53 +364,163 @@ function isPointPastWindow(origin: Vector2, point: Vector2, window: Segment): bo
 // =============================================================================
 
 /**
- * Cast a ray to an endpoint target.
- * All obstacles (including screen boundaries) should be in the obstacles array.
+ * Result of casting a ray (unified for all modes).
  */
-function castRayToEndpoint(
+interface CastRayResult {
+  /** The result of the ray cast (target, blocking hit, or blocking junction) */
+  hit: SourcePoint | null;
+  /** Endpoints that were passed through (non-blocking) */
+  passedThroughEndpoints: Endpoint[];
+}
+
+/**
+ * Unified ray casting function.
+ *
+ * Supports two modes:
+ * - "to": Cast ray TO the target, stops at target or first blocking obstacle
+ * - "through": Cast ray THROUGH the target, continues past to find what's beyond
+ *
+ * Always tracks passed-through endpoints for ContinuationRay provenance.
+ *
+ * Uses OCP: target.getExcludedSurfaceIds() determines which surfaces to skip.
+ *
+ * @param origin - Where the ray originates
+ * @param target - The Endpoint or JunctionPoint to cast toward/through
+ * @param mode - "to" stops at target, "through" continues past it
+ * @param obstacles - All surfaces to check for intersections
+ * @param startLine - Optional start line (for windowed cones)
+ * @param windowSurfaceId - Optional window surface ID to skip special handling
+ * @param chains - All surface chains for finding SourcePoints at positions
+ * @param surfaceOrientations - Pre-computed surface orientations
+ * @param windowContext - Optional window context for blocking checks
+ * @param endpointCache - Optional cache for consistent Endpoint object references
+ */
+function castRay(
   origin: Vector2,
-  targetEndpoint: Endpoint,
+  target: Endpoint | JunctionPoint,
+  mode: "to" | "through",
   obstacles: readonly Surface[],
   startLine: Segment | null,
-  windowSurfaceId?: string
-): SourcePoint | null {
-  const target = targetEndpoint.computeXY();
+  windowSurfaceId: string | undefined,
+  chains: readonly SurfaceChain[],
+  surfaceOrientations: Map<string, SurfaceOrientation>,
+  windowContext: WindowContext | null,
+  endpointCache?: Map<string, Endpoint>
+): CastRayResult {
+  const emptyResult: CastRayResult = { hit: null, passedThroughEndpoints: [] };
+  const passedThroughEndpoints: Endpoint[] = [];
+  const targetXY = target.computeXY();
+  const excludedIds = target.getExcludedSurfaceIds();
 
-  const dx = target.x - origin.x;
-  const dy = target.y - origin.y;
+  const dx = targetXY.x - origin.x;
+  const dy = targetXY.y - origin.y;
   const lenSq = dx * dx + dy * dy;
 
-  if (lenSq === 0) return null;
+  if (lenSq === 0) return emptyResult;
 
   const scale = 10;
   const rayEnd = { x: origin.x + dx * scale, y: origin.y + dy * scale };
   const ray: Ray = { from: origin, to: rayEnd };
 
-  let minT = 0;
+  const targetT = 1 / scale;
 
+  // minT: where the ray starts checking
+  // - "to" mode: from origin (0) or startLine
+  // - "through" mode: from past the target (targetT)
+  let minT = mode === "through" ? targetT : 0;
+
+  // closestT: where the ray stops
+  // - "to" mode: at the target (targetT)
+  // - "through" mode: at infinity (find first hit past target)
+  let closestT = mode === "through" ? Number.POSITIVE_INFINITY : targetT;
+
+  // Handle startLine (for windowed cones)
   if (startLine) {
-    if (windowSurfaceId && targetEndpoint.surface.id === windowSurfaceId) {
+    const isWindowTarget =
+      windowSurfaceId &&
+      isEndpoint(target) &&
+      target.surface.id === windowSurfaceId;
+
+    if (isWindowTarget) {
       // Window endpoint - ray passes through window by definition
     } else {
       const lineHit = lineLineIntersection(origin, rayEnd, startLine.start, startLine.end);
       if (lineHit.valid && lineHit.s >= 0 && lineHit.s <= 1 && lineHit.t > 0) {
-        minT = lineHit.t;
+        if (mode === "to") {
+          minT = lineHit.t;
+        } else {
+          minT = Math.max(lineHit.t, targetT);
+        }
       } else {
-        return null;
+        return emptyResult;
       }
     }
   }
 
-  const targetT = 1 / scale;
-
-  let closestT = targetT;
   let closestSurface: Surface | null = null;
   let closestS = 0;
+  let closestBlockingJunction: JunctionPoint | null = null;
 
-  // Check all obstacles (includes screen boundaries) - skip for window endpoints
-  if (!windowSurfaceId || targetEndpoint.surface.id !== windowSurfaceId) {
+  // ==========================================================================
+  // PROVENANCE-BASED JUNCTION DETECTION FOR COLLINEAR SURFACES
+  // ==========================================================================
+  // If the target is an Endpoint and the origin lies on the target's surface line
+  // (crossProduct === 0), check if there's a blocking junction at the other end.
+  // This uses provenance instead of floating-point intersection math.
+  if (mode === "to" && isEndpoint(target)) {
+    const targetSurface = target.surface;
+    const orientation = surfaceOrientations.get(targetSurface.id);
+
+    // crossProduct === 0 means origin is on the line of this surface
+    if (orientation && orientation.crossProduct === 0) {
+      // Find which end of the surface the target is at
+      const targetWhich = target.which; // "start" or "end"
+      const otherWhich = targetWhich === "start" ? "end" : "start";
+
+      // Get the position of the OTHER end of the surface
+      const otherEndPos =
+        otherWhich === "start" ? targetSurface.segment.start : targetSurface.segment.end;
+
+      // Check if there's a junction at the other end
+      for (const chain of chains) {
+        for (const junction of chain.getJunctionPoints()) {
+          const jxy = junction.computeXY();
+          if (jxy.x === otherEndPos.x && jxy.y === otherEndPos.y) {
+            // Found a junction at the other end of the target's surface
+            // Check if this junction is BETWEEN origin and target
+            // (i.e., closer to origin than the target)
+            const jDist = (jxy.x - origin.x) ** 2 + (jxy.y - origin.y) ** 2;
+            const tDist = (targetXY.x - origin.x) ** 2 + (targetXY.y - origin.y) ** 2;
+
+            if (jDist < tDist) {
+              // Junction is between origin and target
+              // Check if it's blocking
+              if (junction.isBlocking(surfaceOrientations, windowContext ?? undefined)) {
+                // Junction blocks the ray - return junction as the hit
+                return { hit: junction, passedThroughEndpoints: [] };
+              } else {
+                // Junction is non-blocking - track as passed-through
+                // (Junctions aren't Endpoints, so we don't add to passedThroughEndpoints)
+                // But we should continue to the target
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Check for window target skip (only in "to" mode)
+  const skipObstacles =
+    mode === "to" &&
+    windowSurfaceId &&
+    isEndpoint(target) &&
+    target.surface.id === windowSurfaceId;
+
+  if (!skipObstacles) {
     for (const obstacle of obstacles) {
-      if (targetEndpoint.surface.id === obstacle.id) continue;
+      // Skip target's own surfaces (using OCP method)
+      if (excludedIds.includes(obstacle.id)) continue;
 
       const hit = lineLineIntersection(
         origin,
@@ -419,19 +530,62 @@ function castRayToEndpoint(
       );
 
       if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
+        // Check if hit is at an endpoint position (s=0 or s=1)
+        if (hit.s === 0 || hit.s === 1) {
+          const hitPos = hit.s === 0 ? obstacle.segment.start : obstacle.segment.end;
+          const sourcePointAtHit = findSourcePointAtEndpoint(hitPos, chains, obstacle, hit.s, endpointCache);
+
+          if (sourcePointAtHit) {
+            // Check if this point blocks the ray
+            if (!sourcePointAtHit.isBlocking(surfaceOrientations, windowContext ?? undefined)) {
+              // Non-blocking point - skip this hit, ray continues through
+              // Track passed-through endpoints for ContinuationRay provenance
+              if (isEndpoint(sourcePointAtHit)) {
+                passedThroughEndpoints.push(sourcePointAtHit);
+              }
+              continue;
+            } else if (isJunctionPoint(sourcePointAtHit)) {
+              // Blocking junction - record it as the closest hit
+              closestT = hit.t;
+              closestSurface = null;
+              closestS = hit.s;
+              closestBlockingJunction = sourcePointAtHit;
+              continue;
+            }
+          }
+        }
+
+        // Normal surface hit (mid-segment)
         closestT = hit.t;
         closestSurface = obstacle;
         closestS = hit.s;
+        closestBlockingJunction = null;
       }
     }
   }
 
-  if (closestSurface) {
-    return new HitPoint(ray, closestSurface, closestT, closestS);
+  // Return blocking junction if found
+  if (closestBlockingJunction) {
+    return { hit: closestBlockingJunction, passedThroughEndpoints };
   }
 
-  return targetEndpoint;
+  // Return surface hit if found
+  if (closestSurface) {
+    return { hit: new HitPoint(ray, closestSurface, closestT, closestS), passedThroughEndpoints };
+  }
+
+  // No obstacle hit:
+  // - "to" mode: return the target itself
+  // - "through" mode: no hit beyond target (return null)
+  if (mode === "to") {
+    return { hit: target, passedThroughEndpoints };
+  }
+
+  return { hit: null, passedThroughEndpoints };
 }
+
+// Legacy type alias for backward compatibility during migration
+type CastToEndpointResult = CastRayResult;
 
 /**
  * Check if two points are exactly equal (same coordinates).
@@ -444,12 +598,19 @@ function pointsEqual(a: Vector2, b: Vector2): boolean {
  * Cast a ray to an arbitrary target (not necessarily an endpoint).
  * Used for cone boundary rays.
  * All obstacles (including screen boundaries) should be in the obstacles array.
+ *
+ * If a blocking obstacle is at s=0 or s=1 (endpoint position):
+ * - Non-blocking points (Endpoint, non-blocking Junction): Skip, ray continues
+ * - Blocking Junction: Return the junction directly
  */
 function castRayToTarget(
   origin: Vector2,
   target: Vector2,
   obstacles: readonly Surface[],
-  startLine: Segment | null
+  startLine: Segment | null,
+  chains: readonly SurfaceChain[],
+  surfaceOrientations: Map<string, SurfaceOrientation>,
+  windowContext: WindowContext | null
 ): SourcePoint | null {
   const dx = target.x - origin.x;
   const dy = target.y - origin.y;
@@ -482,14 +643,43 @@ function castRayToTarget(
   let closestT = Number.POSITIVE_INFINITY;
   let closestSurface: Surface | null = null;
   let closestS = 0;
+  let closestBlockingJunction: JunctionPoint | null = null;
 
   for (const obstacle of obstacles) {
     const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
     if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
+      // Check if hit is at an endpoint position (s=0 or s=1)
+      if (hit.s === 0 || hit.s === 1) {
+        const hitPos = hit.s === 0 ? obstacle.segment.start : obstacle.segment.end;
+        const sourcePointAtHit = findSourcePointAtEndpoint(hitPos, chains, obstacle, hit.s);
+
+        if (sourcePointAtHit) {
+          // Check if this point blocks the ray
+          if (!sourcePointAtHit.isBlocking(surfaceOrientations, windowContext ?? undefined)) {
+            // Non-blocking point - skip this hit, ray continues through
+            continue;
+          } else if (isJunctionPoint(sourcePointAtHit)) {
+            // Blocking junction - record it as the closest hit
+            closestT = hit.t;
+            closestSurface = null;
+            closestS = hit.s;
+            closestBlockingJunction = sourcePointAtHit;
+            continue;
+          }
+        }
+      }
+
+      // Normal surface hit (mid-segment)
       closestT = hit.t;
       closestSurface = obstacle;
       closestS = hit.s;
+      closestBlockingJunction = null;
     }
+  }
+
+  // Return blocking junction if found
+  if (closestBlockingJunction) {
+    return closestBlockingJunction;
   }
 
   if (closestSurface) {
@@ -500,120 +690,49 @@ function castRayToTarget(
 }
 
 /**
- * Cast a ray to find what's beyond an endpoint (continuation hit).
+ * Find a SourcePoint (JunctionPoint or Endpoint) at a given position.
+ *
+ * Used to determine if a ray hit at s=0 or s=1 coincides with a non-blocking point.
+ * JunctionPoints take precedence over Endpoints (junctions are shared endpoints).
+ *
+ * @param pos The position to check
+ * @param chains All surface chains to search
+ * @param obstacle The surface that was hit (used to get Endpoint if no junction)
+ * @param s The segment parameter (0 = start, 1 = end)
+ * @param endpointCache Optional cache for consistent Endpoint object references
+ * @returns JunctionPoint or Endpoint at position, or null if none found
  */
-function castContinuationRay(
-  origin: Vector2,
-  throughEndpoint: Endpoint,
-  allObstacles: readonly Surface[],
-  startLine: Segment | null,
-  windowSurfaceId?: string
-): SourcePoint | null {
-  const target = throughEndpoint.computeXY();
-  const dx = target.x - origin.x;
-  const dy = target.y - origin.y;
-  const lenSq = dx * dx + dy * dy;
-
-  if (lenSq === 0) return null;
-
-  const scale = 10;
-  const rayEnd = { x: origin.x + dx * scale, y: origin.y + dy * scale };
-  const ray: Ray = { from: origin, to: rayEnd };
-
-  const endpointT = 1 / scale;
-  let minT = endpointT;
-
-  if (startLine) {
-    if (windowSurfaceId && throughEndpoint.surface.id === windowSurfaceId) {
-      // Window endpoint - continuation ray passes through window by definition
-    } else {
-      const lineHit = lineLineIntersection(origin, rayEnd, startLine.start, startLine.end);
-      if (lineHit.valid && lineHit.s >= 0 && lineHit.s <= 1 && lineHit.t > 0) {
-        minT = Math.max(lineHit.t, endpointT);
-      } else {
-        return null;
+function findSourcePointAtEndpoint(
+  pos: Vector2,
+  chains: readonly SurfaceChain[],
+  obstacle: Surface,
+  s: number,
+  endpointCache?: Map<string, Endpoint>
+): JunctionPoint | Endpoint | null {
+  // First, check if this position is a JunctionPoint
+  for (const chain of chains) {
+    for (const junction of chain.getJunctionPoints()) {
+      const jxy = junction.computeXY();
+      if (jxy.x === pos.x && jxy.y === pos.y) {
+        return junction;
       }
     }
   }
 
-  let closestT = Number.POSITIVE_INFINITY;
-  let closestSurface: Surface | null = null;
-  let closestS = 0;
-
-  for (const obstacle of allObstacles) {
-    if (obstacle.id === throughEndpoint.surface.id) continue;
-
-    const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
-    if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
-      closestT = hit.t;
-      closestSurface = obstacle;
-      closestS = hit.s;
+  // Not a junction - return the Endpoint of the hit surface
+  // Use cache if available to ensure consistent object references
+  const which = s === 0 ? "start" : s === 1 ? "end" : null;
+  if (which) {
+    if (endpointCache) {
+      const key = `${obstacle.id}:${which}`;
+      let endpoint = endpointCache.get(key);
+      if (!endpoint) {
+        endpoint = which === "start" ? startOf(obstacle) : endOf(obstacle);
+        endpointCache.set(key, endpoint);
+      }
+      return endpoint;
     }
-  }
-
-  if (closestSurface) {
-    return new HitPoint(ray, closestSurface, closestT, closestS);
-  }
-
-  return null;
-}
-
-/**
- * Cast a continuation ray through a JunctionPoint.
- * Similar to castContinuationRay, but excludes BOTH surfaces at the junction.
- */
-function castContinuationRayForJunction(
-  origin: Vector2,
-  junction: JunctionPoint,
-  allObstacles: readonly Surface[],
-  startLine: Segment | null
-): SourcePoint | null {
-  const target = junction.computeXY();
-  const dx = target.x - origin.x;
-  const dy = target.y - origin.y;
-  const lenSq = dx * dx + dy * dy;
-
-  if (lenSq === 0) return null;
-
-  const scale = 10;
-  const rayEnd = { x: origin.x + dx * scale, y: origin.y + dy * scale };
-  const ray: Ray = { from: origin, to: rayEnd };
-
-  const junctionT = 1 / scale;
-  let minT = junctionT;
-
-  // For windowed cones, check if ray passes through window
-  if (startLine) {
-    const lineHit = lineLineIntersection(origin, rayEnd, startLine.start, startLine.end);
-    if (lineHit.valid && lineHit.s >= 0 && lineHit.s <= 1 && lineHit.t > 0) {
-      minT = Math.max(lineHit.t, junctionT);
-    } else {
-      return null;
-    }
-  }
-
-  // Get the IDs of both surfaces at the junction
-  const surfaceBeforeId = junction.getSurfaceBefore()?.id;
-  const surfaceAfterId = junction.getSurfaceAfter()?.id;
-
-  let closestT = Number.POSITIVE_INFINITY;
-  let closestSurface: Surface | null = null;
-  let closestS = 0;
-
-  for (const obstacle of allObstacles) {
-    // Skip both surfaces that form this junction
-    if (obstacle.id === surfaceBeforeId || obstacle.id === surfaceAfterId) continue;
-
-    const hit = lineLineIntersection(origin, rayEnd, obstacle.segment.start, obstacle.segment.end);
-    if (hit.valid && hit.t > minT && hit.s >= 0 && hit.s <= 1 && hit.t < closestT) {
-      closestT = hit.t;
-      closestSurface = obstacle;
-      closestS = hit.s;
-    }
-  }
-
-  if (closestSurface) {
-    return new HitPoint(ray, closestSurface, closestT, closestS);
+    return which === "start" ? startOf(obstacle) : endOf(obstacle);
   }
 
   return null;
@@ -639,6 +758,26 @@ export function projectConeV2(
   const { origin, startLine } = source;
   const isWindowed = startLine !== null;
   const vertices: SourcePoint[] = [];
+
+  // Lookup for HitPoints by position - ensures we reuse the same HitPoint object
+  // when multiple continuation rays hit the same position.
+  // This ensures PreComputedPairs reference the same object that survives deduplication.
+  const hitPointsByPosition = new Map<string, HitPoint>();
+
+  /**
+   * Get or create a HitPoint, reusing existing one at same position if available.
+   * This ensures PreComputedPairs use consistent object references.
+   */
+  const getOrCreateHitPoint = (hitPoint: HitPoint): HitPoint => {
+    const xy = hitPoint.computeXY();
+    const key = `${xy.x},${xy.y}`;
+    const existing = hitPointsByPosition.get(key);
+    if (existing) {
+      return existing;
+    }
+    hitPointsByPosition.set(key, hitPoint);
+    return hitPoint;
+  };
 
   // Extract surfaces from all chains (includes screen boundaries)
   const obstacles: Surface[] = [];
@@ -738,6 +877,20 @@ export function projectConeV2(
   type RayTarget = Endpoint | JunctionPoint;
   const rayTargets: RayTarget[] = [];
 
+  // Cache endpoints by key to ensure consistent object references
+  // This is critical for continuationRay assignment: passed-through endpoints
+  // must be the SAME objects as the ones in rayTargets/vertices
+  const endpointCache = new Map<string, Endpoint>();
+  function getOrCreateEndpoint(surface: Surface, which: "start" | "end"): Endpoint {
+    const key = `${surface.id}:${which}`;
+    let endpoint = endpointCache.get(key);
+    if (!endpoint) {
+      endpoint = which === "start" ? startOf(surface) : endOf(surface);
+      endpointCache.set(key, endpoint);
+    }
+    return endpoint;
+  }
+
   // Collect junction coordinates to avoid duplicate endpoints
   // JunctionPoints handle their own positions, so skip endpoints at junction coords
   const junctionCoords = new Set<string>();
@@ -757,10 +910,10 @@ export function projectConeV2(
 
     // Only add endpoint if it's NOT at a junction position
     if (!junctionCoords.has(startKey)) {
-      rayTargets.push(startOf(obstacle));
+      rayTargets.push(getOrCreateEndpoint(obstacle, "start"));
     }
     if (!junctionCoords.has(endKey)) {
-      rayTargets.push(endOf(obstacle));
+      rayTargets.push(getOrCreateEndpoint(obstacle, "end"));
     }
   }
 
@@ -821,18 +974,136 @@ export function projectConeV2(
       if (orientation.crossProduct > 0) {
         // start comes before end in CCW
         preComputedPairs.set(startEndpoint, endEndpoint, -1);
-      } else {
-        // end comes before start in CCW (non-positive cross)
+      } else if (orientation.crossProduct < 0) {
+        // end comes before start in CCW
         preComputedPairs.set(startEndpoint, endEndpoint, 1);
+      } else {
+        // crossProduct === 0: Surface is collinear with origin
+        // Order by distance from origin (nearer comes first in this degenerate case)
+        const startXY = startEndpoint.computeXY();
+        const endXY = endEndpoint.computeXY();
+        const startDist = (startXY.x - origin.x) ** 2 + (startXY.y - origin.y) ** 2;
+        const endDist = (endXY.x - origin.x) ** 2 + (endXY.y - origin.y) ** 2;
+        if (startDist < endDist) {
+          preComputedPairs.set(startEndpoint, endEndpoint, -1);
+        } else {
+          preComputedPairs.set(startEndpoint, endEndpoint, 1);
+        }
       }
     }
   }
 
-  // Track ray pairs: endpoint/junction + continuation that share the same ray
-  const rayPairs = new Map<
-    string,
-    { endpoint: Endpoint | JunctionPoint; continuation: SourcePoint | null }
-  >();
+  // ==========================================================================
+  // PRE-COMPUTE COLLINEAR ORDERINGS FOR JUNCTIONS ON COLLINEAR SURFACES
+  // ==========================================================================
+  // For surfaces where crossProduct === 0 (origin on surface line), we need
+  // PreComputedPairs between junctions and endpoints on that surface.
+  //
+  // Use SHADOW BOUNDARY ORDER based on the junction's directional blocking:
+  // - CCW blocking → far-before-near (entering shadow in CCW direction)
+  // - CW blocking → near-before-far (exiting shadow in CCW direction)
+  // - Both/neither → fall back to distance order
+  //
+  // Also pre-mark these endpoints so they're skipped during endpoint processing.
+  const collinearEndpointsToSkip = new Set<string>();
+
+  for (const chain of chains) {
+    for (const junction of chain.getJunctionPoints()) {
+      const beforeSurface = junction.getSurfaceBefore();
+      const afterSurface = junction.getSurfaceAfter();
+
+      // Get junction's blocking status for shadow boundary order
+      const junctionStatus = junction.getBlockingStatus(surfaceOrientations);
+      let shadowOrder: number;
+      if (junctionStatus.isCCWBlocking && !junctionStatus.isCWBlocking) {
+        shadowOrder = 1; // far-before-near
+      } else if (junctionStatus.isCWBlocking && !junctionStatus.isCCWBlocking) {
+        shadowOrder = -1; // near-before-far
+      } else {
+        shadowOrder = 0; // both or neither - fall back to distance
+      }
+
+      // Check if before surface is collinear
+      const beforeOrientation = surfaceOrientations.get(beforeSurface.id);
+      if (beforeOrientation && beforeOrientation.crossProduct === 0) {
+        // Junction is at one end of a collinear surface
+        // Add pair between junction and the endpoint at the other end
+        const otherEndpoint = startOf(beforeSurface); // junction is at end of before surface
+        collinearEndpointsToSkip.add(otherEndpoint.getKey());
+
+        const junctionXY = junction.computeXY();
+        const otherXY = otherEndpoint.computeXY();
+        const junctionDist = (junctionXY.x - origin.x) ** 2 + (junctionXY.y - origin.y) ** 2;
+        const otherDist = (otherXY.x - origin.x) ** 2 + (otherXY.y - origin.y) ** 2;
+        const junctionNearerThanEndpoint = junctionDist < otherDist;
+
+        if (shadowOrder > 0) {
+          // Far-before-near: endpoint is farther, so endpoint first
+          if (junctionNearerThanEndpoint) {
+            preComputedPairs.set(otherEndpoint, junction, -1);
+          } else {
+            preComputedPairs.set(junction, otherEndpoint, -1);
+          }
+        } else if (shadowOrder < 0) {
+          // Near-before-far: junction is nearer, so junction first
+          if (junctionNearerThanEndpoint) {
+            preComputedPairs.set(junction, otherEndpoint, -1);
+          } else {
+            preComputedPairs.set(otherEndpoint, junction, -1);
+          }
+        } else {
+          // Default to distance order
+          if (junctionNearerThanEndpoint) {
+            preComputedPairs.set(junction, otherEndpoint, -1);
+          } else {
+            preComputedPairs.set(otherEndpoint, junction, -1);
+          }
+        }
+      }
+
+      // Check if after surface is collinear
+      const afterOrientation = surfaceOrientations.get(afterSurface.id);
+      if (afterOrientation && afterOrientation.crossProduct === 0) {
+        // Junction is at one end of a collinear surface
+        // Add pair between junction and the endpoint at the other end
+        const otherEndpoint = endOf(afterSurface); // junction is at start of after surface
+        collinearEndpointsToSkip.add(otherEndpoint.getKey());
+
+        const junctionXY = junction.computeXY();
+        const otherXY = otherEndpoint.computeXY();
+        const junctionDist = (junctionXY.x - origin.x) ** 2 + (junctionXY.y - origin.y) ** 2;
+        const otherDist = (otherXY.x - origin.x) ** 2 + (otherXY.y - origin.y) ** 2;
+        const junctionNearerThanEndpoint = junctionDist < otherDist;
+
+        if (shadowOrder > 0) {
+          // Far-before-near: endpoint is farther, so endpoint first
+          if (junctionNearerThanEndpoint) {
+            preComputedPairs.set(otherEndpoint, junction, -1);
+          } else {
+            preComputedPairs.set(junction, otherEndpoint, -1);
+          }
+        } else if (shadowOrder < 0) {
+          // Near-before-far: junction is nearer, so junction first
+          if (junctionNearerThanEndpoint) {
+            preComputedPairs.set(junction, otherEndpoint, -1);
+          } else {
+            preComputedPairs.set(otherEndpoint, junction, -1);
+          }
+        } else {
+          // Default to distance order
+          if (junctionNearerThanEndpoint) {
+            preComputedPairs.set(junction, otherEndpoint, -1);
+          } else {
+            preComputedPairs.set(otherEndpoint, junction, -1);
+          }
+        }
+      }
+    }
+  }
+
+  // Track continuation rays for provenance-based deduplication
+  // Each ContinuationRay groups points on the same ray from origin
+  const continuationRays: ContinuationRay[] = [];
 
   // Cast rays to each target within the cone
   for (const target of rayTargets) {
@@ -886,7 +1157,10 @@ export function projectConeV2(
         origin,
         targetXY,
         obstaclesExcludingJunction,
-        startLine
+        startLine,
+        chains,
+        surfaceOrientations,
+        windowContext
       );
 
       // Determine if ray reaches the junction:
@@ -910,6 +1184,12 @@ export function projectConeV2(
             reachesJunction = true;
           }
         }
+      } else if (isJunctionPoint(blockingHit)) {
+        // A blocking junction was hit - check if it's the same as target
+        if (blockingHit.equals(target)) {
+          reachesJunction = true;
+        }
+        // Otherwise, a different blocking junction blocks the ray - reachesJunction stays false
       }
 
       if (reachesJunction) {
@@ -919,80 +1199,402 @@ export function projectConeV2(
 
         // If junction allows pass-through (!isBlocking), cast continuation
         if (shouldCastContinuation) {
-          const continuation = castContinuationRayForJunction(
-            origin,
-            target,
-            effectiveObstacles,
-            startLine
-          );
-          if (continuation) {
-            vertices.push(continuation);
-            // Key by JunctionPoint's key since that's what we add to vertices
-            rayPairs.set(target.getKey(), { endpoint: target, continuation });
+          // Check if the "after" surface is collinear - if so, handle specially
+          const afterOrientation = surfaceOrientations.get(afterSurface.id);
+          const isAfterCollinear = afterOrientation?.crossProduct === 0;
 
-            // Store junction + continuation pair order in PreComputedPairs
-            // This is a Type 3 pair: junction + continuation
-            // Use "after" surface orientation to determine order:
-            // - firstEndpoint === "start" → entering → continuation before junction (1)
-            // - firstEndpoint === "end" → exiting → junction before continuation (-1)
-            const afterSurface = target.getSurfaceAfter();
-            const afterOrientation = surfaceOrientations.get(afterSurface.id);
-            if (afterOrientation) {
-              const order = afterOrientation.firstEndpoint === "start" ? 1 : -1;
-              preComputedPairs.set(target, continuation, order);
+          // Also check if "before" surface is collinear
+          const beforeOrientation = surfaceOrientations.get(beforeSurface.id);
+          const isBeforeCollinear = beforeOrientation?.crossProduct === 0;
+
+          // If one of the surfaces is collinear, we should continue along that surface
+          // rather than casting a generic continuation ray
+          let contResult: CastRayResult;
+
+          if (isAfterCollinear) {
+            // After surface is collinear - continue to its other endpoint
+            const otherEndpoint = endOf(afterSurface);
+            const otherEndpointCached = endpointCache?.get(otherEndpoint.getKey()) ?? otherEndpoint;
+            if (endpointCache && !endpointCache.has(otherEndpoint.getKey())) {
+              endpointCache.set(otherEndpoint.getKey(), otherEndpoint);
+            }
+
+            // For windowed cones: check if the other endpoint is past the window
+            // If not, this collinear surface is BEHIND the window and should be skipped
+            const otherXY = otherEndpointCached.computeXY();
+            if (isWindowed && startLine && !isPointPastWindow(origin, otherXY, startLine)) {
+              // Skip this collinear continuation - it's behind the window
+              // Cast a normal continuation ray instead (if applicable)
+              contResult = castRay(
+                origin,
+                target,
+                "through",
+                effectiveObstacles,
+                startLine,
+                undefined,
+                chains,
+                surfaceOrientations,
+                windowContext,
+                endpointCache
+              );
+            } else {
+              // Mark this endpoint as handled via collinear continuation
+              collinearEndpointsToSkip.add(otherEndpointCached.getKey());
+
+              // Check if the other endpoint blocks in the opposite direction
+              const junctionStatus = target.getBlockingStatus(surfaceOrientations);
+              const otherStatus = otherEndpointCached.getBlockingStatus(surfaceOrientations);
+
+              // Blocking logic per user's model:
+              // - If junction is CW blocking, blocked by CCW blocking endpoint
+              // - If junction is CCW blocking, blocked by CW blocking endpoint
+              const isBlockedByOther =
+                (junctionStatus.isCWBlocking && !junctionStatus.isCCWBlocking && otherStatus.isCCWBlocking) ||
+                (junctionStatus.isCCWBlocking && !junctionStatus.isCWBlocking && otherStatus.isCWBlocking);
+
+              if (isBlockedByOther) {
+                // The collinear surface is blocked at the other end
+                // Add just the other endpoint (it becomes the end of this continuation)
+                contResult = { hit: otherEndpointCached, passedThroughEndpoints: [] };
+              } else {
+                // Not blocked - cast through the other endpoint
+                contResult = castRay(
+                  origin,
+                  otherEndpointCached,
+                  "through",
+                  effectiveObstacles,
+                  startLine,
+                  undefined,
+                  chains,
+                  surfaceOrientations,
+                  windowContext,
+                  endpointCache
+                );
+                // Add the other endpoint as passed-through
+                contResult = {
+                  hit: contResult.hit,
+                  passedThroughEndpoints: [otherEndpointCached, ...contResult.passedThroughEndpoints],
+                };
+              }
+            }
+          } else if (isBeforeCollinear) {
+            // Before surface is collinear - continue to its other endpoint (start)
+            const otherEndpoint = startOf(beforeSurface);
+            const otherEndpointCached = endpointCache?.get(otherEndpoint.getKey()) ?? otherEndpoint;
+            if (endpointCache && !endpointCache.has(otherEndpoint.getKey())) {
+              endpointCache.set(otherEndpoint.getKey(), otherEndpoint);
+            }
+
+            // For windowed cones: check if the other endpoint is past the window
+            // If not, this collinear surface is BEHIND the window and should be skipped
+            const otherXY = otherEndpointCached.computeXY();
+            if (isWindowed && startLine && !isPointPastWindow(origin, otherXY, startLine)) {
+              // Skip this collinear continuation - it's behind the window
+              // Cast a normal continuation ray instead (if applicable)
+              contResult = castRay(
+                origin,
+                target,
+                "through",
+                effectiveObstacles,
+                startLine,
+                undefined,
+                chains,
+                surfaceOrientations,
+                windowContext,
+                endpointCache
+              );
+            } else {
+              // Mark this endpoint as handled via collinear continuation
+              collinearEndpointsToSkip.add(otherEndpointCached.getKey());
+
+              // Check blocking direction
+              const junctionStatus = target.getBlockingStatus(surfaceOrientations);
+              const otherStatus = otherEndpointCached.getBlockingStatus(surfaceOrientations);
+
+              const isBlockedByOther =
+                (junctionStatus.isCWBlocking && !junctionStatus.isCCWBlocking && otherStatus.isCCWBlocking) ||
+                (junctionStatus.isCCWBlocking && !junctionStatus.isCWBlocking && otherStatus.isCWBlocking);
+
+              if (isBlockedByOther) {
+                contResult = { hit: otherEndpointCached, passedThroughEndpoints: [] };
+              } else {
+                contResult = castRay(
+                  origin,
+                  otherEndpointCached,
+                  "through",
+                  effectiveObstacles,
+                  startLine,
+                  undefined,
+                  chains,
+                  surfaceOrientations,
+                  windowContext,
+                  endpointCache
+                );
+                contResult = {
+                  hit: contResult.hit,
+                  passedThroughEndpoints: [otherEndpointCached, ...contResult.passedThroughEndpoints],
+                };
+              }
+            }
+          } else {
+            // Neither surface is collinear - normal continuation
+            contResult = castRay(
+              origin,
+              target,
+              "through",
+              effectiveObstacles,
+              startLine,
+              undefined, // No window surface for junction continuations
+              chains,
+              surfaceOrientations,
+              windowContext,
+              endpointCache
+            );
+          }
+
+          if (contResult.hit) {
+            // Reuse existing HitPoint at same position to ensure consistent PreComputedPairs
+            const normalizedContinuation = isHitPoint(contResult.hit)
+              ? getOrCreateHitPoint(contResult.hit)
+              : contResult.hit;
+
+            // Add passed-through endpoints to vertices (including collinear surface endpoints)
+            for (const passedThrough of contResult.passedThroughEndpoints) {
+              vertices.push(passedThrough);
+            }
+
+            vertices.push(normalizedContinuation);
+
+            // Create ContinuationRay for provenance tracking
+            // Now includes passed-through endpoints from the unified castRay
+            const contRay = new ContinuationRay(target, contResult.passedThroughEndpoints, normalizedContinuation);
+            continuationRays.push(contRay);
+            // Assign continuationRay reference to all member points
+            target.continuationRay = contRay;
+            for (const passedThrough of contResult.passedThroughEndpoints) {
+              passedThrough.continuationRay = contRay;
+            }
+            normalizedContinuation.continuationRay = contRay;
+
+            // Store pairwise orderings for ALL points on this junction continuation ray
+            // using the junction's directional blocking status.
+            //
+            // Shadow boundary order from blocking status:
+            // - CCW blocking only → far-before-near (entering shadow in CCW direction)
+            // - CW blocking only → near-before-far (exiting shadow in CCW direction)
+            const shadowOrder = target.getShadowBoundaryOrder(surfaceOrientations);
+            if (shadowOrder !== 0) {
+              // Use shadow order from blocking status
+
+              // Collect all points on this ray
+              const junctionRayPoints: SourcePoint[] = [
+                target,
+                ...contResult.passedThroughEndpoints,
+                normalizedContinuation,
+              ];
+
+              // Sort by distance to determine which point is nearer/farther
+              const sortedByDistance = [...junctionRayPoints].sort((a, b) => {
+                const aXY = a.computeXY();
+                const bXY = b.computeXY();
+                const aDist = Math.sqrt((aXY.x - origin.x) ** 2 + (aXY.y - origin.y) ** 2);
+                const bDist = Math.sqrt((bXY.x - origin.x) ** 2 + (bXY.y - origin.y) ** 2);
+                return aDist - bDist; // near to far
+              });
+
+              // Set pairwise orderings based on shadow boundary direction
+              for (let i = 0; i < sortedByDistance.length; i++) {
+                for (let j = i + 1; j < sortedByDistance.length; j++) {
+                  // i is nearer, j is farther
+                  if (shadowOrder > 0) {
+                    // Continuation first → far before near
+                    preComputedPairs.set(sortedByDistance[j]!, sortedByDistance[i]!, -1);
+                  } else {
+                    // Junction first → near before far
+                    preComputedPairs.set(sortedByDistance[i]!, sortedByDistance[j]!, -1);
+                  }
+                }
+              }
             }
           }
         }
         // If junction blocks (isBlocking), we still add the junction but no continuation
       } else if (blockingHit) {
         // Ray is blocked by another obstacle before reaching the junction
-        // Add the blocking hit to the polygon
-        vertices.push(blockingHit);
+        // Add the blocking hit to the polygon (normalize if HitPoint)
+        const normalizedHit = isHitPoint(blockingHit) ? getOrCreateHitPoint(blockingHit) : blockingHit;
+        vertices.push(normalizedHit);
       }
       continue;
     }
 
+    // Skip endpoints that were already handled as part of a collinear continuation.
+    // This prevents duplicate processing and conflicting PreComputedPairs.
+    if (collinearEndpointsToSkip.has(target.getKey())) {
+      continue;
+    }
+
     // Handle Endpoints - same pattern as non-blocking junctions:
-    // 1. Check obstructions BEFORE endpoint (castRayToEndpoint returns Endpoint or blocking HitPoint)
+    // 1. Check obstructions BEFORE endpoint (castRay "to" returns Endpoint or blocking HitPoint)
     // 2. Add Endpoint directly (provenance) if not blocked, or blocking HitPoint if blocked
     // 3. Cast continuation ray and pair with Endpoint
     const targetEndpoint = target as Endpoint;
-    const hit = castRayToEndpoint(
+    const castResult = castRay(
       origin,
       targetEndpoint,
+      "to",
       effectiveObstacles,
       startLine,
-      excludeSurfaceId
+      excludeSurfaceId,
+      chains,
+      surfaceOrientations,
+      windowContext,
+      endpointCache
     );
+
+    const rawHit = castResult.hit;
+    // Normalize HitPoints to ensure consistent object references for PreComputedPairs
+    const hit = rawHit && isHitPoint(rawHit) ? getOrCreateHitPoint(rawHit) : rawHit;
 
     if (hit) {
       vertices.push(hit);
+
+      // Record PreComputedPairs for passed-through endpoints (blocked case only)
+      // When we get blocked before reaching the target, we still need orderings for
+      // any passed-through endpoints. If we DO reach the target and cast a continuation
+      // ray, the continuation ray section will handle ALL pairwise orderings.
+      //
+      // Use directional blocking to determine shadow boundary order:
+      // - CCW blocking → far-before-near (entering shadow in CCW direction)
+      // - CW blocking → near-before-far (exiting shadow in CCW direction)
+      if (hit !== targetEndpoint && castResult.passedThroughEndpoints.length > 0) {
+        const shadowOrder = targetEndpoint.getShadowBoundaryOrder(surfaceOrientations);
+
+        // Only set pairs if we have a clear shadow direction
+        if (shadowOrder !== 0) {
+          // Collect all points on this ray
+          const blockedRayPoints: SourcePoint[] = [
+            hit,
+            ...castResult.passedThroughEndpoints,
+          ];
+
+          // Sort by distance to determine which point is nearer/farther
+          const sortedByDistance = [...blockedRayPoints].sort((a, b) => {
+            const aXY = a.computeXY();
+            const bXY = b.computeXY();
+            const aDist = Math.sqrt((aXY.x - origin.x) ** 2 + (aXY.y - origin.y) ** 2);
+            const bDist = Math.sqrt((bXY.x - origin.x) ** 2 + (bXY.y - origin.y) ** 2);
+            return aDist - bDist; // near to far
+          });
+
+          // Set pairwise orderings based on shadow boundary direction
+          for (let i = 0; i < sortedByDistance.length; i++) {
+            for (let j = i + 1; j < sortedByDistance.length; j++) {
+              // i is nearer, j is farther
+              if (shadowOrder > 0) {
+                // CCW blocking → far before near
+                preComputedPairs.set(sortedByDistance[j]!, sortedByDistance[i]!, -1);
+              } else {
+                // CW blocking → near before far
+                preComputedPairs.set(sortedByDistance[i]!, sortedByDistance[j]!, -1);
+              }
+            }
+          }
+        }
+      }
 
       // If we hit the endpoint (not blocked), also cast continuation ray
       // Use isBlocking() for OCP-compliant pattern (unified with junction handling)
       // Endpoints always allow continuation rays (isBlocking() returns false)
       if (isEndpoint(hit) && hit.equals(targetEndpoint) && !hit.isBlocking(surfaceOrientations)) {
-        const continuation = castContinuationRay(
+        const contResult = castRay(
           origin,
           targetEndpoint,
+          "through",
           effectiveObstacles,
           startLine,
-          excludeSurfaceId
+          excludeSurfaceId,
+          chains,
+          surfaceOrientations,
+          windowContext,
+          endpointCache
         );
 
-        if (continuation) {
-          vertices.push(continuation);
-          rayPairs.set(targetEndpoint.getKey(), { endpoint: targetEndpoint, continuation });
+        if (contResult.hit) {
+          // Check if continuation HitPoint already exists (shared by multiple endpoints)
+          let normalizedContinuation: SourcePoint;
+          let isSharedContinuation = false;
 
-          // Store endpoint + continuation pair order in PreComputedPairs
-          // This is a Type 2 pair: endpoint + continuation
-          const orientation = surfaceOrientations.get(targetEndpoint.surface.id);
-          if (orientation) {
-            const shadowOrder = getShadowBoundaryOrderFromOrientation(targetEndpoint, orientation);
-            // shadowOrder > 0: continuation before endpoint → 1
-            // shadowOrder < 0: endpoint before continuation → -1
-            const order = shadowOrder > 0 ? 1 : -1;
-            preComputedPairs.set(targetEndpoint, continuation, order);
+          if (isHitPoint(contResult.hit)) {
+            const xy = contResult.hit.computeXY();
+            const key = `${xy.x},${xy.y}`;
+            isSharedContinuation = hitPointsByPosition.has(key);
+            normalizedContinuation = getOrCreateHitPoint(contResult.hit);
+          } else {
+            normalizedContinuation = contResult.hit;
+          }
+
+          vertices.push(normalizedContinuation);
+
+          // Create ContinuationRay for provenance tracking
+          // Combine passed-through endpoints from both the "to" cast and the "through" cast
+          const allPassedThrough = [
+            ...castResult.passedThroughEndpoints,
+            ...contResult.passedThroughEndpoints,
+          ];
+          const contRay = new ContinuationRay(
+            targetEndpoint,
+            allPassedThrough,
+            normalizedContinuation
+          );
+          continuationRays.push(contRay);
+          // Assign continuationRay reference to all member points
+          targetEndpoint.continuationRay = contRay;
+          for (const passedThrough of allPassedThrough) {
+            passedThrough.continuationRay = contRay;
+          }
+          normalizedContinuation.continuationRay = contRay;
+
+          // Store pairwise orderings for ALL points on this continuation ray
+          // using DIRECTIONAL BLOCKING to determine shadow boundary order.
+          //
+          // Shadow boundary order from blocking status:
+          // - CCW blocking → far-before-near (entering shadow in CCW direction)
+          // - CW blocking → near-before-far (exiting shadow in CCW direction)
+          // - No blocking (collinear surface) → order = 0 (no shadow direction)
+          const shadowOrder = targetEndpoint.getShadowBoundaryOrder(surfaceOrientations);
+
+          // Collect all points on this ray
+          const rayPoints: SourcePoint[] = [
+            targetEndpoint,
+            ...allPassedThrough,
+            normalizedContinuation,
+          ];
+
+          // Sort by distance to determine which point is nearer/farther
+          // (distance establishes relative order, NOT used as tie-breaker)
+          const sortedByDistance = [...rayPoints].sort((a, b) => {
+            const aXY = a.computeXY();
+            const bXY = b.computeXY();
+            const aDist = Math.sqrt((aXY.x - origin.x) ** 2 + (aXY.y - origin.y) ** 2);
+            const bDist = Math.sqrt((bXY.x - origin.x) ** 2 + (bXY.y - origin.y) ** 2);
+            return aDist - bDist; // near to far
+          });
+
+          // Set pairwise orderings based on shadow boundary direction
+          // If shadowOrder is 0 (collinear surface), fall back to distance order
+          const effectiveShadowOrder = shadowOrder !== 0 ? shadowOrder : -1; // default to near-before-far
+          for (let i = 0; i < sortedByDistance.length; i++) {
+            for (let j = i + 1; j < sortedByDistance.length; j++) {
+              // i is nearer, j is farther
+              if (effectiveShadowOrder > 0) {
+                // CCW blocking → far before near
+                preComputedPairs.set(sortedByDistance[j]!, sortedByDistance[i]!, -1);
+              } else {
+                // CW blocking or collinear → near before far
+                preComputedPairs.set(sortedByDistance[i]!, sortedByDistance[j]!, -1);
+              }
+            }
           }
         }
       }
@@ -1041,12 +1643,17 @@ export function projectConeV2(
     // The ray would only touch the adjacent surface at s=1.0, which gets skipped
     const leftTargetsBlockingJunction = isBoundaryTargetBlockingJunction(source.leftBoundary);
     if (!leftTargetsBlockingJunction) {
-      leftHit = castRayToTarget(
+      const rawLeftHit = castRayToTarget(
         origin,
         source.leftBoundary,
         leftRayObstacles,
-        startLine
+        startLine,
+        chains,
+        surfaceOrientations,
+        windowContext
       );
+      // Normalize HitPoints to ensure consistent object references
+      leftHit = rawLeftHit && isHitPoint(rawLeftHit) ? getOrCreateHitPoint(rawLeftHit) : rawLeftHit;
       if (leftHit) {
         vertices.push(leftHit);
       }
@@ -1055,12 +1662,17 @@ export function projectConeV2(
     // Skip right boundary ray if it targets a blocking junction
     const rightTargetsBlockingJunction = isBoundaryTargetBlockingJunction(source.rightBoundary);
     if (!rightTargetsBlockingJunction) {
-      rightHit = castRayToTarget(
+      const rawRightHit = castRayToTarget(
         origin,
         source.rightBoundary,
         rightRayObstacles,
-        startLine
+        startLine,
+        chains,
+        surfaceOrientations,
+        windowContext
       );
+      // Normalize HitPoints to ensure consistent object references
+      rightHit = rawRightHit && isHitPoint(rawRightHit) ? getOrCreateHitPoint(rawRightHit) : rawRightHit;
       if (rightHit) {
         vertices.push(rightHit);
       }
@@ -1296,9 +1908,44 @@ function comparePointsCCWSimplified(
   }
 
   // 4. Same side: use cross product between the two points
-  // Positive cross: a comes before b in CCW (-1)
-  // Non-positive cross: b comes before a (1)
   const cross = aVec.x * bVec.y - aVec.y * bVec.x;
+
+  // Handle collinear points (cross === 0)
+  // Per project rules: Points on the SAME continuation ray MUST have pre-computed order.
+  // For OTHER collinear points (e.g., involving OriginPoints), use distance as fallback.
+  if (cross === 0) {
+    // OriginPoints (window corners) are never part of continuation rays,
+    // so distance fallback is acceptable for them
+    if (isOriginPoint(a) || isOriginPoint(b)) {
+      const aDist = aVec.x * aVec.x + aVec.y * aVec.y;
+      const bDist = bVec.x * bVec.x + bVec.y * bVec.y;
+      return aDist < bDist ? -1 : aDist > bDist ? 1 : 0;
+    }
+
+    // For non-origin points: check if they share a continuation ray
+    const sameRay =
+      a.continuationRay &&
+      b.continuationRay &&
+      a.continuationRay.id === b.continuationRay.id;
+
+    if (sameRay) {
+      // Same-ray points MUST have PreComputedPairs - this is a bug
+      throw new Error(
+        `Critical: Same-ray collinear points without PreComputedPairs: ` +
+          `${a.getKey()} vs ${b.getKey()}. ` +
+          `All same-ray orderings must be pre-computed.`
+      );
+    }
+
+    // Different rays or no rays: use distance as fallback
+    // This handles unrelated collinear points (coincidental alignment)
+    const aDist = aVec.x * aVec.x + aVec.y * aVec.y;
+    const bDist = bVec.x * bVec.x + bVec.y * bVec.y;
+    return aDist < bDist ? -1 : aDist > bDist ? 1 : 0;
+  }
+
+  // Positive cross: a comes before b in CCW (-1)
+  // Negative cross: b comes before a (1)
   return cross > 0 ? -1 : 1;
 }
 

@@ -18,6 +18,7 @@ import type { Invariant, InvariantContext, VisibilityStage } from "../types";
 import { assertNoViolations } from "../types";
 import type { SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import { validateEdgeByProvenance } from "./polygon-edges-provenance";
+import { dedupeConsecutiveHits } from "@/trajectory-v2/visibility/RenderingDedup";
 
 // Legacy tolerance for fallback geometric checks
 const TOLERANCE = 1e-3;
@@ -103,6 +104,83 @@ function isEdgeAlongScreenBoundary(
 }
 
 /**
+ * Edge validation result with index info.
+ */
+interface EdgeResult {
+  index: number;
+  valid: boolean;
+  reason?: string;
+}
+
+/**
+ * Check if swapping two points in the polygon would fix the surrounding edges.
+ * This detects the [invalid, valid, invalid] pattern where the middle edge's
+ * endpoints might be in the wrong order.
+ */
+function detectWronglySortedPairsFromSourcePoints(
+  sourcePoints: SourcePoint[],
+  origin: { x: number; y: number },
+  label: string
+): string[] {
+  const diagnostics: string[] = [];
+  const n = sourcePoints.length;
+  
+  if (n < 3) return diagnostics;
+
+  // First, compute validity of all edges
+  const validities: boolean[] = [];
+  for (let i = 0; i < n; i++) {
+    const s1 = sourcePoints[i]!;
+    const s2 = sourcePoints[(i + 1) % n]!;
+    const result = validateEdgeByProvenance(s1, s2, origin);
+    validities.push(result.valid);
+  }
+
+  // Look for [invalid, valid, invalid] patterns
+  for (let i = 0; i < n; i++) {
+    const prev = validities[(i - 1 + n) % n]!;
+    const curr = validities[i]!;
+    const next = validities[(i + 1) % n]!;
+
+    // Pattern: [invalid, valid, invalid]
+    if (!prev && curr && !next) {
+      // The middle valid edge is edge i (from point i to point i+1)
+      // If we swap points i and i+1, we'd get different edges
+      const pointA = i;
+      const pointB = (i + 1) % n;
+      
+      // After swap: edges would be:
+      // - Edge prev: point (i-1) → point (i+1)  (was: point (i-1) → point i)
+      // - Edge curr: point (i+1) → point i      (was: point i → point (i+1))
+      // - Edge next: point i → point (i+2)      (was: point (i+1) → point (i+2))
+      
+      // Check if the swapped edges would be valid
+      const s1 = sourcePoints[(i - 1 + n) % n]!; // point before
+      const s2 = sourcePoints[pointA]!;          // point A (was first in curr)
+      const s3 = sourcePoints[pointB]!;          // point B (was second in curr)
+      const s4 = sourcePoints[(i + 2) % n]!;     // point after
+      
+      // After swap, edges would be: s1→s3, s3→s2, s2→s4
+      const swappedPrev = validateEdgeByProvenance(s1, s3, origin);
+      const swappedCurr = validateEdgeByProvenance(s3, s2, origin);
+      const swappedNext = validateEdgeByProvenance(s2, s4, origin);
+      
+      if (swappedPrev.valid && swappedCurr.valid && swappedNext.valid) {
+        const p2 = s2.computeXY();
+        const p3 = s3.computeXY();
+        diagnostics.push(
+          `⚠️ POTENTIAL SWAP DETECTED (${label}): Points ${pointA} and ${pointB} ` +
+          `[(${p2.x.toFixed(2)}, ${p2.y.toFixed(2)}) and (${p3.x.toFixed(2)}, ${p3.y.toFixed(2)})] ` +
+          `appear to be in wrong order - swapping them would make all 3 edges valid`
+        );
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
+/**
  * Validate edges using provenance (preferred) or fall back to geometric checks.
  */
 function validateStageEdges(
@@ -115,6 +193,9 @@ function validateStageEdges(
   if (n < 3) return violations;
 
   const hasSourcePoints = stage.sourcePoints && stage.sourcePoints.length === n;
+
+  // First pass: collect all edge validation results
+  const results: EdgeResult[] = [];
 
   for (let i = 0; i < n; i++) {
     const p1 = stage.polygon[i]!;
@@ -139,9 +220,33 @@ function validateStageEdges(
       reason = "not along a surface, screen boundary, or ray from origin (legacy check)";
     }
 
+    results.push({ index: i, valid: isValid, reason });
+
     if (!isValid) {
       const edgeInfo = `Edge ${i}→${(i + 1) % n} from (${p1.x.toFixed(2)}, ${p1.y.toFixed(2)}) to (${p2.x.toFixed(2)}, ${p2.y.toFixed(2)})`;
       violations.push(`${edgeInfo}: ${reason ?? "invalid edge"}`);
+    }
+  }
+
+  // Second pass: detect wrongly sorted pairs in raw polygon
+  if (hasSourcePoints) {
+    const rawDiagnostics = detectWronglySortedPairsFromSourcePoints(
+      stage.sourcePoints!,
+      stage.origin,
+      "raw"
+    );
+    violations.push(...rawDiagnostics);
+    
+    // Third pass: detect wrongly sorted pairs in processed (deduplicated) polygon
+    // This catches swaps that become visible only after deduplication
+    const processed = dedupeConsecutiveHits(stage.sourcePoints!);
+    if (processed.length !== stage.sourcePoints!.length) {
+      const processedDiagnostics = detectWronglySortedPairsFromSourcePoints(
+        processed,
+        stage.origin,
+        "processed"
+      );
+      violations.push(...processedDiagnostics);
     }
   }
 
