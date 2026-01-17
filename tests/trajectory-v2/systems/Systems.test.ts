@@ -70,6 +70,17 @@ function createMockResults(overrides: Partial<EngineResults> = {}): EngineResult
     },
     plannedGhost: [],
     actualGhost: [],
+    // fullTrajectory is required for arrow waypoints
+    fullTrajectory: {
+      merged: [
+        { start: { x: 0, y: 0 }, end: { x: 100, y: 0 }, surface: null },
+      ],
+      physicalDivergent: [],
+      plannedToCursor: [],
+      physicalFromCursor: [],
+      divergencePoint: null,
+      isFullyAligned: true,
+    },
     ...overrides,
   };
 }

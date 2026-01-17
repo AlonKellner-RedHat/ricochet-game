@@ -10,7 +10,7 @@
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { OriginPoint, type SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { Surface } from "@/surfaces/Surface";
-import type { EngineResults, PathResult } from "@/trajectory-v2/engine/types";
+import type { EngineResults } from "@/trajectory-v2/engine/types";
 import { getArrowWaypointsFromFullTrajectory } from "@/trajectory-v2/engine/FullTrajectoryCalculator";
 import type {
   AimingEvent,
@@ -198,15 +198,15 @@ export class AimingSystem
       return false;
     }
 
-    const { actualPath, alignment } = this.lastResults;
+    const { alignment } = this.lastResults;
 
     // Check alignment if required
     if (!this.config.allowMisalignedShot && !alignment.isFullyAligned) {
       return false;
     }
 
-    // Get waypoints for the arrow
-    const waypoints = this.getArrowWaypoints(actualPath);
+    // Get waypoints for the arrow (from fullTrajectory - single source of truth)
+    const waypoints = this.getArrowWaypoints();
     const waypointSources = this.getArrowWaypointSources();
 
     if (waypoints.length < 2) {
@@ -256,46 +256,19 @@ export class AimingSystem
   /**
    * Get the waypoints the arrow will follow.
    *
-   * FIRST PRINCIPLE 2.3: Arrows must follow physically accurate trajectory.
-   * - Arrow waypoints include main path points AND forward projection points
-   * - Arrow continues past cursor along physical trajectory
+   * Arrow follows exactly what's rendered (green + yellow paths):
+   * - merged segments (solid green before cursor, dashed yellow after)
+   * - physicalDivergent segments (dashed yellow after divergence)
    *
-   * UNIFIED: Prefers fullTrajectory for exact match with rendered path.
-   * This ensures the arrow follows exactly what's shown on screen (green + yellow).
+   * Single source of truth: fullTrajectory. No fallbacks - if fullTrajectory
+   * is unavailable, there is no valid trajectory to follow.
    */
-  getArrowWaypoints(path?: PathResult): readonly Vector2[] {
-    // PREFER fullTrajectory - same path that's rendered (green + yellow)
+  getArrowWaypoints(): readonly Vector2[] {
     const fullTraj = this.lastResults?.fullTrajectory;
-    if (fullTraj && !path) {
-      return getArrowWaypointsFromFullTrajectory(fullTraj);
-    }
-
-    // Fallback to actualPathUnified
-    const unifiedActual = this.lastResults?.actualPathUnified;
-    if (unifiedActual && !path) {
-      // Combine main path with forward projection
-      const waypoints: Vector2[] = [...unifiedActual.waypoints];
-      if (unifiedActual.forwardProjection && unifiedActual.forwardProjection.length > 0) {
-        waypoints.push(...unifiedActual.forwardProjection);
-      }
-      return waypoints;
-    }
-
-    // Fallback to legacy path
-    const actualPath = path || this.lastResults?.actualPath;
-    if (!actualPath) {
+    if (!fullTraj) {
       return [];
     }
-
-    // Combine main path with forward projection
-    const waypoints: Vector2[] = [...actualPath.points];
-
-    // Add projection points for physically accurate trajectory
-    if (actualPath.forwardProjection && actualPath.forwardProjection.length > 0) {
-      waypoints.push(...actualPath.forwardProjection);
-    }
-
-    return waypoints;
+    return getArrowWaypointsFromFullTrajectory(fullTraj);
   }
 
   /**
