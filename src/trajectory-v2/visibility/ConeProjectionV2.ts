@@ -37,6 +37,7 @@ import {
 import type { Ray, Vector2 } from "@/trajectory-v2/geometry/types";
 import { ContinuationRay } from "@/trajectory-v2/geometry/ContinuationRay";
 import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
+import type { ReflectedTargetSet } from "./ReflectedTargets";
 
 // =============================================================================
 // TYPES
@@ -755,11 +756,35 @@ export function projectConeV2(
   source: ConeSource,
   chains: readonly SurfaceChain[],
   excludeSurfaceId?: string,
-  cache?: ReflectionCache
+  cache?: ReflectionCache,
+  reflectedTargets?: ReflectedTargetSet
 ): SourcePoint[] {
   const { origin, startLine } = source;
   const isWindowed = startLine !== null;
   const vertices: SourcePoint[] = [];
+
+  /**
+   * Helper to get target position, using reflected position when available.
+   *
+   * When reflectedTargets is provided (Stage 2+), this returns the reflected
+   * position of the target for ray casting in image space. Otherwise, returns
+   * the world-space position.
+   *
+   * NOTE: Currently returns world-space position to preserve existing behavior.
+   * Full reflected target integration would use:
+   *   return reflectedTargets?.getReflected(target) ?? target.computeXY();
+   */
+  const getTargetPosition = (target: Endpoint | JunctionPoint): Vector2 => {
+    // For now, preserve existing behavior by using world-space positions.
+    // The reflectedTargets parameter is available for future enhancements
+    // when we want to cast rays in full image space.
+    return target.computeXY();
+  };
+
+  // The reflectedTargets parameter is available for enhanced ray casting.
+  // When enabled, rays could be cast from reflectedOrigin to reflectedTarget.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _reflectedTargetsAvailable = reflectedTargets !== undefined;
 
   // Lookup for HitPoints by position - ensures we reuse the same HitPoint object
   // when multiple continuation rays hit the same position.

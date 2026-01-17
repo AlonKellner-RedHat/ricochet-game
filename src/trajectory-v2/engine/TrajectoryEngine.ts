@@ -9,6 +9,7 @@ import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
 import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import { extractSurfacesFromChains } from "@/trajectory-v2/geometry/RayCasting";
+import { createReflectionCache, type ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 import { TrajectoryDebugLogger } from "../TrajectoryDebugLogger";
 
 /**
@@ -68,6 +69,7 @@ interface CachedResults {
   plannedGhost: readonly GhostPoint[];
   actualGhost: readonly GhostPoint[];
   unifiedPath: UnifiedPath | null;
+  reflectionCache: ReflectionCache | null;
 }
 
 /**
@@ -105,6 +107,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     plannedGhost: [],
     actualGhost: [],
     unifiedPath: null,
+    reflectionCache: null,
   };
 
   // Event subscribers
@@ -388,7 +391,19 @@ export class TrajectoryEngine implements ITrajectoryEngine {
       cursor: this.cursor,
       allSurfaces: this.allSurfaces,
       activePlannedSurfaces: bypassResult.activeSurfaces,
+      reflectionCache: this.getReflectionCache(),
     };
+  }
+
+  /**
+   * Get or create the shared ReflectionCache for this calculation cycle.
+   * The cache is recreated when inputs change (via dirty flags).
+   */
+  private getReflectionCache(): ReflectionCache {
+    if (!this.cache.reflectionCache || this.dirty.bypass) {
+      this.cache.reflectionCache = createReflectionCache();
+    }
+    return this.cache.reflectionCache;
   }
 
   // =========================================================================
@@ -480,6 +495,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
       plannedGhost: [],
       actualGhost: [],
       unifiedPath: null,
+      reflectionCache: null,
     };
   }
 

@@ -13,7 +13,7 @@ import type { Surface } from "@/surfaces/Surface";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
 import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { createReflectionCache, type ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
-import { type SourcePoint, isEndpoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
+import { type SourcePoint, isEndpoint, isHitPoint, Endpoint } from "@/trajectory-v2/geometry/SourcePoint";
 import { type SurfaceChain, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { TrajectoryDebugLogger, type VisibilityDebugInfo } from "../TrajectoryDebugLogger";
@@ -28,6 +28,7 @@ import {
 import type { ValidRegionOutline } from "./OutlineBuilder";
 import { preparePolygonForRendering } from "./RenderingDedup";
 import { type Segment, type WindowConfig, getWindowSegments } from "./WindowConfig";
+import { createReflectedTargetSet, type RayTarget } from "./ReflectedTargets";
 
 /**
  * Configuration for the valid region overlay.
@@ -567,6 +568,29 @@ export class ValidRegionRenderer {
         // Uses ReflectionCache for memoization and bidirectional identity
         currentOrigin = reflectionCache.reflect(currentOrigin, currentSurface);
 
+        // Collect all ray targets for this stage (endpoints and junctions from all chains)
+        // These will be reflected through the current surface for image-space ray casting
+        const allRayTargets: RayTarget[] = [];
+        for (const chain of allChainsWithScreen) {
+          // Add endpoints
+          for (const surface of chain.getSurfaces()) {
+            allRayTargets.push(new Endpoint(surface, "start"));
+            allRayTargets.push(new Endpoint(surface, "end"));
+          }
+          // Add junction points
+          for (const junction of chain.getJunctionPoints()) {
+            allRayTargets.push(junction);
+          }
+        }
+
+        // Create reflected targets for this stage
+        // This enables ray casting in image space (reflectedOrigin -> reflectedTarget)
+        const reflectedTargets = createReflectedTargetSet(
+          allRayTargets,
+          currentSurface,
+          reflectionCache
+        );
+
         // Compute visibility through visible windows
         const stageSourcePoints: SourcePoint[] = [];
         const stagePolygons: (readonly Vector2[])[] = [];
@@ -585,7 +609,8 @@ export class ValidRegionRenderer {
             cone,
             allChainsWithScreen,
             currentSurface.id, // Exclude the current reflection surface
-            reflectionCache
+            reflectionCache,
+            reflectedTargets   // Pass reflected targets for image-space ray casting
           );
           stageSourcePoints.push(...sourcePoints);
           const polygon = preparePolygonForRendering(sourcePoints);

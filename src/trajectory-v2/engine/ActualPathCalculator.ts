@@ -31,6 +31,7 @@ import {
 } from "@/trajectory-v2/geometry/SourcePoint";
 import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import { reflectDirection } from "./ValidityChecker";
+import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 
 /**
  * Information about a surface hit during actual path calculation.
@@ -120,6 +121,9 @@ function checkCursorOnRay(
 
 /**
  * Calculate the actual physical path using forward ray casting.
+ *
+ * @deprecated Use calculateActualPathUnified instead for consistent
+ * reflection paradigm with visibility system and shared cache support.
  *
  * FIRST PRINCIPLES:
  * - B1: Forward physics (start from player, ray cast to find hits)
@@ -384,7 +388,6 @@ export function getInitialDirection(player: Vector2, cursorImage: Vector2): Vect
 
 import { createRayPropagator, type RayPropagator } from "./RayPropagator";
 import { tracePath } from "./TracePath";
-import { HitPoint } from "@/trajectory-v2/geometry/SourcePoint";
 
 /**
  * Extended ActualPath interface that includes the propagator state.
@@ -409,6 +412,7 @@ export interface ActualPathUnified extends ActualPath {
  * @param player Player position
  * @param cursor Cursor position (path ends here if reached)
  * @param allSurfaces All surfaces in the scene
+ * @param externalCache Optional external ReflectionCache for sharing with other systems
  * @param maxReflections Maximum number of reflections (default 10)
  * @param maxDistance Maximum total path distance (default 2000)
  * @returns ActualPathUnified with waypoints, hit info, and propagator state
@@ -417,6 +421,7 @@ export function calculateActualPathUnified(
   player: Vector2,
   cursor: Vector2,
   allSurfaces: readonly Surface[],
+  externalCache?: ReflectionCache,
   maxReflections: number = 10,
   maxDistance: number = 2000
 ): ActualPathUnified {
@@ -432,12 +437,13 @@ export function calculateActualPathUnified(
       blockedBy: null,
       forwardProjection: [],
       forwardProjectionSources: [],
-      propagator: createRayPropagator(player, cursor),
+      propagator: createRayPropagator(player, cursor, externalCache),
     };
   }
 
   // Create initial propagator from player to cursor
-  const propagator = createRayPropagator(player, cursor);
+  // Use external cache if provided for sharing with other systems (e.g., visibility)
+  const propagator = createRayPropagator(player, cursor, externalCache);
 
   // Trace path to cursor
   const toCursorResult = tracePath(propagator, allSurfaces, {

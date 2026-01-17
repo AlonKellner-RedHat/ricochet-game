@@ -213,8 +213,16 @@ export class GameAdapter {
     this.coordinator.update(deltaSeconds);
 
     // Render valid region overlay
+    // Pass the shared ReflectionCache from engine results for cache reuse
     if (this.validRegionRenderer && this.showValidRegion) {
-      this.validRegionRenderer.render(player, plannedSurfaces, allChains, windowConfig);
+      const engineResults = this.engine.getResults();
+      this.validRegionRenderer.render(
+        player,
+        plannedSurfaces,
+        allChains,
+        windowConfig,
+        engineResults.reflectionCache  // Share cache with trajectory system
+      );
     }
   }
 

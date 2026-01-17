@@ -8,6 +8,7 @@
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { Surface } from "@/surfaces/Surface";
+import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 
 /**
  * A reflected image with full provenance tracking.
@@ -160,6 +161,11 @@ export interface EngineResults {
   readonly allSurfaces?: readonly Surface[];
   /** Active planned surfaces (non-bypassed, for planned path calculation) */
   readonly activePlannedSurfaces?: readonly Surface[];
+  /**
+   * Shared ReflectionCache used during trajectory calculation.
+   * Can be passed to visibility system for cache reuse.
+   */
+  readonly reflectionCache?: ReflectionCache;
 }
 
 /**

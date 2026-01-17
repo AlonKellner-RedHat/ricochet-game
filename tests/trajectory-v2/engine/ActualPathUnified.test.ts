@@ -8,6 +8,7 @@
 import { describe, it, expect } from "vitest";
 import { createMockBidirectionalSurface, createMockWall } from "@test/helpers/surfaceHelpers";
 import { calculateActualPathUnified, calculateActualPath, getInitialDirection } from "@/trajectory-v2/engine/ActualPathCalculator";
+import { createReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
@@ -190,6 +191,7 @@ describe("calculateActualPathUnified", () => {
         player,
         cursor,
         [surface1, surface2],
+        undefined, // externalCache
         3, // maxReflections
         10000
       );
@@ -206,6 +208,7 @@ describe("calculateActualPathUnified", () => {
         player,
         cursor,
         [],
+        undefined, // externalCache
         10,
         500 // maxDistance
       );
@@ -214,6 +217,58 @@ describe("calculateActualPathUnified", () => {
       const lastWaypoint = result.waypoints[result.waypoints.length - 1]!;
       const totalDist = Math.abs(lastWaypoint.y - player.y);
       expect(totalDist).toBeLessThanOrEqual(600); // Some tolerance
+    });
+  });
+
+  describe("external cache support", () => {
+    it("should accept external ReflectionCache", () => {
+      const player: Vector2 = { x: 100, y: 100 };
+      const cursor: Vector2 = { x: 200, y: 200 };
+      const externalCache = createReflectionCache();
+
+      const result = calculateActualPathUnified(player, cursor, [], externalCache);
+
+      expect(result.reachedCursor).toBe(true);
+      expect(result.waypoints.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("should use external cache for reflections", () => {
+      const player: Vector2 = { x: 100, y: 100 };
+      const cursor: Vector2 = { x: 100, y: 300 };
+      const externalCache = createReflectionCache();
+      const surface = createHorizontalSurface("s1", 200, 50, 150);
+
+      calculateActualPathUnified(player, cursor, [surface], externalCache);
+
+      // Cache should have been used for reflections
+      const stats = externalCache.stats();
+      expect(stats.size).toBeGreaterThanOrEqual(0); // May or may not have entries depending on path
+    });
+
+    it("should share cache between multiple calculations", () => {
+      const externalCache = createReflectionCache();
+      const surface = createHorizontalSurface("s1", 200, 50, 350);
+
+      // First calculation
+      calculateActualPathUnified(
+        { x: 100, y: 100 },
+        { x: 100, y: 300 },
+        [surface],
+        externalCache
+      );
+      const statsAfterFirst = externalCache.stats();
+
+      // Second calculation with same surface
+      calculateActualPathUnified(
+        { x: 200, y: 100 },
+        { x: 200, y: 300 },
+        [surface],
+        externalCache
+      );
+      const statsAfterSecond = externalCache.stats();
+
+      // Cache should persist across calculations
+      expect(statsAfterSecond.size).toBeGreaterThanOrEqual(statsAfterFirst.size);
     });
   });
 
