@@ -9,6 +9,7 @@ import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { Surface } from "@/surfaces/Surface";
 import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
+import type { ActualPathUnified } from "./ActualPathCalculator";
 
 /**
  * A reflected image with full provenance tracking.
@@ -155,6 +156,12 @@ export interface EngineResults {
    * This is the single source of truth for both arrow movement and visualization.
    */
   readonly unifiedPath?: UnifiedPath;
+  /**
+   * NEW: Actual path using unified image-based reflection.
+   * Uses same reflection paradigm as visibility system.
+   * Preferred for arrow waypoints as it matches trajectory preview exactly.
+   */
+  readonly actualPathUnified?: ActualPathUnified;
   /** Cursor position (needed for render calculations) */
   readonly cursor?: Vector2;
   /** All surfaces (needed for physics-based render calculations) */

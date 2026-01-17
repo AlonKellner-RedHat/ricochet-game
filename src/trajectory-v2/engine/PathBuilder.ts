@@ -475,6 +475,12 @@ export function buildPlannedPath(
 /**
  * Build the actual trajectory path using forward physics.
  *
+ * @deprecated Use calculateActualPathUnified from ActualPathCalculator instead.
+ * This function uses direction-based reflection which may differ from the
+ * image-based approach used by visibility and planned path calculations.
+ * The unified approach uses RayPropagator and shared ReflectionCache for
+ * consistent behavior across all systems.
+ *
  * FIRST PRINCIPLES:
  * 1. Direction is parameterized by cursor images (bidirectional technique)
  * 2. Actual hits are determined by forward ray casting (real geometry)
@@ -813,6 +819,11 @@ const DEFAULT_TRACE_OPTIONS: Required<TraceOptions> = {
 
 /**
  * Trace a physical path with inline plan checking.
+ *
+ * @deprecated Use calculateActualPathUnified + tracePath from TracePath.ts instead.
+ * This function uses direction-based reflection. The unified approach uses
+ * RayPropagator with image-based reflection for consistent behavior with
+ * the visibility system and planned path calculations.
  *
  * DESIGN PRINCIPLE: Single path, annotated during creation.
  *

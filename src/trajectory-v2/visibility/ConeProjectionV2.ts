@@ -40,6 +40,25 @@ import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 import type { ReflectedTargetSet } from "./ReflectedTargets";
 
 // =============================================================================
+// FEATURE FLAGS
+// =============================================================================
+
+/**
+ * Enable image-space ray casting using reflected target positions.
+ *
+ * When true, rays are cast from reflectedOrigin to reflectedTarget in Stage 2+,
+ * providing full image-space visibility calculation.
+ *
+ * When false (default), rays are cast from reflectedOrigin to world-space targets,
+ * which is the current behavior that's well-tested.
+ *
+ * Set to true after thorough testing to enable full unified integration.
+ *
+ * @experimental This feature is experimental. Enable at your own risk.
+ */
+export const USE_REFLECTED_TARGETS = false;
+
+// =============================================================================
 // TYPES
 // =============================================================================
 
@@ -766,25 +785,22 @@ export function projectConeV2(
   /**
    * Helper to get target position, using reflected position when available.
    *
-   * When reflectedTargets is provided (Stage 2+), this returns the reflected
-   * position of the target for ray casting in image space. Otherwise, returns
-   * the world-space position.
+   * When USE_REFLECTED_TARGETS is enabled and reflectedTargets is provided (Stage 2+),
+   * this returns the reflected position of the target for ray casting in image space.
+   * Otherwise, returns the world-space position.
    *
-   * NOTE: Currently returns world-space position to preserve existing behavior.
-   * Full reflected target integration would use:
-   *   return reflectedTargets?.getReflected(target) ?? target.computeXY();
+   * Image-space ray casting ensures that the ray direction from reflectedOrigin
+   * to reflectedTarget is consistent with the reflection paradigm used by the
+   * trajectory system.
    */
   const getTargetPosition = (target: Endpoint | JunctionPoint): Vector2 => {
-    // For now, preserve existing behavior by using world-space positions.
-    // The reflectedTargets parameter is available for future enhancements
-    // when we want to cast rays in full image space.
+    // Use reflected position when feature is enabled and reflectedTargets available
+    if (USE_REFLECTED_TARGETS && reflectedTargets) {
+      return reflectedTargets.getReflected(target);
+    }
+    // Default: use world-space position
     return target.computeXY();
   };
-
-  // The reflectedTargets parameter is available for enhanced ray casting.
-  // When enabled, rays could be cast from reflectedOrigin to reflectedTarget.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _reflectedTargetsAvailable = reflectedTargets !== undefined;
 
   // Lookup for HitPoints by position - ensures we reuse the same HitPoint object
   // when multiple continuation rays hit the same position.

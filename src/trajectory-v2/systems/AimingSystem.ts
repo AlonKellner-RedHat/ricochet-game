@@ -258,8 +258,22 @@ export class AimingSystem
    * FIRST PRINCIPLE 2.3: Arrows must follow physically accurate trajectory.
    * - Arrow waypoints include main path points AND forward projection points
    * - Arrow continues past cursor along physical trajectory
+   *
+   * UNIFIED: Prefers actualPathUnified for consistency with trajectory preview.
    */
   getArrowWaypoints(path?: PathResult): readonly Vector2[] {
+    // Prefer unified path for consistency with trajectory preview
+    const unifiedActual = this.lastResults?.actualPathUnified;
+    if (unifiedActual && !path) {
+      // Combine main path with forward projection
+      const waypoints: Vector2[] = [...unifiedActual.waypoints];
+      if (unifiedActual.forwardProjection && unifiedActual.forwardProjection.length > 0) {
+        waypoints.push(...unifiedActual.forwardProjection);
+      }
+      return waypoints;
+    }
+
+    // Fallback to legacy path
     const actualPath = path || this.lastResults?.actualPath;
     if (!actualPath) {
       return [];
@@ -282,19 +296,32 @@ export class AimingSystem
    * UNIFIED TYPES: Uses same SourcePoint types as trajectory/visibility systems.
    * - OriginPoint for player/cursor positions
    * - HitPoint for surface reflection points with ray/surface/t/s info
+   *
+   * UNIFIED: Prefers actualPathUnified for consistency with trajectory preview.
    */
   getArrowWaypointSources(): readonly SourcePoint[] {
     if (!this.lastResults) {
       return [];
     }
 
-    // Get waypointSources from unifiedPath if available
+    // Prefer actualPathUnified for consistent provenance
+    const unifiedActual = this.lastResults.actualPathUnified;
+    if (unifiedActual?.waypointSources && unifiedActual.waypointSources.length > 0) {
+      // Combine with forward projection sources
+      const sources: SourcePoint[] = [...unifiedActual.waypointSources];
+      if (unifiedActual.forwardProjectionSources && unifiedActual.forwardProjectionSources.length > 0) {
+        sources.push(...unifiedActual.forwardProjectionSources);
+      }
+      return sources;
+    }
+
+    // Fallback to legacy unifiedPath
     const unifiedPath = this.lastResults.unifiedPath;
     if (unifiedPath?.waypointSources && unifiedPath.waypointSources.length > 0) {
       return unifiedPath.waypointSources;
     }
 
-    // Fallback: create OriginPoints from waypoints (no provenance)
+    // Final fallback: create OriginPoints from waypoints (no provenance)
     const waypoints = this.getArrowWaypoints();
     return waypoints.map((p) => new OriginPoint(p));
   }

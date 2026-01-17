@@ -4,6 +4,24 @@
  * @deprecated This module is deprecated. Use SimpleTrajectoryCalculator instead.
  * This module is kept for backward compatibility with existing tests.
  *
+ * MIGRATION GUIDE:
+ * ================
+ * Replace TwoPathAdapter usage with the unified approach:
+ *
+ * OLD (deprecated):
+ *   import { calculateDualPath } from "./TwoPathAdapter";
+ *   const result = calculateDualPath(player, cursor, planned, all);
+ *
+ * NEW (unified):
+ *   import { calculateSimpleTrajectoryUnified } from "./SimpleTrajectoryCalculator";
+ *   const result = calculateSimpleTrajectoryUnified(player, cursor, planned, all);
+ *
+ * Key benefits of the unified approach:
+ * - Uses image-based reflection (RayPropagator) for consistency
+ * - Shares ReflectionCache with visibility system
+ * - Arrow waypoints match trajectory preview exactly
+ * - Returns reflectionCache for visibility system reuse
+ *
  * This adapter allows running BOTH architectures in parallel for comparison:
  * 1. New: calculatePlannedPath + calculateActualPath + findDivergence + renderDualPath
  * 2. Old: tracePhysicalPath + deriveRender

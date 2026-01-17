@@ -29,6 +29,7 @@ export const USE_TWO_PATH_ARCHITECTURE = true;
 import { buildBackwardImages, buildForwardImages } from "./ImageCache";
 import { buildActualPath, buildPlannedPath, calculateAlignment, tracePhysicalPath } from "./PathBuilder";
 import { evaluateBypass, type BypassResult } from "./BypassEvaluator";
+import { calculateActualPathUnified, type ActualPathUnified } from "./ActualPathCalculator";
 import type { ITrajectoryEngine } from "./ITrajectoryEngine";
 import type {
   AlignmentResult,
@@ -51,6 +52,7 @@ interface DirtyFlags {
   cursorImages: boolean;
   plannedPath: boolean;
   actualPath: boolean;
+  actualPathUnified: boolean;
   alignment: boolean;
   ghost: boolean;
   unifiedPath: boolean;
@@ -65,6 +67,7 @@ interface CachedResults {
   cursorImages: ImageSequence | null;
   plannedPath: PathResult | null;
   actualPath: PathResult | null;
+  actualPathUnified: ActualPathUnified | null;
   alignment: AlignmentResult | null;
   plannedGhost: readonly GhostPoint[];
   actualGhost: readonly GhostPoint[];
@@ -92,6 +95,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     cursorImages: true,
     plannedPath: true,
     actualPath: true,
+    actualPathUnified: true,
     alignment: true,
     ghost: true,
     unifiedPath: true,
@@ -103,6 +107,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     cursorImages: null,
     plannedPath: null,
     actualPath: null,
+    actualPathUnified: null,
     alignment: null,
     plannedGhost: [],
     actualGhost: [],
@@ -126,6 +131,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     this.dirty.playerImages = true;
     this.dirty.plannedPath = true;
     this.dirty.actualPath = true;
+    this.dirty.actualPathUnified = true;
     this.dirty.alignment = true;
     this.dirty.ghost = true;
     this.dirty.unifiedPath = true;
@@ -140,6 +146,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     this.dirty.cursorImages = true;
     this.dirty.plannedPath = true;
     this.dirty.actualPath = true;
+    this.dirty.actualPathUnified = true;
     this.dirty.alignment = true;
     this.dirty.ghost = true;
     this.dirty.unifiedPath = true;
@@ -156,6 +163,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     this.dirty.cursorImages = true;
     this.dirty.plannedPath = true;
     this.dirty.actualPath = true;
+    this.dirty.actualPathUnified = true;
     this.dirty.alignment = true;
     this.dirty.ghost = true;
     this.dirty.unifiedPath = true;
@@ -168,6 +176,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     this.allSurfaces = surfaces;
     this.dirty.bypass = true;
     this.dirty.actualPath = true;
+    this.dirty.actualPathUnified = true;
     this.dirty.alignment = true;
     this.dirty.ghost = true;
     this.dirty.unifiedPath = true;
@@ -191,6 +200,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     this.allSurfaces = extractSurfacesFromChains(chains);
     this.dirty.bypass = true;
     this.dirty.actualPath = true;
+    this.dirty.actualPathUnified = true;
     this.dirty.alignment = true;
     this.dirty.ghost = true;
     this.dirty.unifiedPath = true;
@@ -273,6 +283,31 @@ export class TrajectoryEngine implements ITrajectoryEngine {
       this.dirty.actualPath = false;
     }
     return this.cache.actualPath;
+  }
+
+  /**
+   * Get the actual path using unified image-based reflection.
+   *
+   * NEW: Uses calculateActualPathUnified which:
+   * - Uses RayPropagator for consistent reflection paradigm
+   * - Shares ReflectionCache with visibility system
+   * - Returns ActualPathUnified with propagator state
+   *
+   * This is the preferred method for arrow waypoints as it matches
+   * the trajectory preview exactly.
+   */
+  getActualPathUnified(): ActualPathUnified {
+    // Check if we need to recompute (using dedicated dirty flag)
+    if (this.dirty.actualPathUnified || !this.cache.actualPathUnified) {
+      this.cache.actualPathUnified = calculateActualPathUnified(
+        this.player,
+        this.cursor,
+        this.allSurfaces,
+        this.getReflectionCache()
+      );
+      this.dirty.actualPathUnified = false;
+    }
+    return this.cache.actualPathUnified;
   }
 
   /**
@@ -384,6 +419,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
       cursorImages: this.getCursorImages(),
       plannedPath,
       actualPath,
+      actualPathUnified: this.getActualPathUnified(),
       alignment: this.getAlignment(),
       plannedGhost: this.getPlannedGhost(),
       actualGhost: this.getActualGhost(),
@@ -476,6 +512,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
       cursorImages: true,
       plannedPath: true,
       actualPath: true,
+      actualPathUnified: true,
       alignment: true,
       ghost: true,
       unifiedPath: true,
@@ -491,6 +528,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
       cursorImages: null,
       plannedPath: null,
       actualPath: null,
+      actualPathUnified: null,
       alignment: null,
       plannedGhost: [],
       actualGhost: [],
