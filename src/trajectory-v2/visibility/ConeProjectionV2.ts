@@ -36,6 +36,7 @@ import {
 } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Ray, Vector2 } from "@/trajectory-v2/geometry/types";
 import { ContinuationRay } from "@/trajectory-v2/geometry/ContinuationRay";
+import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 
 // =============================================================================
 // TYPES
@@ -753,7 +754,8 @@ function findSourcePointAtEndpoint(
 export function projectConeV2(
   source: ConeSource,
   chains: readonly SurfaceChain[],
-  excludeSurfaceId?: string
+  excludeSurfaceId?: string,
+  cache?: ReflectionCache
 ): SourcePoint[] {
   const { origin, startLine } = source;
   const isWindowed = startLine !== null;

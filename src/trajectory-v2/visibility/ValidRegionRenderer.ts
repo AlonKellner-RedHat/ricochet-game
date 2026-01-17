@@ -12,6 +12,7 @@
 import type { Surface } from "@/surfaces/Surface";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
 import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
+import { createReflectionCache, type ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 import { type SourcePoint, isEndpoint, isHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
 import { type SurfaceChain, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
@@ -455,12 +456,14 @@ export class ValidRegionRenderer {
    * @param plannedSurfaces Planned surfaces (windows)
    * @param allChains All surface chains in the scene
    * @param windowConfig Optional window configuration for cone projection (single or multi-window)
+   * @param externalCache Optional external ReflectionCache for sharing with trajectory system
    */
   render(
     player: Vector2,
     plannedSurfaces: readonly Surface[],
     allChains: readonly SurfaceChain[],
-    windowConfig: WindowConfig | null = null
+    windowConfig: WindowConfig | null = null,
+    externalCache?: ReflectionCache
   ): void {
     // Combine user chains with screen boundary chain
     // Screen boundaries are just another SurfaceChain - no special handling
@@ -484,6 +487,10 @@ export class ValidRegionRenderer {
     // Clear stages for this render
     this.visibilityStages = [];
 
+    // Use external cache if provided, otherwise create a new one for this render
+    // External cache enables sharing with trajectory system for cache hits
+    const reflectionCache = externalCache ?? createReflectionCache();
+
     // =========================================================================
     // STAGE 1: Player visibility (with umbrella if present, or full 360°)
     // This stage is ALWAYS computed first, as it informs subsequent stages.
@@ -496,7 +503,7 @@ export class ValidRegionRenderer {
       const umbrellaWindows = getWindowSegments(windowConfig);
       for (const window of umbrellaWindows) {
         const cone = createConeThroughWindow(player, window.start, window.end);
-        const sourcePoints = projectConeV2(cone, allChainsWithScreen);
+        const sourcePoints = projectConeV2(cone, allChainsWithScreen, undefined, reflectionCache);
         stage1SourcePoints.push(...sourcePoints);
         const polygon = preparePolygonForRendering(sourcePoints);
         if (polygon.length >= 3) {
@@ -506,7 +513,7 @@ export class ValidRegionRenderer {
     } else {
       // Full 360° visibility from player
       const cone = createFullCone(player);
-      const sourcePoints = projectConeV2(cone, allChainsWithScreen);
+      const sourcePoints = projectConeV2(cone, allChainsWithScreen, undefined, reflectionCache);
       stage1SourcePoints.push(...sourcePoints);
       const polygon = preparePolygonForRendering(sourcePoints);
       if (polygon.length >= 3) {
@@ -557,11 +564,8 @@ export class ValidRegionRenderer {
         }
 
         // Reflect origin through this surface only (incremental reflection)
-        currentOrigin = reflectPointThroughLine(
-          currentOrigin,
-          currentSurface.segment.start,
-          currentSurface.segment.end
-        );
+        // Uses ReflectionCache for memoization and bidirectional identity
+        currentOrigin = reflectionCache.reflect(currentOrigin, currentSurface);
 
         // Compute visibility through visible windows
         const stageSourcePoints: SourcePoint[] = [];
@@ -580,7 +584,8 @@ export class ValidRegionRenderer {
           const sourcePoints = projectConeV2(
             cone,
             allChainsWithScreen,
-            currentSurface.id // Exclude the current reflection surface
+            currentSurface.id, // Exclude the current reflection surface
+            reflectionCache
           );
           stageSourcePoints.push(...sourcePoints);
           const polygon = preparePolygonForRendering(sourcePoints);

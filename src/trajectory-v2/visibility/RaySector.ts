@@ -21,6 +21,7 @@ import {
   reflectPointThroughLine,
 } from "@/trajectory-v2/geometry/GeometryOps";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 
 // =============================================================================
 // Core Types
@@ -332,14 +333,37 @@ function dotProduct(origin: Vector2, a: Vector2, b: Vector2): number {
 // =============================================================================
 
 /**
+ * Helper function to reflect a point, using cache if provided.
+ */
+function reflectPoint(
+  point: Vector2,
+  surface: Surface,
+  cache?: ReflectionCache
+): Vector2 {
+  if (cache) {
+    return cache.reflect(point, surface);
+  }
+  const { start, end } = surface.segment;
+  return reflectPointThroughLine(point, start, end);
+}
+
+/**
  * Reflect a sector through a surface line.
  *
  * Reflects all three points (origin and both boundaries), and SWAPS
  * the left/right boundaries because reflection reverses orientation.
  *
  * This is EXACT and REVERSIBLE: reflect(reflect(s, line), line) === s
+ *
+ * @param sector The sector to reflect
+ * @param surface The surface to reflect through
+ * @param cache Optional ReflectionCache for memoization
  */
-export function reflectSector(sector: RaySector, surface: Surface): RaySector {
+export function reflectSector(
+  sector: RaySector,
+  surface: Surface,
+  cache?: ReflectionCache
+): RaySector {
   const lineStart = surface.segment.start;
   const lineEnd = surface.segment.end;
 
@@ -347,9 +371,9 @@ export function reflectSector(sector: RaySector, surface: Surface): RaySector {
   // (Reflection reverses the counter-clockwise direction)
   // Note: leftStartRatio and rightStartRatio are also swapped because the boundaries swap
   return {
-    origin: reflectPointThroughLine(sector.origin, lineStart, lineEnd),
-    leftBoundary: reflectPointThroughLine(sector.rightBoundary, lineStart, lineEnd),
-    rightBoundary: reflectPointThroughLine(sector.leftBoundary, lineStart, lineEnd),
+    origin: reflectPoint(sector.origin, surface, cache),
+    leftBoundary: reflectPoint(sector.rightBoundary, surface, cache),
+    rightBoundary: reflectPoint(sector.leftBoundary, surface, cache),
     leftStartRatio: sector.rightStartRatio, // Swapped!
     rightStartRatio: sector.leftStartRatio, // Swapped!
     // Set the surface as the start line - rays from reflected origin start on this surface
@@ -359,9 +383,17 @@ export function reflectSector(sector: RaySector, surface: Surface): RaySector {
 
 /**
  * Reflect multiple sectors through a surface.
+ *
+ * @param sectors The sectors to reflect
+ * @param surface The surface to reflect through
+ * @param cache Optional ReflectionCache for memoization
  */
-export function reflectSectors(sectors: RaySectors, surface: Surface): RaySectors {
-  return sectors.map((s) => reflectSector(s, surface));
+export function reflectSectors(
+  sectors: RaySectors,
+  surface: Surface,
+  cache?: ReflectionCache
+): RaySectors {
+  return sectors.map((s) => reflectSector(s, surface, cache));
 }
 
 /**

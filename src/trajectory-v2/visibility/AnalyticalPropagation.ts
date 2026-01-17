@@ -24,6 +24,7 @@ import {
   intersectRaySegment,
 } from "@/trajectory-v2/geometry/RayCore";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 import type {
   PlannedPolygonStep,
   PropagationResult,
@@ -663,13 +664,15 @@ export interface ScreenBounds {
  * @param plannedSurfaces Surfaces in the plan (order matters)
  * @param allSurfaces All surfaces in the scene (for obstruction)
  * @param bounds Screen boundaries
+ * @param cache Optional ReflectionCache for memoized reflections
  * @returns PropagationResult with valid and planned polygon lists
  */
 export function propagateWithIntermediates(
   player: Vector2,
   plannedSurfaces: readonly Surface[],
   allSurfaces: readonly Surface[],
-  bounds: ScreenBounds
+  bounds: ScreenBounds,
+  cache?: ReflectionCache
 ): PropagationResult {
   const validPolygons: ValidPolygonStep[] = [];
   const plannedPolygons: PlannedPolygonStep[] = [];
@@ -786,12 +789,12 @@ export function propagateWithIntermediates(
       targetSurface: surface,
     });
 
-    // Reflect origin through surface
-    currentOrigin = reflectPoint(currentOrigin, surface);
+    // Reflect origin through surface (using cache if provided)
+    currentOrigin = reflectPoint(currentOrigin, surface, cache);
 
     // Reflect sectors - reflectSector now automatically sets startLine to the surface
     // This ensures rays start ON the surface, not from the (possibly off-screen) reflected origin
-    currentSectors = reflectSectors(plannedSectors, surface).map((sector) => ({
+    currentSectors = reflectSectors(plannedSectors, surface, cache).map((sector) => ({
       ...sector,
       origin: currentOrigin,
     }));
@@ -840,8 +843,21 @@ function isOnReflectiveSide(point: Vector2, surface: Surface): boolean {
 
 /**
  * Reflect a point through a surface line.
+ *
+ * @param point The point to reflect
+ * @param surface The surface to reflect through
+ * @param cache Optional ReflectionCache for memoization
  */
-function reflectPoint(point: Vector2, surface: Surface): Vector2 {
+function reflectPoint(
+  point: Vector2,
+  surface: Surface,
+  cache?: ReflectionCache
+): Vector2 {
+  // Use cache if provided for memoization
+  if (cache) {
+    return cache.reflect(point, surface);
+  }
+
   const { start, end } = surface.segment;
 
   // Line direction
