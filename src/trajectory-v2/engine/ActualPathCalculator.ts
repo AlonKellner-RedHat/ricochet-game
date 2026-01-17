@@ -26,6 +26,7 @@ import {
 } from "@/trajectory-v2/geometry/RayCasting";
 import {
   OriginPoint,
+  HitPoint,
   type SourcePoint,
 } from "@/trajectory-v2/geometry/SourcePoint";
 import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
@@ -376,3 +377,155 @@ export function getInitialDirection(player: Vector2, cursorImage: Vector2): Vect
   return { x: dx / len, y: dy / len };
 }
 
+
+// =============================================================================
+// UNIFIED IMPLEMENTATION (Using RayPropagator + tracePath)
+// =============================================================================
+
+import { createRayPropagator, type RayPropagator } from "./RayPropagator";
+import { tracePath } from "./TracePath";
+import { HitPoint } from "@/trajectory-v2/geometry/SourcePoint";
+
+/**
+ * Extended ActualPath interface that includes the propagator state.
+ * This allows continuation of the path for forward projection.
+ */
+export interface ActualPathUnified extends ActualPath {
+  /** The propagator state after tracing (for continuation/projection) */
+  readonly propagator?: RayPropagator;
+}
+
+/**
+ * Calculate the actual physical path using the unified tracePath function.
+ *
+ * This implementation uses image-based reflection via RayPropagator,
+ * ensuring consistency with the planned path calculation.
+ *
+ * ADVANTAGES over direction-based approach:
+ * - Consistent reflection paradigm with planned paths
+ * - Propagator state can be used for continuation (forward projection)
+ * - Memoized reflections via shared ReflectionCache
+ *
+ * @param player Player position
+ * @param cursor Cursor position (path ends here if reached)
+ * @param allSurfaces All surfaces in the scene
+ * @param maxReflections Maximum number of reflections (default 10)
+ * @param maxDistance Maximum total path distance (default 2000)
+ * @returns ActualPathUnified with waypoints, hit info, and propagator state
+ */
+export function calculateActualPathUnified(
+  player: Vector2,
+  cursor: Vector2,
+  allSurfaces: readonly Surface[],
+  maxReflections: number = 10,
+  maxDistance: number = 2000
+): ActualPathUnified {
+  // Handle degenerate case where player and cursor are the same
+  if (player.x === cursor.x && player.y === cursor.y) {
+    return {
+      waypoints: [player],
+      waypointSources: [new OriginPoint(player)],
+      hits: [],
+      cursorIndex: 0,
+      cursorT: 0,
+      reachedCursor: true,
+      blockedBy: null,
+      forwardProjection: [],
+      forwardProjectionSources: [],
+      propagator: createRayPropagator(player, cursor),
+    };
+  }
+
+  // Create initial propagator from player to cursor
+  const propagator = createRayPropagator(player, cursor);
+
+  // Trace path to cursor
+  const toCursorResult = tracePath(propagator, allSurfaces, {
+    mode: "physical",
+    stopAtCursor: cursor,
+    maxReflections,
+    maxDistance,
+  });
+
+  // Convert TraceResult to ActualPath format
+  const waypoints: Vector2[] = [];
+  const waypointSources: SourcePoint[] = [];
+  const hits: ActualHit[] = [];
+
+  // Add player as first waypoint
+  waypoints.push(player);
+  waypointSources.push(new OriginPoint(player));
+
+  // Add segments from trace result
+  for (const segment of toCursorResult.segments) {
+    // Add end point of each segment
+    waypoints.push(segment.end);
+
+    // Create appropriate SourcePoint based on whether there was a surface hit
+    if (segment.surface) {
+      // This is a hit point - create HitPoint for provenance
+      const ray = {
+        source: segment.start,
+        target: segment.end,
+      };
+      // Calculate t (always 1.0 since end is the hit point)
+      // Calculate s (position on surface) - approximate as 0.5 since we don't have exact info
+      waypointSources.push(new HitPoint(ray, segment.surface, 1.0, 0.5));
+
+      hits.push({
+        point: segment.end,
+        surface: segment.surface,
+        reflected: segment.canReflect,
+      });
+    } else {
+      waypointSources.push(new OriginPoint(segment.end));
+    }
+  }
+
+  // Determine termination state
+  const reachedCursor = toCursorResult.terminationType === "cursor";
+  const blockedBy = toCursorResult.terminationType === "wall"
+    ? (toCursorResult.segments[toCursorResult.segments.length - 1]?.surface ?? null)
+    : null;
+
+  // Calculate forward projection if cursor was reached
+  let forwardProjection: Vector2[] = [];
+  let forwardProjectionSources: SourcePoint[] = [];
+
+  if (reachedCursor) {
+    // Continue from cursor using the propagator state
+    const forwardResult = tracePath(toCursorResult.propagator, allSurfaces, {
+      mode: "physical",
+      maxReflections: maxReflections - toCursorResult.segments.length,
+      maxDistance,
+    });
+
+    // Convert forward projection segments
+    for (const segment of forwardResult.segments) {
+      forwardProjection.push(segment.end);
+
+      if (segment.surface) {
+        const ray = {
+          source: segment.start,
+          target: segment.end,
+        };
+        forwardProjectionSources.push(new HitPoint(ray, segment.surface, 1.0, 0.5));
+      } else {
+        forwardProjectionSources.push(new OriginPoint(segment.end));
+      }
+    }
+  }
+
+  return {
+    waypoints,
+    waypointSources,
+    hits,
+    cursorIndex: toCursorResult.cursorSegmentIndex,
+    cursorT: toCursorResult.cursorT,
+    reachedCursor,
+    blockedBy,
+    forwardProjection,
+    forwardProjectionSources,
+    propagator: toCursorResult.propagator,
+  };
+}

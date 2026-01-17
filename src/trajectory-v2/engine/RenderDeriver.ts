@@ -1156,3 +1156,54 @@ export function colorToHex(color: RenderColor): number {
 export function styleToAlpha(style: RenderStyle): number {
   return style === "solid" ? 1.0 : 0.5;
 }
+
+// =============================================================================
+// UNIFIED PHYSICS PROJECTION (Using RayPropagator + tracePath)
+// =============================================================================
+
+import { type RayPropagator } from "./RayPropagator";
+import { tracePath } from "./TracePath";
+
+/**
+ * Calculate physics-based projection using the unified tracePath function.
+ *
+ * This implementation uses image-based reflection via RayPropagator,
+ * ensuring consistency with the actual path and planned path calculations.
+ *
+ * ADVANTAGES over direction-based approach:
+ * - Consistent reflection paradigm across all path types
+ * - Supports both physical (on-segment) and planned (extended line) modes
+ * - Uses shared ReflectionCache for memoized reflections
+ *
+ * @param propagator RayPropagator with current origin/target images
+ * @param surfaces All surfaces to consider
+ * @param mode "physical" for dashed yellow, "planned" for dashed red
+ * @param maxDistance Maximum total projection distance
+ * @param maxReflections Maximum number of reflections
+ * @returns Array of projection segments
+ */
+export function calculatePhysicsProjectionUnified(
+  propagator: RayPropagator,
+  surfaces: readonly Surface[],
+  mode: "physical" | "planned",
+  maxDistance: number,
+  maxReflections: number
+): ProjectionSegment[] {
+  // Use tracePath to compute the projection
+  const result = tracePath(propagator, surfaces, {
+    mode,
+    maxReflections,
+    maxDistance,
+  });
+
+  // Convert TraceResult segments to ProjectionSegments
+  const segments: ProjectionSegment[] = [];
+  for (const seg of result.segments) {
+    segments.push({
+      start: seg.start,
+      end: seg.end,
+    });
+  }
+
+  return segments;
+}
