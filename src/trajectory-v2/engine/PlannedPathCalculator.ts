@@ -178,7 +178,7 @@ export function calculatePlannedPath(
       };
       waypoints.push(midpoint);
       // Create a ray from playerImage to cursorImage for provenance
-      const ray: Ray = { from: playerImage, to: cursorImage };
+      const ray: Ray = { source: playerImage, target: cursorImage };
       waypointSources.push(new HitPoint(ray, surface, 1, 0.5)); // Midpoint
       hits.push({
         point: midpoint,
@@ -197,7 +197,7 @@ export function calculatePlannedPath(
     waypoints.push(hitPoint);
     
     // Create HitPoint with provenance: ray from playerImage to cursorImage
-    const ray: Ray = { from: playerImage, to: cursorImage };
+    const ray: Ray = { source: playerImage, target: cursorImage };
     waypointSources.push(new HitPoint(ray, surface, intersection.t, segmentT));
     
     hits.push({

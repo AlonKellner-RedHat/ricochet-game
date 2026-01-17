@@ -14,13 +14,22 @@ export type { Vector2 };
  * A ray defined by two points (NOT by origin + direction).
  *
  * This is the PREFERRED definition to avoid floating-point normalization errors.
- * Direction is implicit: from `from` toward `to` and beyond.
+ * Direction is implicit: from `source` toward `target` and beyond.
  *
  * First Principle: Direction is always derived from endpoints, never stored.
+ *
+ * Optional `startRatio` defines where the ray actually starts:
+ * - startRatio = 0: ray starts at source (default)
+ * - startRatio = 0.5: ray starts at midpoint
+ * - startRatio = 1: ray starts at target
+ *
+ * Use case: When source is off-screen (reflected player image),
+ * set startRatio so the ray effectively starts ON the reflecting surface.
  */
 export interface Ray {
-  readonly from: Vector2;
-  readonly to: Vector2;
+  readonly source: Vector2;
+  readonly target: Vector2;
+  readonly startRatio?: number;
 }
 
 /**

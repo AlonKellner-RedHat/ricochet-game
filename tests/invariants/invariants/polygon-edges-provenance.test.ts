@@ -45,7 +45,7 @@ function createSurface(id: string, start: Vector2, end: Vector2): Surface {
  * Helper to create a ray.
  */
 function createRay(from: Vector2, to: Vector2): Ray {
-  return { from, to };
+  return { source: from, target: to };
 }
 
 /**

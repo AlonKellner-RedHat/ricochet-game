@@ -11,33 +11,14 @@
  * 4. Cross-product for side/containment checks
  */
 
-import type { Vector2 } from "./types";
+import type { Vector2, Ray } from "./types";
+
+// Re-export Ray for backward compatibility with files that import from RayCore
+export type { Ray };
 
 // =============================================================================
 // Core Types
 // =============================================================================
-
-/**
- * A ray defined by two points (NOT by origin + normalized direction).
- * This preserves exactness - direction is implicit, no sqrt needed.
- *
- * The ray starts at `source` and extends infinitely through `target`.
- *
- * Optional `startRatio` defines where the ray actually starts:
- * - startRatio = 0: ray starts at source (default)
- * - startRatio = 0.5: ray starts at midpoint
- * - startRatio = 1: ray starts at target
- *
- * Use case: When source is off-screen (reflected player image),
- * set startRatio so the ray effectively starts ON the reflecting surface.
- * This avoids issues with rays hitting screen boundaries between
- * the off-screen source and the actual visible geometry.
- */
-export interface Ray {
-  readonly source: Vector2; // Ray origin (may be off-screen)
-  readonly target: Vector2; // A point the ray passes through (NOT the endpoint)
-  readonly startRatio?: number; // Where ray actually starts (0=source, 1=target)
-}
 
 /**
  * A line segment defined by two endpoints.
@@ -293,6 +274,46 @@ export function reflectPointThroughSegment(point: Vector2, segment: Segment): Ve
   return {
     x: point.x - factor * nx,
     y: point.y - factor * ny,
+  };
+}
+
+// =============================================================================
+// SURFACE CONVENIENCE WRAPPERS
+// =============================================================================
+
+import type { Surface } from "@/surfaces/Surface";
+
+/**
+ * Reflect a point through a surface (using the surface's segment as the mirror line).
+ *
+ * @param point The point to reflect
+ * @param surface The surface to reflect through
+ * @returns The reflected point
+ */
+export function reflectPointThroughSurface(point: Vector2, surface: Surface): Vector2 {
+  return reflectPointThroughSegment(point, surface.segment);
+}
+
+/**
+ * Reflect a ray through a surface (reflecting both source and target).
+ *
+ * This is the core primitive for bidirectional image reflection:
+ * - Reflects the ray's source through the surface
+ * - Reflects the ray's target through the surface
+ * - Returns a new ray with reflected endpoints
+ *
+ * @param ray The ray to reflect
+ * @param surface The surface to reflect through
+ * @returns A new ray with reflected source and target
+ */
+export function reflectRayThroughSurface(ray: Ray, surface: Surface): Ray {
+  const reflectedSource = reflectPointThroughSegment(ray.source, surface.segment);
+  const reflectedTarget = reflectPointThroughSegment(ray.target, surface.segment);
+
+  return {
+    source: reflectedSource,
+    target: reflectedTarget,
+    startRatio: ray.startRatio,
   };
 }
 

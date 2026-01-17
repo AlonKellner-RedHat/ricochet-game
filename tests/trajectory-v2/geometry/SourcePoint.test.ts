@@ -234,7 +234,7 @@ describe("HitPoint", () => {
     { x: 0, y: 100 },
     { x: 200, y: 100 }
   );
-  const ray = { from: { x: 100, y: 0 }, to: { x: 100, y: 200 } };
+  const ray = { source: { x: 100, y: 0 }, target: { x: 100, y: 200 } };
   const hitPoint = new HitPoint(ray, surface, 0.5, 0.5);
 
   describe("computeXY()", () => {
@@ -379,7 +379,7 @@ describe("Screen Boundaries", () => {
     });
 
     it("returns true for HitPoint on screen boundary", () => {
-      const ray = { from: { x: 400, y: 300 }, to: { x: 400, y: -100 } };
+      const ray = { source: { x: 400, y: 300 }, target: { x: 400, y: -100 } };
       const hit = new HitPoint(ray, screenBoundaries.top, 0.75, 0.5);
       expect(isScreenBoundary(hit)).toBe(true);
     });
@@ -426,7 +426,7 @@ describe("Screen Boundaries", () => {
 
 describe("SourcePoint Polymorphism", () => {
   const surface = createTestSurface("s1", { x: 0, y: 0 }, { x: 100, y: 0 });
-  const ray = { from: { x: 50, y: 50 }, to: { x: 50, y: -50 } };
+  const ray = { source: { x: 50, y: 50 }, target: { x: 50, y: -50 } };
 
   const points: SourcePoint[] = [
     new OriginPoint({ x: 50, y: 50 }),

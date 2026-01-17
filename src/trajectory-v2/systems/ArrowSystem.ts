@@ -245,8 +245,8 @@ export class ArrowSystem
   getCurrentRay(arrow: ArrowState): Ray | null {
     if (arrow.waypointIndex >= arrow.waypoints.length) return null;
     return {
-      from: arrow.position,
-      to: arrow.waypoints[arrow.waypointIndex]!,
+      source: arrow.position,
+      target: arrow.waypoints[arrow.waypointIndex]!,
     };
   }
 

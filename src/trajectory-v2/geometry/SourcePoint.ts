@@ -403,7 +403,7 @@ export class HitPoint extends SourcePoint {
     readonly ray: Ray,
     /** The surface that was hit */
     readonly hitSurface: Surface,
-    /** Parameter along the ray (0 = ray.from, 1 = ray.to) */
+    /** Parameter along the ray (0 = ray.source, 1 = ray.target) */
     readonly t: number,
     /** Parameter along the surface segment (0 = start, 1 = end) */
     readonly s: number
@@ -412,10 +412,10 @@ export class HitPoint extends SourcePoint {
   }
 
   computeXY(): Vector2 {
-    const { from, to } = this.ray;
+    const { source, target } = this.ray;
     return {
-      x: from.x + (to.x - from.x) * this.t,
-      y: from.y + (to.y - from.y) * this.t,
+      x: source.x + (target.x - source.x) * this.t,
+      y: source.y + (target.y - source.y) * this.t,
     };
   }
 

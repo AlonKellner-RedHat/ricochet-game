@@ -420,7 +420,7 @@ function castRay(
 
   const scale = 10;
   const rayEnd = { x: origin.x + dx * scale, y: origin.y + dy * scale };
-  const ray: Ray = { from: origin, to: rayEnd };
+  const ray: Ray = { source: origin, target: rayEnd };
 
   const targetT = 1 / scale;
 
@@ -620,7 +620,7 @@ function castRayToTarget(
 
   const scale = 10;
   const rayEnd = { x: origin.x + dx * scale, y: origin.y + dy * scale };
-  const ray: Ray = { from: origin, to: rayEnd };
+  const ray: Ray = { source: origin, target: rayEnd };
 
   let minT = 0;
 

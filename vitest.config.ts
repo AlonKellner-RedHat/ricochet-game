@@ -21,6 +21,7 @@ export default defineConfig({
       "@scenes": resolve(__dirname, "src/scenes"),
       "@config": resolve(__dirname, "src/config"),
       "@types": resolve(__dirname, "src/types"),
+      "@test": resolve(__dirname, "tests"),
     },
   },
 });

@@ -19,18 +19,11 @@
  * - Paths diverge when hit is off-segment or obstructed
  */
 
-import {
-  distance,
-  lineLineIntersection,
-} from "@/trajectory-v2/geometry/GeometryOps";
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
-import {
-  HitPoint,
-  OriginPoint,
-  type SourcePoint,
-} from "@/trajectory-v2/geometry/SourcePoint";
 import type { Surface } from "@/surfaces/Surface";
-import { evaluateBypass, type BypassResult } from "./BypassEvaluator";
+import { distance, lineLineIntersection } from "@/trajectory-v2/geometry/GeometryOps";
+import { HitPoint, OriginPoint, type SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
+import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import { type BypassResult, evaluateBypass } from "./BypassEvaluator";
 import {
   buildBackwardImages,
   buildForwardImages,
@@ -40,14 +33,14 @@ import {
 import {
   getParametricPosition,
   isHitOnSegment,
-  raycastForward,
   rayLineIntersect,
+  raycastForward,
   reflectDirection,
 } from "./ValidityChecker";
-import type { 
-  AlignmentResult, 
-  BypassedSurfaceInfo, 
-  HitInfo, 
+import type {
+  AlignmentResult,
+  BypassedSurfaceInfo,
+  HitInfo,
   PathResult,
   PathSegment,
   SegmentPlanAlignment,
@@ -212,8 +205,8 @@ export function tracePhysicsPath(
   start: Vector2,
   direction: Vector2,
   surfaces: readonly Surface[],
-  maxDistance: number = 1000,
-  maxReflections: number = 10
+  maxDistance = 1000,
+  maxReflections = 10
 ): PhysicsPathResult {
   const segments: import("./types").PhysicsSegment[] = [];
   let currentPoint = start;
@@ -284,7 +277,11 @@ export function tracePhysicsPath(
   }
 
   // Handle case where we ran out of reflections
-  if (segments.length > 0 && !segments[segments.length - 1]!.termination && remainingDistance <= 0) {
+  if (
+    segments.length > 0 &&
+    !segments[segments.length - 1]!.termination &&
+    remainingDistance <= 0
+  ) {
     // Mark last segment as max reflections reached
     const lastSeg = segments[segments.length - 1]!;
     segments[segments.length - 1] = {
@@ -354,9 +351,10 @@ export function buildPlannedPath(
   precomputedBypass?: BypassResult
 ): PathResult {
   // Use precomputed bypass if provided, otherwise evaluate
-  const bypassResult = precomputedBypass ?? evaluateBypass(player, cursor, plannedSurfaces, allSurfaces);
+  const bypassResult =
+    precomputedBypass ?? evaluateBypass(player, cursor, plannedSurfaces, allSurfaces);
   const activeSurfaces = bypassResult.activeSurfaces;
-  
+
   if (activeSurfaces.length === 0) {
     // All surfaces bypassed OR no surfaces planned - direct path to cursor
     const points = [player, cursor];
@@ -398,12 +396,7 @@ export function buildPlannedPath(
     const cursorImage = getCursorImageForSurface(playerImages, cursorImages, i);
 
     // Calculate intersection
-    const intersection = lineLineIntersection(
-      playerImage,
-      cursorImage,
-      segment.start,
-      segment.end
-    );
+    const intersection = lineLineIntersection(playerImage, cursorImage, segment.start, segment.end);
 
     if (!intersection.valid) {
       // This shouldn't happen in a well-formed plan, but handle it
@@ -510,7 +503,8 @@ export function buildActualPath(
   let totalLength = 0;
 
   // Use precomputed bypass if provided, otherwise evaluate
-  const bypassResult = precomputedBypass ?? evaluateBypass(player, cursor, plannedSurfaces, allSurfaces);
+  const bypassResult =
+    precomputedBypass ?? evaluateBypass(player, cursor, plannedSurfaces, allSurfaces);
   const activeSurfaces = bypassResult.activeSurfaces;
 
   // Get initial direction from bidirectional images using ACTIVE surfaces
@@ -585,12 +579,7 @@ export function buildActualPath(
   while (reflectionCount < maxReflections) {
     // Cast ray forward to find first hit
     const excludeSurfaces = lastHitSurface ? [lastHitSurface] : [];
-    const hit = raycastForward(
-      currentPoint,
-      currentDirection,
-      allSurfaces,
-      excludeSurfaces
-    );
+    const hit = raycastForward(currentPoint, currentDirection, allSurfaces, excludeSurfaces);
 
     // Check if cursor is between current point and hit (or at max distance if no hit)
     // This is needed to end the path at cursor when cursor is on the path
@@ -598,8 +587,7 @@ export function buildActualPath(
       x: cursor.x - currentPoint.x,
       y: cursor.y - currentPoint.y,
     };
-    const dotWithDir =
-      toCursor.x * currentDirection.x + toCursor.y * currentDirection.y;
+    const dotWithDir = toCursor.x * currentDirection.x + toCursor.y * currentDirection.y;
 
     // IMPORTANT: Only check for cursor on path AFTER all planned surfaces have been hit.
     // If we have active surfaces and haven't hit them all yet, the cursor might be
@@ -607,26 +595,23 @@ export function buildActualPath(
     // Example: player (100,300) → surface (300,y) → cursor (150,300)
     // The cursor IS on the forward path direction, but should be reached via reflection.
     const allPlannedSurfacesHit = reflectionCount >= activeSurfaces.length;
-    
+
     if (allPlannedSurfacesHit && dotWithDir > 0) {
       // Cursor is ahead in this direction
-      const cursorDist = Math.sqrt(
-        toCursor.x * toCursor.x + toCursor.y * toCursor.y
-      );
+      const cursorDist = Math.sqrt(toCursor.x * toCursor.x + toCursor.y * toCursor.y);
       // Check if cursor is roughly in line with current direction
-      const crossProduct =
-        currentDirection.x * toCursor.y - currentDirection.y * toCursor.x;
+      const crossProduct = currentDirection.x * toCursor.y - currentDirection.y * toCursor.x;
       const deviation = Math.abs(crossProduct) / cursorDist;
 
       if (deviation < 0.01) {
         // Cursor is on the path - check if it's before any hit
         const hitDist = hit ? distance(currentPoint, hit.point) : Number.POSITIVE_INFINITY;
-        
+
         if (cursorDist < hitDist) {
           // Cursor is before the hit (or there's no hit) - end at cursor
           points.push(cursor);
           totalLength += distance(currentPoint, cursor);
-          
+
           // PRINCIPLE 2.2: Forward projection must follow physics
           const forwardProjection = calculateForwardProjectionWithPhysics(
             cursor,
@@ -634,7 +619,7 @@ export function buildActualPath(
             allSurfaces,
             lastHitSurface
           );
-          
+
           return {
             points,
             hitInfo,
@@ -700,9 +685,7 @@ export function buildActualPath(
 
   // Check if we reached cursor
   const lastPoint = points[points.length - 1];
-  const reachedCursor = lastPoint
-    ? distance(lastPoint, cursor) < 1
-    : false;
+  const reachedCursor = lastPoint ? distance(lastPoint, cursor) < 1 : false;
 
   // PRINCIPLE 2.2: Forward projection must follow physics
   const forwardProjection = calculateForwardProjectionWithPhysics(
@@ -729,10 +712,7 @@ export function buildActualPath(
  * @param actual Actual path result
  * @returns Alignment result for rendering and validity
  */
-export function calculateAlignment(
-  planned: PathResult,
-  actual: PathResult
-): AlignmentResult {
+export function calculateAlignment(planned: PathResult, actual: PathResult): AlignmentResult {
   if (planned.points.length < 2 || actual.points.length < 2) {
     return {
       isFullyAligned: false,
@@ -864,11 +844,11 @@ export function tracePhysicalPath(
 ): UnifiedPath {
   const opts = { ...DEFAULT_TRACE_OPTIONS, ...options };
   const activeSurfaces = bypassResult.activeSurfaces;
-  
+
   // Reconstruct all planned surfaces (active + bypassed) for out-of-order detection
   const allPlannedSurfaces = [
     ...activeSurfaces,
-    ...bypassResult.bypassedSurfaces.map(b => b.surface),
+    ...bypassResult.bypassedSurfaces.map((b) => b.surface),
   ].filter((s): s is Surface => s !== undefined);
 
   // Step 1: Calculate initial direction using bidirectional images
@@ -937,7 +917,7 @@ export function tracePhysicalPath(
       excludeSurfaces,
       opts.maxDistance
     );
-    
+
     // FIRST PRINCIPLE: For planned surfaces, check intersection with EXTENDED LINE
     // If the ray would hit the extended line of the next expected planned surface
     // (even if off-segment), we should use that for the planned path.
@@ -950,12 +930,12 @@ export function tracePhysicalPath(
         expectedSurface,
         opts.maxDistance
       );
-      
+
       if (lineResult) {
         // Check if this planned line hit is BEFORE any physical hit
-        const physicalHitDist = hit ? distance(currentPoint, hit.point) : Infinity;
+        const physicalHitDist = hit ? distance(currentPoint, hit.point) : Number.POSITIVE_INFINITY;
         const plannedHitDist = lineResult.t;
-        
+
         if (plannedHitDist < physicalHitDist + 1) {
           // The planned surface line is hit before (or at) the physical hit
           // Use this as the hit point for the planned path
@@ -963,7 +943,7 @@ export function tracePhysicalPath(
             point: lineResult.point,
             isOnSegment: lineResult.isOnSegment,
           };
-          
+
           // Override the hit with the planned surface intersection
           hit = {
             surface: expectedSurface,
@@ -1019,7 +999,7 @@ export function tracePhysicalPath(
 
       // Continue from cursor to the hit (or max distance)
       currentPoint = cursor;
-      
+
       // Check if there's still a hit after cursor
       if (hit && distance(cursor, hit.point) > 0.01) {
         // There's more path after cursor - continue to trace it
@@ -1080,19 +1060,24 @@ export function tracePhysicalPath(
     // Update plan tracking
     // FIRST PRINCIPLE: Check if we actually hit the expected planned surface
     const expectedSurface = activeSurfaces[nextExpectedPlanIndex];
-    const hitExpectedSurface = endSurface && expectedSurface && endSurface.id === expectedSurface.id;
-    
+    const hitExpectedSurface =
+      endSurface && expectedSurface && endSurface.id === expectedSurface.id;
+
     if (hitExpectedSurface) {
       // We hit the expected planned surface - advance the plan
       nextExpectedPlanIndex++;
-      
+
       // FIRST PRINCIPLE: If hit was OFF-SEGMENT, the actual arrow doesn't
       // hit the physical surface - it goes straight through. The planned path
       // reflects, but the actual path continues straight. This is DIVERGENCE.
       if (!hitOnSegment && hit && hit.canReflect) {
         hasDiverged = true;
       }
-    } else if (isFirstSegmentInLoop && endSurface && nextExpectedPlanIndex < activeSurfaces.length) {
+    } else if (
+      isFirstSegmentInLoop &&
+      endSurface &&
+      nextExpectedPlanIndex < activeSurfaces.length
+    ) {
       // FIRST PRINCIPLE: First segment hit an OBSTRUCTION (not the planned surface)
       // The first segment is aligned (correct direction), but subsequent segments
       // are diverged because we're blocked from reaching the planned surface.
@@ -1122,7 +1107,7 @@ export function tracePhysicalPath(
       // Check if cursor is actually within this segment (not beyond it)
       const cursorDistFromStart = distance(currentPoint, cursor);
       const segmentEndDistFromStart = distance(currentPoint, endpoint);
-      
+
       if (cursorDistFromStart <= segmentEndDistFromStart + 1) {
         // Cursor is within the segment
         cursorSegmentIndex = segments.length - 1;
@@ -1154,7 +1139,7 @@ export function tracePhysicalPath(
         // Reflected off unplanned/unexpected surface when there IS a plan - diverge
         hasDiverged = true;
       }
-      
+
       currentDirection = reflectDirection(currentDirection, hit.surface);
       currentPoint = endpoint;
       lastHitSurface = hit.surface;
@@ -1165,8 +1150,8 @@ export function tracePhysicalPath(
 
   // Step 4: Derive properties
   const firstDivergedIndex = segments.findIndex((s) => s.planAlignment === "diverged");
-  const isFullyAligned = firstDivergedIndex === -1 && 
-                         nextExpectedPlanIndex >= activeSurfaces.length;
+  const isFullyAligned =
+    firstDivergedIndex === -1 && nextExpectedPlanIndex >= activeSurfaces.length;
 
   // Cursor is reachable if it was reached in an aligned/unplanned segment
   // BEFORE any divergence. This handles the case where the path loops back
@@ -1256,14 +1241,14 @@ function buildWaypointSources(
     if (segment.endSurface) {
       // Create a HitPoint with provenance
       // Note: We create a ray from segment start to end for context
-      const ray = { from: segment.start, to: segment.end };
-      
+      const ray = { source: segment.start, target: segment.end };
+
       // Calculate parametric position on the surface segment
       const surf = segment.endSurface;
       const dx = surf.segment.end.x - surf.segment.start.x;
       const dy = surf.segment.end.y - surf.segment.start.y;
       const segLen = Math.sqrt(dx * dx + dy * dy);
-      
+
       let s = 0.5; // Default to midpoint
       if (segLen > 0) {
         const hx = segment.end.x - surf.segment.start.x;
@@ -1361,14 +1346,14 @@ function checkCursorOnSegment(
 
   // Project cursor onto ray
   const dotWithDir = toCursor.x * direction.x + toCursor.y * direction.y;
-  
+
   if (dotWithDir <= 0) {
     // Cursor is behind or at start
     return { isOnPath: false, isBefore: false, t: 0 };
   }
 
   const cursorDist = Math.sqrt(toCursor.x * toCursor.x + toCursor.y * toCursor.y);
-  
+
   // Check if cursor is on the ray (perpendicular distance is small)
   const crossProduct = direction.x * toCursor.y - direction.y * toCursor.x;
   const perpDist = Math.abs(crossProduct);
@@ -1393,7 +1378,7 @@ function checkCursorOnSegment(
  * Determine plan alignment for a segment based on hit surface.
  *
  * FIRST PRINCIPLES:
- * 1. The planned path and the actual path must start aligned, from the player 
+ * 1. The planned path and the actual path must start aligned, from the player
  *    position and in the same direction (calculated using cursor images).
  * 2. The solid section of the planned path should reflect only off planned surfaces.
  * 3. Reflecting off a non-planned surface causes divergence for SUBSEQUENT segments.
@@ -1411,12 +1396,12 @@ function determinePlanAlignment(
   allPlannedSurfaces: readonly Surface[],
   nextExpectedIndex: number,
   hasDiverged: boolean,
-  isFirstSegment: boolean = false
+  isFirstSegment = false
 ): SegmentPlanAlignment {
   // FIRST PRINCIPLE: Segment alignment is based on what happened BEFORE this segment,
-  // not what happens at its end. Divergence applies to the NEXT segment after 
+  // not what happens at its end. Divergence applies to the NEXT segment after
   // reflecting off an unplanned surface or hitting an obstruction.
-  
+
   // Once diverged, all subsequent segments are diverged
   if (hasDiverged) {
     return "diverged";
@@ -1446,9 +1431,7 @@ function determinePlanAlignment(
   // If we hit a surface that exists in the ORIGINAL plan (including bypassed ones),
   // but it's not the expected next surface, this is a divergence.
   // This catches cases where a later-planned surface is hit before an earlier one.
-  const hitAnyPlannedSurface = allPlannedSurfaces.some(
-    (s) => s.id === hitSurface.id
-  );
+  const hitAnyPlannedSurface = allPlannedSurfaces.some((s) => s.id === hitSurface.id);
   const hitExpectedSurface = hitSurface.id === expectedSurface?.id;
 
   if (hitAnyPlannedSurface && !hitExpectedSurface) {
@@ -1508,7 +1491,7 @@ export function unifiedToPathResult(
 
   // Find cursor point and projection
   const cursorIndex = unified.cursorSegmentIndex;
-  let forwardProjection: Vector2[] = [];
+  const forwardProjection: Vector2[] = [];
 
   if (cursorIndex !== -1 && cursorIndex < unified.segments.length - 1) {
     // Projection is segments after cursor
@@ -1540,9 +1523,8 @@ export function unifiedToAlignment(unified: UnifiedPath): AlignmentResult {
 
   return {
     isFullyAligned: unified.isFullyAligned,
-    alignedSegmentCount: unified.firstDivergedIndex === -1 
-      ? unified.segments.length 
-      : unified.firstDivergedIndex,
+    alignedSegmentCount:
+      unified.firstDivergedIndex === -1 ? unified.segments.length : unified.firstDivergedIndex,
     firstMismatchIndex: unified.firstDivergedIndex,
     divergencePoint,
   };

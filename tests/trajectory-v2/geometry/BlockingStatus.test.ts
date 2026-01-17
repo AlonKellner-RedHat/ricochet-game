@@ -137,7 +137,7 @@ describe("BlockingStatus", () => {
         start: { x: 100, y: 0 },
         end: { x: 0, y: 100 },
       });
-      const ray = { from: { x: 0, y: 0 }, to: { x: 50, y: 50 } };
+      const ray = { source: { x: 0, y: 0 }, target: { x: 50, y: 50 } };
       const hitPoint = new HitPoint(ray, surface, 1.0, 0.5);
       const orientations = new Map<string, OrientationInfo>();
 

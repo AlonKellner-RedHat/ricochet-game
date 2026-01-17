@@ -46,7 +46,7 @@ describe("RayCasting", () => {
   describe("findClosestHit", () => {
     it("should find hit on a single surface", () => {
       const surface = createTestSurface("s1", { x: 200, y: 0 }, { x: 200, y: 400 });
-      const ray: Ray = { from: { x: 0, y: 200 }, to: { x: 400, y: 200 } };
+      const ray: Ray = { source: { x: 0, y: 200 }, target: { x: 400, y: 200 } };
 
       const hit = findClosestHit(ray, [surface]);
 
@@ -61,7 +61,7 @@ describe("RayCasting", () => {
       const s1 = createTestSurface("s1", { x: 100, y: 0 }, { x: 100, y: 400 });
       const s2 = createTestSurface("s2", { x: 200, y: 0 }, { x: 200, y: 400 });
       const s3 = createTestSurface("s3", { x: 300, y: 0 }, { x: 300, y: 400 });
-      const ray: Ray = { from: { x: 0, y: 200 }, to: { x: 400, y: 200 } };
+      const ray: Ray = { source: { x: 0, y: 200 }, target: { x: 400, y: 200 } };
 
       const hit = findClosestHit(ray, [s1, s2, s3]);
 
@@ -73,7 +73,7 @@ describe("RayCasting", () => {
     it("should respect excludeIds", () => {
       const s1 = createTestSurface("s1", { x: 100, y: 0 }, { x: 100, y: 400 });
       const s2 = createTestSurface("s2", { x: 200, y: 0 }, { x: 200, y: 400 });
-      const ray: Ray = { from: { x: 0, y: 200 }, to: { x: 400, y: 200 } };
+      const ray: Ray = { source: { x: 0, y: 200 }, target: { x: 400, y: 200 } };
 
       const hit = findClosestHit(ray, [s1, s2], { excludeIds: new Set(["s1"]) });
 
@@ -83,7 +83,7 @@ describe("RayCasting", () => {
 
     it("should respect minT", () => {
       const surface = createTestSurface("s1", { x: 200, y: 0 }, { x: 200, y: 400 });
-      const ray: Ray = { from: { x: 0, y: 200 }, to: { x: 400, y: 200 } };
+      const ray: Ray = { source: { x: 0, y: 200 }, target: { x: 400, y: 200 } };
 
       // minT of 0.6 means hits before x=240 are ignored
       const hit = findClosestHit(ray, [surface], { minT: 0.6 });
@@ -93,7 +93,7 @@ describe("RayCasting", () => {
 
     it("should return null for parallel ray and surface", () => {
       const surface = createTestSurface("s1", { x: 100, y: 100 }, { x: 200, y: 100 });
-      const ray: Ray = { from: { x: 0, y: 100 }, to: { x: 300, y: 100 } }; // Same line
+      const ray: Ray = { source: { x: 0, y: 100 }, target: { x: 300, y: 100 } }; // Same line
 
       const hit = findClosestHit(ray, [surface]);
 
@@ -102,7 +102,7 @@ describe("RayCasting", () => {
 
     it("should return null when ray misses surface", () => {
       const surface = createTestSurface("s1", { x: 200, y: 0 }, { x: 200, y: 100 });
-      const ray: Ray = { from: { x: 0, y: 200 }, to: { x: 400, y: 200 } }; // Below surface
+      const ray: Ray = { source: { x: 0, y: 200 }, target: { x: 400, y: 200 } }; // Below surface
 
       const hit = findClosestHit(ray, [surface]);
 

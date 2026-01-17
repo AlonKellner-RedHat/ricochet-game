@@ -104,7 +104,7 @@ describe("RenderingDedup", () => {
     const surfaceB = createMockSurface("surface-B");
 
     it("keeps first and last of consecutive HitPoints on same surface", () => {
-      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const ray = { source: { x: 0, y: 0 }, target: { x: 100, y: 0 } };
       const points = [
         new HitPoint(ray, surfaceA, 0.1, 0.1), // First of run
         new HitPoint(ray, surfaceA, 0.2, 0.2), // Middle - removed
@@ -120,7 +120,7 @@ describe("RenderingDedup", () => {
     });
 
     it("keeps all points when surfaces differ", () => {
-      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const ray = { source: { x: 0, y: 0 }, target: { x: 100, y: 0 } };
       const points = [
         new HitPoint(ray, surfaceA, 0.1, 0.1),
         new HitPoint(ray, surfaceB, 0.2, 0.2), // Different surface - start new run
@@ -134,7 +134,7 @@ describe("RenderingDedup", () => {
     });
 
     it("merges Endpoints with HitPoints on same surface", () => {
-      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const ray = { source: { x: 0, y: 0 }, target: { x: 100, y: 0 } };
       const points = [
         new HitPoint(ray, surfaceA, 0.1, 0.1),
         new Endpoint(surfaceA, "start"), // Same surface as HitPoints
@@ -150,7 +150,7 @@ describe("RenderingDedup", () => {
     });
 
     it("always keeps OriginPoints", () => {
-      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const ray = { source: { x: 0, y: 0 }, target: { x: 100, y: 0 } };
       const points = [
         new HitPoint(ray, surfaceA, 0.1, 0.1),
         new OriginPoint({ x: 50, y: 50 }), // OriginPoint - always kept
@@ -170,14 +170,14 @@ describe("RenderingDedup", () => {
     });
 
     it("handles single point", () => {
-      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const ray = { source: { x: 0, y: 0 }, target: { x: 100, y: 0 } };
       const point = new HitPoint(ray, surfaceA, 0.1, 0.1);
       const result = dedupeConsecutiveHits([point]);
       expect(result.length).toBe(1);
     });
 
     it("handles mixed point types with surface grouping", () => {
-      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const ray = { source: { x: 0, y: 0 }, target: { x: 100, y: 0 } };
       const points = [
         new Endpoint(surfaceA, "start"),    // First on surfaceA
         new HitPoint(ray, surfaceA, 0.1, 0.1), // Middle - removed
@@ -201,7 +201,7 @@ describe("RenderingDedup", () => {
     const surface = createMockSurface("test-surface");
 
     it("returns Vector2 array", () => {
-      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const ray = { source: { x: 0, y: 0 }, target: { x: 100, y: 0 } };
       const points = [
         new HitPoint(ray, surface, 0.1, 0.1),
         new HitPoint(ray, surface, 0.2, 0.2),
@@ -216,7 +216,7 @@ describe("RenderingDedup", () => {
     });
 
     it("removes consecutive hits on same surface", () => {
-      const ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 0 } };
+      const ray = { source: { x: 0, y: 0 }, target: { x: 100, y: 0 } };
       const points = [
         new HitPoint(ray, surface, 0.1, 0.1),
         new HitPoint(ray, surface, 0.2, 0.2),

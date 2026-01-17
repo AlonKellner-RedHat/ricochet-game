@@ -113,8 +113,8 @@ describe("ContinuationRay", () => {
       const targetSurface = createMockSurface("target-0", { x: 500, y: 200 }, { x: 700, y: 200 });
       
       // Ray parameters for HitPoints
-      const ray1 = { from: { x: 581, y: 81 }, to: { x: 606.74, y: 200 } };
-      const ray2 = { from: { x: 581, y: 81 }, to: { x: 569.44, y: 200 } };
+      const ray1 = { source: { x: 581, y: 81 }, target: { x: 606.74, y: 200 } };
+      const ray2 = { source: { x: 581, y: 81 }, target: { x: 569.44, y: 200 } };
       
       const points = [
         new HitPoint(ray1, targetSurface, 1.0, 0.5337), // First HitPoint on target-0
@@ -134,7 +134,7 @@ describe("ContinuationRay", () => {
       const surfaceA = createMockSurface("surface-A", { x: 0, y: 0 }, { x: 100, y: 0 });
       const surfaceB = createMockSurface("surface-B", { x: 100, y: 0 }, { x: 100, y: 100 });
       
-      const ray = { from: { x: 50, y: 50 }, to: { x: 100, y: 50 } };
+      const ray = { source: { x: 50, y: 50 }, target: { x: 100, y: 50 } };
       
       const points = [
         new HitPoint(ray, surfaceA, 1.0, 0.5),
@@ -174,7 +174,7 @@ describe("ContinuationRay", () => {
       
       // All points at 45° from origin (581, 81)
       const origin = { x: 581, y: 81 };
-      const ray = { from: origin, to: { x: 1220, y: 720 } };
+      const ray = { source: origin, target: { x: 1220, y: 720 } };
       
       const source = new Endpoint(targetSurface, "end");        // (700, 200) - CLOSEST
       const passedThrough = new Endpoint(wallSurface, "end");   // (900, 400) - MIDDLE, should be removed
@@ -229,8 +229,8 @@ describe("ContinuationRay", () => {
       const screenBottom = createMockSurface("screen-bottom", { x: 0, y: 720 }, { x: 1280, y: 720 });
       
       const origin = { x: 581, y: 81 };
-      const rayToScreen = { from: origin, to: { x: 1220, y: 720 } };
-      const rayToTarget = { from: origin, to: { x: 606, y: 200 } };
+      const rayToScreen = { source: origin, target: { x: 1220, y: 720 } };
+      const rayToTarget = { source: origin, target: { x: 606, y: 200 } };
       
       // Same-ray run (all at 45°)
       const raySource = new Endpoint(targetSurface, "end");

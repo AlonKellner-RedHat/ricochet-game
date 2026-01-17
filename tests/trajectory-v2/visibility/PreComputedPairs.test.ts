@@ -151,7 +151,7 @@ describe("PreComputedPairs", () => {
         start: { x: 0, y: 100 },
         end: { x: 200, y: 100 },
       });
-      const ray = { from: { x: 50, y: 50 }, to: { x: 100, y: 100 } };
+      const ray = { source: { x: 50, y: 50 }, target: { x: 100, y: 100 } };
       const continuation = new HitPoint(ray, hitSurface, 0.5, 0.5);
 
       // Shadow boundary: endpoint before continuation
@@ -180,7 +180,7 @@ describe("PreComputedPairs", () => {
         start: { x: 0, y: 0 },
         end: { x: 200, y: 0 },
       });
-      const ray = { from: { x: 150, y: 100 }, to: { x: 100, y: -100 } };
+      const ray = { source: { x: 150, y: 100 }, target: { x: 100, y: -100 } };
       const continuation = new HitPoint(ray, ceiling, 0.5, 0.5);
 
       // Case 1: Junction before continuation (exiting)
@@ -202,7 +202,7 @@ describe("PreComputedPairs", () => {
         start: { x: 0, y: 0 },
         end: { x: 200, y: 0 },
       });
-      const ray = { from: { x: 50, y: 100 }, to: { x: 100, y: -100 } };
+      const ray = { source: { x: 50, y: 100 }, target: { x: 100, y: -100 } };
       const continuation = new HitPoint(ray, ceiling, 0.5, 0.5);
 
       // Case 2: Continuation before junction (entering)
@@ -222,7 +222,7 @@ describe("PreComputedPairs", () => {
         end: { x: 100, y: 10 },
       });
       const endpoint = new Endpoint(surface, "start");
-      const ray = { from: { x: 0, y: 0 }, to: { x: 50, y: 50 } };
+      const ray = { source: { x: 0, y: 0 }, target: { x: 50, y: 50 } };
       const hitPoint = new HitPoint(ray, surface, 0.5, 0.5);
 
       pairs.set(origin, endpoint, -1);

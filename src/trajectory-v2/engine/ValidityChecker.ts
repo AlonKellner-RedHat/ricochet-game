@@ -381,12 +381,12 @@ export function raycastForward(
   maxDistance = 10000
 ): RaycastHit | null {
   // Create ray endpoint far in the direction
-  const to: Vector2 = {
+  const rayTarget: Vector2 = {
     x: from.x + direction.x * maxDistance,
     y: from.y + direction.y * maxDistance,
   };
 
-  const ray: Ray = { from, to };
+  const ray: Ray = { source: from, target: rayTarget };
 
   let closest: RaycastHit | null = null;
   let closestT = Number.POSITIVE_INFINITY;

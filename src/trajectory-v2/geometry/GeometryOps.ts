@@ -162,7 +162,7 @@ export function isOnSegment(t: number): boolean {
 /**
  * Calculate intersection of a ray with a line segment.
  *
- * The ray starts at `ray.from` and passes through `ray.to`.
+ * The ray starts at `ray.source` and passes through `ray.target`.
  * The segment is from `segStart` to `segEnd`.
  *
  * @param ray The ray (defined by two points)
@@ -175,7 +175,7 @@ export function raySegmentIntersect(
   segStart: Vector2,
   segEnd: Vector2
 ): RaySegmentHitResult {
-  const result = lineLineIntersection(ray.from, ray.to, segStart, segEnd);
+  const result = lineLineIntersection(ray.source, ray.target, segStart, segEnd);
 
   if (!result.valid) {
     return {

@@ -63,7 +63,7 @@ describe("SourcePoint.isBlocking", () => {
         start: { x: 0, y: 0 },
         end: { x: 100, y: 0 },
       });
-      const ray = { from: { x: 50, y: 100 }, to: { x: 50, y: -100 } };
+      const ray = { source: { x: 50, y: 100 }, target: { x: 50, y: -100 } };
       const hitPoint = new HitPoint(ray, surface, 0.5, 0.5);
 
       expect(hitPoint.isBlocking(emptyOrientations)).toBe(true);

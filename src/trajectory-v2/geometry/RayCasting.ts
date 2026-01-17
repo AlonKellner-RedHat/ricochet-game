@@ -65,6 +65,37 @@ export interface RayCastOptions {
   readonly maxDistance?: number;
 }
 
+/**
+ * Hit detection mode for findNextHit.
+ * - "physical": Only detect hits on actual surface segments (s in [0, 1])
+ * - "planned": Detect hits on extended lines (for trajectory planning)
+ */
+export type HitDetectionMode = "physical" | "planned";
+
+/**
+ * Options for unified hit detection.
+ */
+export interface UnifiedHitOptions {
+  /** Detection mode (default: "physical") */
+  readonly mode?: HitDetectionMode;
+  /** Surfaces to exclude from detection */
+  readonly excludeSurfaces?: readonly Surface[];
+  /** Minimum t value (hits before this are ignored) */
+  readonly minT?: number;
+}
+
+/**
+ * Result of unified hit detection.
+ */
+export interface UnifiedHitResult {
+  /** The hit point with full provenance */
+  readonly hitPoint: HitPoint;
+  /** Whether the hit is on the actual segment (true) or extended line (false) */
+  readonly onSegment: boolean;
+  /** Whether the surface allows reflection */
+  readonly canReflect: boolean;
+}
+
 // =============================================================================
 // CORE RAY CASTING
 // =============================================================================
@@ -101,8 +132,8 @@ export function findClosestHit(
     }
 
     const hit = lineLineIntersection(
-      ray.from,
-      ray.to,
+      ray.source,
+      ray.target,
       surface.segment.start,
       surface.segment.end
     );
@@ -120,6 +151,99 @@ export function findClosestHit(
   }
 
   return closest;
+}
+
+/**
+ * Find the next hit on a ray against surfaces.
+ *
+ * Supports two modes:
+ * - "physical": Only detect hits on actual surface segments (s in [0, 1])
+ * - "planned": Detect hits on extended lines (for trajectory planning)
+ *
+ * Returns a UnifiedHitResult with:
+ * - hitPoint: HitPoint with full provenance (ray, surface, t, s)
+ * - onSegment: Whether the hit is on the actual segment
+ * - canReflect: Whether the surface allows reflection
+ *
+ * @param ray The ray to cast
+ * @param surfaces Surfaces to check for intersection
+ * @param options Unified hit detection options
+ * @returns The closest hit, or null if no intersection
+ */
+export function findNextHit(
+  ray: Ray,
+  surfaces: readonly Surface[],
+  options: UnifiedHitOptions = {}
+): UnifiedHitResult | null {
+  const { mode = "physical", excludeSurfaces = [], minT = 0 } = options;
+
+  // Build exclude set for quick lookup
+  const excludeIds = new Set(excludeSurfaces.map((s) => s.id));
+
+  let closest: {
+    surface: Surface;
+    t: number;
+    s: number;
+    point: Vector2;
+    onSegment: boolean;
+  } | null = null;
+  let closestT = Number.POSITIVE_INFINITY;
+
+  for (const surface of surfaces) {
+    // Skip excluded surfaces
+    if (excludeIds.has(surface.id)) {
+      continue;
+    }
+
+    const hit = lineLineIntersection(
+      ray.source,
+      ray.target,
+      surface.segment.start,
+      surface.segment.end
+    );
+
+    // Skip if no valid intersection or behind ray
+    if (!hit.valid || hit.t <= minT) {
+      continue;
+    }
+
+    const onSegment = hit.s >= 0 && hit.s <= 1;
+
+    // In physical mode, only accept on-segment hits
+    if (mode === "physical" && !onSegment) {
+      continue;
+    }
+
+    // Track closest hit
+    if (hit.t < closestT) {
+      closestT = hit.t;
+      closest = {
+        surface,
+        t: hit.t,
+        s: hit.s,
+        point: hit.point,
+        onSegment,
+      };
+    }
+  }
+
+  if (!closest) {
+    return null;
+  }
+
+  // Compute direction for reflection check
+  const dx = ray.target.x - ray.source.x;
+  const dy = ray.target.y - ray.source.y;
+  const direction = { x: dx, y: dy };
+
+  // Create HitPoint with provenance
+  const hitPoint = new HitPoint(ray, closest.surface, closest.t, closest.s);
+
+  return {
+    hitPoint,
+    onSegment: closest.onSegment,
+    canReflect: closest.surface.canReflectFrom(direction),
+  };
 }
 
 /**
@@ -167,7 +291,7 @@ export function castRay(
   // Extend ray beyond target for intersection testing
   const scale = 10;
   const rayEnd = { x: origin.x + dx * scale, y: origin.y + dy * scale };
-  const ray: Ray = { from: origin, to: rayEnd };
+  const ray: Ray = { source: origin, target: rayEnd };
 
   // Adjust minT for the scaled ray
   const minT = (options.minT ?? 0) / scale;
@@ -233,7 +357,7 @@ export function castRayToEndpoint(
 
   const scale = 10;
   const rayEnd = { x: origin.x + dx * scale, y: origin.y + dy * scale };
-  const ray: Ray = { from: origin, to: rayEnd };
+  const ray: Ray = { source: origin, target: rayEnd };
 
   const targetT = 1 / scale;
   const minT = (options.minT ?? 0) / scale;
@@ -315,7 +439,7 @@ export function castContinuationRay(
 
   const scale = 10;
   const rayEnd = { x: origin.x + dx * scale, y: origin.y + dy * scale };
-  const ray: Ray = { from: origin, to: rayEnd };
+  const ray: Ray = { source: origin, target: rayEnd };
 
   // Start from the endpoint
   const endpointT = 1 / scale;
@@ -378,7 +502,7 @@ export function castContinuationRayForJunction(
 
   const scale = 10;
   const rayEnd = { x: origin.x + dx * scale, y: origin.y + dy * scale };
-  const ray: Ray = { from: origin, to: rayEnd };
+  const ray: Ray = { source: origin, target: rayEnd };
 
   const junctionT = 1 / scale;
   const minT = Math.max((options.minT ?? 0) / scale, junctionT);
@@ -446,12 +570,12 @@ export function raycastForwardWithProvenance(
   if (len === 0) return null;
 
   const normalizedDir = { x: direction.x / len, y: direction.y / len };
-  const to: Vector2 = {
+  const rayTarget: Vector2 = {
     x: from.x + normalizedDir.x * maxDistance,
     y: from.y + normalizedDir.y * maxDistance,
   };
 
-  const ray: Ray = { from, to };
+  const ray: Ray = { source: from, target: rayTarget };
 
   // Build exclude set
   const excludeIds = new Set<string>();
@@ -522,7 +646,7 @@ export function castRayThroughWindow(
 
   const scale = 10;
   const rayEnd = { x: origin.x + dx * scale, y: origin.y + dy * scale };
-  const ray: Ray = { from: origin, to: rayEnd };
+  const ray: Ray = { source: origin, target: rayEnd };
 
   // Check if ray passes through window
   const windowHit = lineLineIntersection(origin, rayEnd, window.start, window.end);
