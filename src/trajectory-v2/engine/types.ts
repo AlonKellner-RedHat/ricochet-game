@@ -141,23 +141,32 @@ export interface EngineResults {
   readonly playerImages: ImageSequence;
   /** Backward images (cursor reflected through planned surfaces, reverse order) */
   readonly cursorImages: ImageSequence;
-  /** The planned trajectory path (legacy) */
+  /**
+   * The planned trajectory path.
+   * @deprecated Use actualPathUnified for unified image-based reflection.
+   */
   readonly plannedPath: PathResult;
-  /** The actual trajectory path (legacy) */
+  /**
+   * The actual trajectory path.
+   * @deprecated Use actualPathUnified for unified image-based reflection.
+   */
   readonly actualPath: PathResult;
-  /** Alignment between planned and actual (legacy) */
+  /**
+   * Alignment between planned and actual.
+   * @deprecated Derive from actualPathUnified and plannedPath comparison.
+   */
   readonly alignment: AlignmentResult;
   /** Ghost points beyond cursor for planned path */
   readonly plannedGhost: readonly GhostPoint[];
   /** Ghost points for actual path */
   readonly actualGhost: readonly GhostPoint[];
   /**
-   * NEW: Unified path with inline plan annotations.
-   * This is the single source of truth for both arrow movement and visualization.
+   * Unified path with inline plan annotations.
+   * @deprecated Use actualPathUnified instead.
    */
   readonly unifiedPath?: UnifiedPath;
   /**
-   * NEW: Actual path using unified image-based reflection.
+   * PRIMARY: Actual path using unified image-based reflection.
    * Uses same reflection paradigm as visibility system.
    * Preferred for arrow waypoints as it matches trajectory preview exactly.
    */

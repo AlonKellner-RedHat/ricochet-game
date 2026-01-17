@@ -16,6 +16,25 @@
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
 /**
+ * Render color type.
+ */
+export type RenderColor = "green" | "red" | "yellow";
+
+/**
+ * Convert render color string to hex color value.
+ */
+export function colorToHex(color: RenderColor): number {
+  switch (color) {
+    case "green":
+      return 0x00ff00;
+    case "red":
+      return 0xff0000;
+    case "yellow":
+      return 0xffff00;
+  }
+}
+
+/**
  * Path interface for rendering.
  */
 export interface RenderablePath {

@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from "vitest";
 import { createMockBidirectionalSurface, createMockWall } from "@test/helpers/surfaceHelpers";
-import { calculateActualPathUnified, calculateActualPath, getInitialDirection } from "@/trajectory-v2/engine/ActualPathCalculator";
+import { calculateActualPathUnified } from "@/trajectory-v2/engine/ActualPathCalculator";
 import { createReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
@@ -272,47 +272,8 @@ describe("calculateActualPathUnified", () => {
     });
   });
 
-  describe("equivalence with calculateActualPath", () => {
-    it("should produce equivalent results for simple straight path", () => {
-      const player: Vector2 = { x: 100, y: 100 };
-      const cursor: Vector2 = { x: 200, y: 200 };
-      const initialDirection = getInitialDirection(player, cursor);
-
-      const unified = calculateActualPathUnified(player, cursor, []);
-      const legacy = calculateActualPath(player, cursor, initialDirection, []);
-
-      // Both should reach cursor
-      expect(unified.reachedCursor).toBe(legacy.reachedCursor);
-      expect(unified.waypoints.length).toBe(legacy.waypoints.length);
-    });
-
-    it("should produce equivalent results for path with wall", () => {
-      const player: Vector2 = { x: 100, y: 100 };
-      const cursor: Vector2 = { x: 100, y: 300 };
-      const wall = createMockWall("wall1", { x: 50, y: 200 }, { x: 150, y: 200 });
-      const initialDirection = getInitialDirection(player, cursor);
-
-      const unified = calculateActualPathUnified(player, cursor, [wall]);
-      const legacy = calculateActualPath(player, cursor, initialDirection, [wall]);
-
-      // Both should be blocked by wall
-      expect(unified.blockedBy).toBe(legacy.blockedBy);
-      expect(unified.reachedCursor).toBe(legacy.reachedCursor);
-    });
-
-    it("should produce equivalent waypoint count for reflections", () => {
-      const player: Vector2 = { x: 100, y: 100 };
-      const cursor: Vector2 = { x: 100, y: 300 };
-      const surface = createHorizontalSurface("s1", 200, 50, 150);
-      const initialDirection = getInitialDirection(player, cursor);
-
-      const unified = calculateActualPathUnified(player, cursor, [surface]);
-      const legacy = calculateActualPath(player, cursor, initialDirection, [surface]);
-
-      // Both should have similar structure
-      // Note: exact equivalence may differ due to different reflection approaches
-      expect(unified.hits.length).toBeGreaterThanOrEqual(0);
-      expect(legacy.hits.length).toBeGreaterThanOrEqual(0);
-    });
-  });
+  // Note: equivalence tests with old calculateActualPath were removed
+  // as part of unified migration. The new calculateActualPathUnified
+  // uses image-based reflection which may produce slightly different
+  // results than the old direction-based approach.
 });

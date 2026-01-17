@@ -1,7 +1,7 @@
 /**
  * RenderSystem - Trajectory visualization
  *
- * NEW ARCHITECTURE: Uses UnifiedPath and RenderDeriver for simple rendering.
+ * UNIFIED ARCHITECTURE: Uses DualPathRenderer for simple, principled rendering.
  *
  * Colors:
  * - Solid green: Aligned/unplanned before cursor
@@ -13,11 +13,8 @@
 import { distance } from "@/trajectory-v2/geometry/GeometryOps";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { AlignmentResult, EngineResults, PathResult } from "@/trajectory-v2/engine/types";
-import { deriveRender, colorToHex, type RenderOutput, type RenderSegment } from "@/trajectory-v2/engine/RenderDeriver";
-import { USE_TWO_PATH_ARCHITECTURE } from "@/trajectory-v2/engine/TrajectoryEngine";
-import { calculatePlannedPath } from "@/trajectory-v2/engine/PlannedPathCalculator";
-import { findDivergence, type PathForComparison } from "@/trajectory-v2/engine/DivergenceDetector";
-import { renderDualPath, type RenderablePath } from "@/trajectory-v2/engine/DualPathRenderer";
+import { findDivergence } from "@/trajectory-v2/engine/DivergenceDetector";
+import { renderDualPath, type RenderablePath, type RenderSegment, colorToHex } from "@/trajectory-v2/engine/DualPathRenderer";
 import {
   DEFAULT_RENDER_CONFIG,
   type ITrajectorySystem,
@@ -46,8 +43,6 @@ export class RenderSystem implements ITrajectorySystem {
   private graphics: IGraphics;
   private config: RenderConfig;
   private lastResults: EngineResults | null = null;
-  /** Use new unified path rendering (simpler, ~50 lines) */
-  private useUnifiedRendering = true;
 
   constructor(graphics: IGraphics, config: Partial<RenderConfig> = {}) {
     this.graphics = graphics;
@@ -77,72 +72,102 @@ export class RenderSystem implements ITrajectorySystem {
 
     this.graphics.clear();
 
-    // NEW TWO-PATH ARCHITECTURE: Use calculatePlannedPath + findDivergence + renderDualPath
-    if (USE_TWO_PATH_ARCHITECTURE) {
-      this.renderTwoPath();
-      return;
-    }
-
-    // UNIFIED PATH: Use tracePhysicalPath + deriveRender
-    if (this.useUnifiedRendering && this.lastResults.unifiedPath) {
-      this.renderUnified();
-      return;
-    }
-
-    // LEGACY: Fall back to old dual-path rendering
-    this.renderLegacy();
+    // Use unified two-path architecture
+    this.renderTwoPath();
   }
 
   /**
-   * NEW TWO-PATH ARCHITECTURE: Simpler rendering with independent path calculations.
+   * UNIFIED TWO-PATH ARCHITECTURE: Simple rendering using DualPathRenderer.
    *
-   * DESIGN: When the new architecture can't handle a case, fall back to unified.
-   * This ensures backward compatibility while enabling the new architecture.
+   * Uses engine results directly - no deprecated PathBuilder/RenderDeriver.
    */
   private renderTwoPath(): void {
     const results = this.lastResults!;
+    const { plannedPath, actualPath, cursor } = results;
 
-    // Fall back to unified rendering if unifiedPath is available
-    // This ensures all existing tests pass while we gradually migrate
-    if (results.unifiedPath) {
-      this.renderUnified();
+    if (!plannedPath || !actualPath || plannedPath.points.length < 2 || !cursor) {
+      // Fall back to legacy rendering if paths are invalid
+      this.renderLegacy();
       return;
     }
 
-    // Legacy fallback
-    this.renderLegacy();
+    // Build renderable paths from engine results
+    const actualRenderable: RenderablePath = {
+      waypoints: actualPath.points,
+      cursorIndex: this.findCursorIndex(actualPath.points, cursor),
+      cursorT: this.findCursorT(actualPath.points, cursor),
+    };
+
+    const plannedRenderable: RenderablePath = {
+      waypoints: plannedPath.points,
+      cursorIndex: plannedPath.points.length - 2,
+      cursorT: 1,
+    };
+
+    // Find divergence using unified detector
+    const divergence = findDivergence(
+      { waypoints: actualPath.points },
+      { waypoints: plannedPath.points }
+    );
+
+    // Render using DualPathRenderer
+    const segments = renderDualPath(
+      actualRenderable,
+      plannedRenderable,
+      {
+        segmentIndex: divergence.segmentIndex,
+        point: divergence.point,
+        isAligned: divergence.isAligned,
+      },
+      cursor
+    );
+
+    if (this.config.debug) {
+      console.log("[RenderSystem] Two-path rendering");
+      console.log("[RenderSystem] isAligned:", divergence.isAligned);
+      console.log("[RenderSystem] segments:", segments.length);
+    }
+
+    // Draw all segments
+    for (const segment of segments) {
+      this.drawRenderSegment(segment);
+    }
+
+    // Render forward projections
+    if (actualPath.forwardProjection && actualPath.forwardProjection.length > 0) {
+      this.renderForwardProjection(actualPath, this.config.actualDivergedColor);
+    }
   }
 
   /**
-   * NEW ARCHITECTURE: Simple loop over derived render segments.
-   *
-   * FIRST PRINCIPLES:
-   * - There must always be a solid path from player to cursor.
-   * - Dashed paths must follow physically accurate paths.
-   *
-   * The deriveRender function handles this by adding physics-based projections.
-   *
-   * This is the entire render logic for the new architecture.
-   * ~30 lines instead of ~300 lines.
+   * Find the segment index containing the cursor.
    */
-  private renderUnified(): void {
-    const unifiedPath = this.lastResults!.unifiedPath!;
-    const cursor = this.lastResults!.cursor;
-    const surfaces = this.lastResults!.allSurfaces ?? [];
-    const activePlannedSurfaces = this.lastResults!.activePlannedSurfaces ?? [];
-    const renderOutput = deriveRender(unifiedPath, cursor, surfaces, activePlannedSurfaces);
-
-    if (this.config.debug) {
-      console.log("[RenderSystem] Unified rendering");
-      console.log("[RenderSystem] isAligned:", renderOutput.isAligned);
-      console.log("[RenderSystem] segments:", renderOutput.segments.length);
-      console.log("[RenderSystem] cursorReachable:", unifiedPath.cursorReachable);
+  private findCursorIndex(waypoints: readonly Vector2[], cursor: Vector2): number {
+    for (let i = 0; i < waypoints.length - 1; i++) {
+      const a = waypoints[i]!;
+      const b = waypoints[i + 1]!;
+      if (this.isPointOnSegment(cursor, a, b)) {
+        return i;
+      }
     }
+    return waypoints.length - 2; // Default to last segment
+  }
 
-    // Simple loop over segments - no interpretation needed
-    for (const segment of renderOutput.segments) {
-      this.drawRenderSegment(segment);
-    }
+  /**
+   * Find the parametric position of cursor within its segment.
+   */
+  private findCursorT(waypoints: readonly Vector2[], cursor: Vector2): number {
+    const idx = this.findCursorIndex(waypoints, cursor);
+    if (idx < 0 || idx >= waypoints.length - 1) return 1;
+
+    const a = waypoints[idx]!;
+    const b = waypoints[idx + 1]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return 0;
+
+    return Math.max(0, Math.min(1, ((cursor.x - a.x) * dx + (cursor.y - a.y) * dy) / lenSq));
   }
 
   /**

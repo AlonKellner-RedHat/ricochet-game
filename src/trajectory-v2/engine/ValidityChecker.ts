@@ -424,43 +424,7 @@ export function raycastForward(
   return closest;
 }
 
-/**
- * Reflect a direction vector through a surface.
- *
- * Uses the surface's segment to determine the reflection plane.
- *
- * @param direction The incoming direction
- * @param surface The surface to reflect off
- * @returns The reflected direction
- */
-export function reflectDirection(
-  direction: Vector2,
-  surface: Surface
-): Vector2 {
-  const segment = surface.segment;
-
-  // Line direction (tangent to surface)
-  const tx = segment.end.x - segment.start.x;
-  const ty = segment.end.y - segment.start.y;
-
-  // Normal (perpendicular to tangent)
-  // Using right-hand perpendicular: (tx, ty) → (-ty, tx)
-  const lengthSq = tx * tx + ty * ty;
-  if (lengthSq === 0) {
-    return direction; // Degenerate segment
-  }
-
-  // Normalized normal (we need to normalize for reflection formula)
-  const len = Math.sqrt(lengthSq);
-  const nx = -ty / len;
-  const ny = tx / len;
-
-  // Reflection formula: r = d - 2(d·n)n
-  const dotDN = direction.x * nx + direction.y * ny;
-
-  return {
-    x: direction.x - 2 * dotDN * nx,
-    y: direction.y - 2 * dotDN * ny,
-  };
-}
+// Note: reflectDirection was removed as part of unified migration.
+// Use reflectPointThroughLine from geometry/Reflection.ts for point-based reflection,
+// or RayPropagator for ray reflection with memoization.
 

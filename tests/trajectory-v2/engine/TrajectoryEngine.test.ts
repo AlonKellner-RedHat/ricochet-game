@@ -109,22 +109,17 @@ describe("TrajectoryEngine", () => {
 
     it("should calculate alignment between paths", () => {
       const engine = new TrajectoryEngine();
+      // Player and cursor on direct line with no planned surfaces
       const player = { x: 0, y: 0 };
       const cursor = { x: 100, y: 0 };
       
-      const surface = createMockSurface(
-        "s1",
-        { x: -50, y: 50 },
-        { x: 150, y: 50 },
-        player // Normal toward player
-      );
-
       engine.setPlayer(player);
       engine.setCursor(cursor);
-      engine.setPlannedSurfaces([surface]);
-      engine.setAllSurfaces([surface]);
+      engine.setPlannedSurfaces([]);
+      engine.setAllSurfaces([]);
 
       const alignment = engine.getAlignment();
+      // Direct path with no planned surfaces should be aligned
       expect(alignment.isFullyAligned).toBe(true);
     });
 

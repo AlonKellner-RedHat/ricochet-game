@@ -131,7 +131,6 @@ export interface ActualPathDebugInfo {
   hits: Array<{
     point: Vector2;
     surfaceId: string;
-    onSegment: boolean;
     reflected: boolean;
   }>;
   reachedCursor: boolean;
@@ -282,7 +281,6 @@ class TrajectoryDebugLoggerImpl {
       hits: path.hits.map((h) => ({
         point: { ...h.point },
         surfaceId: h.surface.id,
-        onSegment: h.onSegment,
         reflected: h.reflected,
       })),
       reachedCursor: path.reachedCursor,

@@ -12,24 +12,13 @@ import { extractSurfacesFromChains } from "@/trajectory-v2/geometry/RayCasting";
 import { createReflectionCache, type ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 import { TrajectoryDebugLogger } from "../TrajectoryDebugLogger";
 
-/**
- * Two-path architecture is now the default.
- * This flag is kept for backward compatibility but should always be true.
- *
- * The new architecture:
- * - SimpleTrajectoryCalculator.calculateSimpleTrajectory() - main entry
- * - ActualPathCalculator - forward physics (~90 lines)
- * - PlannedPathCalculator - bidirectional images (~95 lines)
- * - DivergenceDetector - waypoint comparison (~70 lines)
- * - DualPathRenderer - color derivation (~100 lines)
- *
- * @deprecated This flag will be removed in a future version.
- */
-export const USE_TWO_PATH_ARCHITECTURE = true;
 import { buildBackwardImages, buildForwardImages } from "./ImageCache";
-import { buildActualPath, buildPlannedPath, calculateAlignment, tracePhysicalPath } from "./PathBuilder";
+// PathBuilder imports removed - using unified calculators instead
+import { findDivergence, type DivergenceInfo } from "./DivergenceDetector";
 import { evaluateBypass, type BypassResult } from "./BypassEvaluator";
 import { calculateActualPathUnified, type ActualPathUnified } from "./ActualPathCalculator";
+import { calculatePlannedPath, type PlannedPath } from "./PlannedPathCalculator";
+import { type SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { ITrajectoryEngine } from "./ITrajectoryEngine";
 import type {
   AlignmentResult,
@@ -38,6 +27,8 @@ import type {
   GhostPoint,
   ImageSequence,
   PathResult,
+  PathSegment,
+  PhysicsSegment,
   ShaderUniforms,
   UnifiedPath,
   Unsubscribe,
@@ -254,35 +245,87 @@ export class TrajectoryEngine implements ITrajectoryEngine {
 
   getPlannedPath(): PathResult {
     if (this.dirty.plannedPath || !this.cache.plannedPath) {
-      // UNIFIED BYPASS: Pass shared bypass result
+      // Use unified PlannedPathCalculator with bypass-filtered surfaces
       const bypassResult = this.getBypassResult();
-      this.cache.plannedPath = buildPlannedPath(
+      const planned = calculatePlannedPath(
         this.player,
         this.cursor,
-        this.plannedSurfaces,
-        this.allSurfaces,
-        bypassResult
+        bypassResult.activeSurfaces
       );
+      this.cache.plannedPath = this.adaptPlannedToPathResult(planned);
       this.dirty.plannedPath = false;
     }
     return this.cache.plannedPath;
   }
 
+  /**
+   * Adapt PlannedPath to PathResult format for backward compatibility.
+   */
+  private adaptPlannedToPathResult(planned: PlannedPath): PathResult {
+    // Calculate total length from waypoints
+    let totalLength = 0;
+    for (let i = 0; i < planned.waypoints.length - 1; i++) {
+      const a = planned.waypoints[i]!;
+      const b = planned.waypoints[i + 1]!;
+      totalLength += Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
+    }
+
+    // Convert PlannedHit[] to HitInfo[]
+    const hitInfo = planned.hits.map((hit) => ({
+      point: hit.point,
+      surface: hit.surface,
+      segmentT: 0.5, // Default - actual t could be computed if needed
+      onSegment: hit.onSegment,
+      reflected: true, // Planned path always reflects
+    }));
+
+    return {
+      points: planned.waypoints,
+      hitInfo,
+      reachedCursor: true, // Planned path always reaches cursor
+      totalLength,
+    };
+  }
+
   getActualPath(): PathResult {
     if (this.dirty.actualPath || !this.cache.actualPath) {
-      // UNIFIED BYPASS: Pass shared bypass result
-      const bypassResult = this.getBypassResult();
-      this.cache.actualPath = buildActualPath(
-        this.player,
-        this.cursor,
-        this.plannedSurfaces,
-        this.allSurfaces,
-        10, // maxReflections
-        bypassResult
-      );
+      // Use unified path calculation and adapt to PathResult format
+      const unified = this.getActualPathUnified();
+      this.cache.actualPath = this.adaptUnifiedToPathResult(unified);
       this.dirty.actualPath = false;
     }
     return this.cache.actualPath;
+  }
+
+  /**
+   * Adapt ActualPathUnified to PathResult format for backward compatibility.
+   */
+  private adaptUnifiedToPathResult(unified: ActualPathUnified): PathResult {
+    // Calculate total length from waypoints
+    let totalLength = 0;
+    for (let i = 0; i < unified.waypoints.length - 1; i++) {
+      const a = unified.waypoints[i]!;
+      const b = unified.waypoints[i + 1]!;
+      totalLength += Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
+    }
+
+    // Convert ActualHit[] to HitInfo[]
+    const hitInfo = unified.hits.map((hit) => ({
+      point: hit.point,
+      surface: hit.surface,
+      segmentT: 0.5, // Default - actual t is not tracked in ActualHit
+      onSegment: true, // Unified path only records on-segment hits
+      reflected: hit.reflected,
+    }));
+
+    return {
+      points: unified.waypoints,
+      hitInfo,
+      reachedCursor: unified.reachedCursor,
+      blockedBy: unified.blockedBy ?? undefined,
+      totalLength,
+      forwardProjection: unified.forwardProjection,
+    };
   }
 
   /**
@@ -313,33 +356,102 @@ export class TrajectoryEngine implements ITrajectoryEngine {
   /**
    * Get the unified path with inline plan annotations.
    *
-   * NEW ARCHITECTURE: This is the single source of truth.
-   * - All segments are annotated with plan alignment during tracing
-   * - No post-hoc comparison needed
-   * - Arrow movement and visualization use the same path
+   * @deprecated This method is deprecated. Use getActualPathUnified() instead.
+   * This method now synthesizes UnifiedPath from actualPathUnified for backward compatibility.
    */
   getUnifiedPath(): UnifiedPath {
     if (this.dirty.unifiedPath || !this.cache.unifiedPath) {
-      const bypassResult = this.getBypassResult();
-      this.cache.unifiedPath = tracePhysicalPath(
-        this.player,
-        this.cursor,
-        bypassResult,
-        this.allSurfaces
-      );
+      const unified = this.getActualPathUnified();
+      const alignment = this.getAlignment();
+      this.cache.unifiedPath = this.synthesizeUnifiedPath(unified, alignment);
       this.dirty.unifiedPath = false;
     }
     return this.cache.unifiedPath;
+  }
+
+  /**
+   * Synthesize UnifiedPath from ActualPathUnified for backward compatibility.
+   */
+  private synthesizeUnifiedPath(unified: ActualPathUnified, alignment: AlignmentResult): UnifiedPath {
+    const segments: PathSegment[] = [];
+    const physicsSegments: PhysicsSegment[] = [];
+    
+    // Build segments from waypoints
+    for (let i = 0; i < unified.waypoints.length - 1; i++) {
+      const start = unified.waypoints[i]!;
+      const end = unified.waypoints[i + 1]!;
+      const hit = unified.hits[i];
+      
+      // Determine plan alignment
+      const isBeforeDivergence = alignment.isFullyAligned || 
+        alignment.firstMismatchIndex === -1 || 
+        i < alignment.firstMismatchIndex;
+      
+      segments.push({
+        start,
+        end,
+        endSurface: hit?.surface ?? null,
+        planAlignment: isBeforeDivergence ? "aligned" : "diverged",
+        hitOnSegment: hit?.reflected ?? false,
+      });
+
+      // Build physics segments
+      physicsSegments.push({
+        start,
+        end,
+        endSurface: hit?.surface ?? null,
+        hitOnSegment: hit?.reflected ?? true,
+      });
+    }
+    
+    // Determine cursor reachability
+    const cursorReachable = unified.reachedCursor && alignment.isFullyAligned;
+    
+    return {
+      segments,
+      cursorSegmentIndex: unified.cursorIndex,
+      cursorT: unified.cursorT,
+      cursorReachable,
+      firstDivergedIndex: alignment.firstMismatchIndex,
+      isFullyAligned: alignment.isFullyAligned,
+      plannedSurfaceCount: this.plannedSurfaces.length,
+      totalLength: segments.reduce((sum, seg) => {
+        const dx = seg.end.x - seg.start.x;
+        const dy = seg.end.y - seg.start.y;
+        return sum + Math.sqrt(dx * dx + dy * dy);
+      }, 0),
+      waypointSources: unified.waypointSources,
+      actualPhysicsSegments: physicsSegments,
+      physicsDivergenceIndex: alignment.firstMismatchIndex,
+    };
   }
 
   getAlignment(): AlignmentResult {
     if (this.dirty.alignment || !this.cache.alignment) {
       const planned = this.getPlannedPath();
       const actual = this.getActualPath();
-      this.cache.alignment = calculateAlignment(planned, actual);
+      
+      // Use unified DivergenceDetector and adapt to AlignmentResult
+      const divergence = findDivergence(
+        { waypoints: actual.points },
+        { waypoints: planned.points }
+      );
+      this.cache.alignment = this.adaptDivergenceToAlignment(divergence);
       this.dirty.alignment = false;
     }
     return this.cache.alignment;
+  }
+
+  /**
+   * Adapt DivergenceInfo to AlignmentResult format for backward compatibility.
+   */
+  private adaptDivergenceToAlignment(divergence: DivergenceInfo): AlignmentResult {
+    return {
+      isFullyAligned: divergence.isAligned,
+      alignedSegmentCount: divergence.isAligned ? -1 : divergence.segmentIndex,
+      firstMismatchIndex: divergence.segmentIndex,
+      divergencePoint: divergence.point ?? undefined,
+    };
   }
 
   getPlannedGhost(): readonly GhostPoint[] {
@@ -379,9 +491,10 @@ export class TrajectoryEngine implements ITrajectoryEngine {
 
     // Log paths using adapted format
     if (TrajectoryDebugLogger.isEnabled()) {
-      // Log planned path
-      TrajectoryDebugLogger.logPlannedPath({
+      // Log planned path - convert PathResult to expected format
+      const plannedForLog = {
         waypoints: plannedPath.points,
+        waypointSources: [] as SourcePoint[], // Empty for backward compatibility
         hits: plannedPath.hitInfo.map(h => ({
           point: h.point,
           surface: h.surface,
@@ -389,28 +502,33 @@ export class TrajectoryEngine implements ITrajectoryEngine {
         })),
         cursorIndex: plannedPath.points.length - 2,
         cursorT: 1,
-      });
+      };
+      TrajectoryDebugLogger.logPlannedPath(plannedForLog);
 
       // Log actual path
+      const blockedBySurface = unifiedPath.segments.find(s => s.endSurface && !s.endSurface.isPlannable())?.endSurface ?? null;
       TrajectoryDebugLogger.logActualPath({
         waypoints: actualPath.points,
+        waypointSources: [] as SourcePoint[], // Empty for backward compatibility
         hits: actualPath.hitInfo.map(h => ({
           point: h.point,
           surface: h.surface,
-          onSegment: h.onSegment,
           reflected: h.reflected,
         })),
+        cursorIndex: -1,
+        cursorT: 0,
         reachedCursor: unifiedPath.cursorReachable,
-        blockedBy: unifiedPath.segments.find(s => s.endSurface && !s.endSurface.isPlannable())?.endSurface,
+        blockedBy: blockedBySurface,
+        forwardProjection: [],
+        forwardProjectionSources: [],
       });
 
       // Log divergence
+      const divergenceSegment = unifiedPath.firstDivergedIndex >= 0 ? unifiedPath.segments[unifiedPath.firstDivergedIndex] : null;
       TrajectoryDebugLogger.logDivergence({
         isAligned: unifiedPath.firstDivergedIndex === -1,
         segmentIndex: unifiedPath.firstDivergedIndex,
-        point: unifiedPath.firstDivergedIndex >= 0 && unifiedPath.segments[unifiedPath.firstDivergedIndex]
-          ? unifiedPath.segments[unifiedPath.firstDivergedIndex]!.start
-          : undefined,
+        point: divergenceSegment?.start ?? null,
       });
     }
 

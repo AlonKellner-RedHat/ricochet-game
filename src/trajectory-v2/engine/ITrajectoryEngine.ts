@@ -18,6 +18,7 @@ import type {
   ShaderUniforms,
   Unsubscribe,
 } from "./types";
+import type { ActualPathUnified } from "./ActualPathCalculator";
 
 /**
  * The trajectory engine interface.
@@ -96,8 +97,21 @@ export interface ITrajectoryEngine {
   /**
    * Get the actual trajectory path.
    * Uses forward physics with obstruction checks.
+   *
+   * @deprecated Use getActualPathUnified() instead for consistent
+   * image-based reflection paradigm with visibility system.
    */
   getActualPath(): PathResult;
+
+  /**
+   * Get the actual path using unified image-based reflection.
+   *
+   * This is the preferred method for arrow waypoints as it:
+   * - Uses RayPropagator for consistent reflection paradigm
+   * - Shares ReflectionCache with visibility system
+   * - Returns ActualPathUnified with propagator state
+   */
+  getActualPathUnified(): ActualPathUnified;
 
   /**
    * Get alignment between planned and actual paths.

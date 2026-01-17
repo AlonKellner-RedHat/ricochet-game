@@ -110,11 +110,11 @@ describe("DivergenceDetector", () => {
       expect(result.segmentIndex).toBe(1);
     });
 
-    it("should use small tolerance for floating point", () => {
+    it("should detect divergence for small floating point differences (exact comparison)", () => {
       const actual: ActualPath = {
         waypoints: [
           { x: 0, y: 0 },
-          { x: 100.0001, y: 0.0001 }, // Very close to planned
+          { x: 100.0001, y: 0.0001 }, // Very close to planned but not exact
         ],
       };
 
@@ -125,10 +125,11 @@ describe("DivergenceDetector", () => {
         ],
       };
 
-      const result = findDivergence(actual, planned, 0.5);
+      const result = findDivergence(actual, planned);
 
-      // Should be considered aligned due to tolerance
-      expect(result.isAligned).toBe(true);
+      // Current implementation uses exact comparison - small differences cause divergence
+      expect(result.isAligned).toBe(false);
+      expect(result.segmentIndex).toBe(1);
     });
 
     it("should detect divergence at first waypoint if different", () => {

@@ -1,15 +1,14 @@
 /**
- * SimpleTrajectoryCalculator - The new two-path architecture in one simple interface
+ * SimpleTrajectoryCalculator - Unified two-path architecture in one simple interface
  *
- * DESIGN PHILOSOPHY: Make the simple things simple.
+ * UNIFIED ARCHITECTURE: Uses image-based reflection via RayPropagator
+ * for consistency with visibility system.
  *
  * This combines:
- * 1. calculatePlannedPath - Ideal path using bidirectional images (~50 lines)
- * 2. calculateActualPath - Physical path using forward physics (~80 lines)
- * 3. findDivergence - Compare paths and find ONE divergence point (~40 lines)
- * 4. deriveRenderSegments - Simple color derivation (~50 lines)
- *
- * Total: ~220 lines vs 1400+ lines in PathBuilder + 700 lines in RenderDeriver
+ * 1. calculatePlannedPath - Ideal path using bidirectional images
+ * 2. calculateActualPathUnified - Physical path using unified image-based reflection
+ * 3. findDivergence - Compare paths and find divergence point
+ * 4. renderDualPath - Simple color derivation
  *
  * FIRST PRINCIPLES:
  * - A1: Exactly ONE actual path
@@ -26,11 +25,9 @@ import { extractSurfacesFromChains } from "@/trajectory-v2/geometry/RayCasting";
 import { createReflectionCache, type ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 import { type BypassResult } from "./BypassEvaluator";
 import { 
-  calculateActualPath,
-  calculateActualPathWithChains,
   calculateActualPathUnified,
   getInitialDirection,
-  type ActualPath 
+  type ActualPath,
 } from "./ActualPathCalculator";
 import { type PlannedPath } from "./PlannedPathCalculator";
 import { findDivergence, type DivergenceInfo } from "./DivergenceDetector";
@@ -128,7 +125,8 @@ export function calculateSimpleTrajectory(
   TrajectoryDebugLogger.logBypass(bypass);
 
   // Step 2: Calculate shared initial direction using ImageChain
-  const initialDirection = getSharedInitialDirection(player, cursor, chainBypass);
+  // Note: initialDirection is calculated for consistency but not used by unified path
+  const _initialDirection = getSharedInitialDirection(player, cursor, chainBypass);
 
   // Step 3: Calculate planned path from ImageChain (single source of truth)
   const chainPlanned = buildPlannedPathFromChain(chainBypass.chain);
@@ -147,8 +145,8 @@ export function calculateSimpleTrajectory(
   };
   TrajectoryDebugLogger.logPlannedPath(planned);
 
-  // Step 4: Calculate actual path (using forward physics)
-  const actual = calculateActualPath(player, cursor, initialDirection, allSurfaces);
+  // Step 4: Calculate actual path using unified approach
+  const actual = calculateActualPathUnified(player, cursor, allSurfaces);
   TrajectoryDebugLogger.logActualPath(actual);
 
   // Step 5: Find divergence (simple waypoint comparison)
@@ -319,7 +317,8 @@ export function calculateSimpleTrajectoryWithChains(
   TrajectoryDebugLogger.logBypass(bypass);
 
   // Step 2: Calculate shared initial direction using ImageChain
-  const initialDirection = getSharedInitialDirection(player, cursor, chainBypass);
+  // Note: initialDirection is calculated for consistency but not used by unified path
+  const _initialDirection = getSharedInitialDirection(player, cursor, chainBypass);
 
   // Step 3: Calculate planned path from ImageChain (single source of truth)
   const chainPlanned = buildPlannedPathFromChain(chainBypass.chain);
@@ -338,8 +337,8 @@ export function calculateSimpleTrajectoryWithChains(
   };
   TrajectoryDebugLogger.logPlannedPath(planned);
 
-  // Step 4: Calculate actual path using chains (forward physics with provenance)
-  const actual = calculateActualPathWithChains(player, cursor, initialDirection, chains);
+  // Step 4: Calculate actual path using unified approach (reuse allSurfaces from above)
+  const actual = calculateActualPathUnified(player, cursor, allSurfaces);
   TrajectoryDebugLogger.logActualPath(actual);
 
   // Step 5: Find divergence (simple waypoint comparison)
