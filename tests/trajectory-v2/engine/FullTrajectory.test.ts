@@ -11,6 +11,7 @@
 import { describe, it, expect } from "vitest";
 import {
   calculateFullTrajectory,
+  getArrowWaypointsFromFullTrajectory,
   type FullTrajectoryResult,
 } from "@/trajectory-v2/engine/FullTrajectoryCalculator";
 import { createMockSurface, createMockWall } from "@test/helpers/surfaceHelpers";
@@ -250,5 +251,174 @@ describe("calculateFullTrajectory", () => {
       // After reflection, both reach cursor - should be aligned
       expect(result.isFullyAligned).toBe(true);
     });
+  });
+});
+
+describe("getArrowWaypointsFromFullTrajectory", () => {
+  it("should return player as first waypoint", () => {
+    const player: Vector2 = { x: 100, y: 200 };
+    const cursor: Vector2 = { x: 300, y: 200 };
+
+    const result = calculateFullTrajectory(player, cursor, [], []);
+    const waypoints = getArrowWaypointsFromFullTrajectory(result);
+
+    expect(waypoints.length).toBeGreaterThanOrEqual(1);
+    expect(waypoints[0]).toEqual(player);
+  });
+
+  it("should include all merged segment endpoints", () => {
+    // Two mirrors to create multiple reflections
+    const mirror1 = createMockSurface(
+      "mirror1",
+      { x: 200, y: 0 },
+      { x: 200, y: 400 }
+    );
+    const mirror2 = createMockSurface(
+      "mirror2",
+      { x: 100, y: 0 },
+      { x: 100, y: 400 }
+    );
+
+    // Player between mirrors, cursor to the left
+    const player: Vector2 = { x: 150, y: 200 };
+    const cursor: Vector2 = { x: 50, y: 200 };
+
+    const result = calculateFullTrajectory(
+      player,
+      cursor,
+      [mirror1, mirror2], // planned surfaces
+      [mirror1, mirror2]  // all surfaces
+    );
+
+    const waypoints = getArrowWaypointsFromFullTrajectory(result);
+
+    // Should have at least: player, mirror1-hit, mirror2-hit, cursor
+    // The exact count depends on geometry, but should include all merged endpoints
+    expect(waypoints.length).toBeGreaterThanOrEqual(result.merged.length + 1);
+
+    // First waypoint is player
+    expect(waypoints[0]).toEqual(player);
+
+    // Each merged segment's end should be in waypoints
+    for (let i = 0; i < result.merged.length; i++) {
+      const segEnd = result.merged[i]!.end;
+      expect(waypoints[i + 1]).toEqual(segEnd);
+    }
+  });
+
+  it("should include physicalDivergent endpoints for diverged path", () => {
+    // Mirror that causes divergence
+    const mirror = createMockSurface(
+      "mirror",
+      { x: 200, y: 0 },
+      { x: 200, y: 400 }
+    );
+    // Wall behind player to catch reflected ray
+    const wall = createMockWall(
+      "wall",
+      { x: 50, y: 0 },
+      { x: 50, y: 400 }
+    );
+
+    // Player in front of mirror, cursor behind mirror
+    // Physical: hits mirror, reflects back toward wall
+    // Planned: hits mirror (as planned surface), continues to cursor
+    const player: Vector2 = { x: 150, y: 200 };
+    const cursor: Vector2 = { x: 300, y: 200 };
+
+    const result = calculateFullTrajectory(
+      player,
+      cursor,
+      [], // no planned surfaces - physical diverges from "nothing planned"
+      [mirror, wall]
+    );
+
+    const waypoints = getArrowWaypointsFromFullTrajectory(result);
+
+    // If physical diverged (reflected off mirror), waypoints should include that continuation
+    const mergedCount = result.merged.length;
+    const divergentCount = result.physicalDivergent.length;
+
+    // Total waypoints = player + merged endpoints + divergent endpoints
+    expect(waypoints.length).toBe(1 + mergedCount + divergentCount);
+  });
+
+  it("should NOT include plannedToCursor segments", () => {
+    // Obstacle causes divergence
+    const obstacle = createMockWall(
+      "obstacle",
+      { x: 150, y: 0 },
+      { x: 150, y: 400 }
+    );
+
+    const player: Vector2 = { x: 100, y: 200 };
+    const cursor: Vector2 = { x: 300, y: 200 };
+
+    const result = calculateFullTrajectory(player, cursor, [], [obstacle]);
+
+    // Should have plannedToCursor (the red solid path)
+    expect(result.plannedToCursor.length).toBeGreaterThan(0);
+
+    const waypoints = getArrowWaypointsFromFullTrajectory(result);
+
+    // Cursor should NOT be in waypoints (it's in plannedToCursor, not physical path)
+    const cursorInWaypoints = waypoints.some(
+      (w) => w.x === cursor.x && w.y === cursor.y
+    );
+    expect(cursorInWaypoints).toBe(false);
+  });
+
+  it("should NOT include physicalFromCursor segments", () => {
+    // Obstacle causes divergence
+    const obstacle = createMockWall(
+      "obstacle",
+      { x: 150, y: 0 },
+      { x: 150, y: 400 }
+    );
+    // Far surface to create physicalFromCursor
+    const farSurface = createMockSurface(
+      "far",
+      { x: 400, y: 0 },
+      { x: 400, y: 400 }
+    );
+
+    const player: Vector2 = { x: 100, y: 200 };
+    const cursor: Vector2 = { x: 300, y: 200 };
+
+    const result = calculateFullTrajectory(
+      player,
+      cursor,
+      [],
+      [obstacle, farSurface]
+    );
+
+    // Should have physicalFromCursor (the red dashed path)
+    expect(result.physicalFromCursor.length).toBeGreaterThan(0);
+
+    const waypoints = getArrowWaypointsFromFullTrajectory(result);
+
+    // Waypoints should only include merged + physicalDivergent
+    // NOT physicalFromCursor (which is the red dashed continuation)
+    const mergedCount = result.merged.length;
+    const divergentCount = result.physicalDivergent.length;
+    expect(waypoints.length).toBe(1 + mergedCount + divergentCount);
+  });
+
+  it("should match rendered green + yellow path exactly", () => {
+    // Clear path to cursor
+    const player: Vector2 = { x: 100, y: 200 };
+    const cursor: Vector2 = { x: 300, y: 200 };
+
+    const result = calculateFullTrajectory(player, cursor, [], []);
+    const waypoints = getArrowWaypointsFromFullTrajectory(result);
+
+    // For aligned path, merged contains everything (green before cursor, yellow after)
+    // Waypoints should be: player, cursor, then continuation endpoint
+    expect(waypoints[0]).toEqual(player);
+
+    // All merged segment ends should be present
+    for (let i = 0; i < result.merged.length; i++) {
+      expect(waypoints[i + 1]).toEqual(result.merged[i]!.end);
+    }
   });
 });

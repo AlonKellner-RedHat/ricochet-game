@@ -11,6 +11,7 @@ import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { OriginPoint, type SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { Surface } from "@/surfaces/Surface";
 import type { EngineResults, PathResult } from "@/trajectory-v2/engine/types";
+import { getArrowWaypointsFromFullTrajectory } from "@/trajectory-v2/engine/FullTrajectoryCalculator";
 import type {
   AimingEvent,
   ArrowShotData,
@@ -259,10 +260,17 @@ export class AimingSystem
    * - Arrow waypoints include main path points AND forward projection points
    * - Arrow continues past cursor along physical trajectory
    *
-   * UNIFIED: Prefers actualPathUnified for consistency with trajectory preview.
+   * UNIFIED: Prefers fullTrajectory for exact match with rendered path.
+   * This ensures the arrow follows exactly what's shown on screen (green + yellow).
    */
   getArrowWaypoints(path?: PathResult): readonly Vector2[] {
-    // Prefer unified path for consistency with trajectory preview
+    // PREFER fullTrajectory - same path that's rendered (green + yellow)
+    const fullTraj = this.lastResults?.fullTrajectory;
+    if (fullTraj && !path) {
+      return getArrowWaypointsFromFullTrajectory(fullTraj);
+    }
+
+    // Fallback to actualPathUnified
     const unifiedActual = this.lastResults?.actualPathUnified;
     if (unifiedActual && !path) {
       // Combine main path with forward projection

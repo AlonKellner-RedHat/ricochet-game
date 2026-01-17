@@ -165,3 +165,40 @@ export function calculateFullTrajectory(
     isFullyAligned: false,
   };
 }
+
+/**
+ * Extract arrow waypoints from a FullTrajectoryResult.
+ *
+ * The arrow follows the actual physical path (green + yellow):
+ * - merged segments (solid green before cursor, dashed yellow after)
+ * - physicalDivergent segments (dashed yellow after divergence)
+ *
+ * It does NOT include:
+ * - plannedToCursor (red solid) - these are planned, not physical
+ * - physicalFromCursor (red dashed) - these continue the planned path
+ *
+ * @param result The full trajectory result
+ * @returns Array of waypoints for the arrow to follow
+ */
+export function getArrowWaypointsFromFullTrajectory(
+  result: FullTrajectoryResult
+): Vector2[] {
+  const waypoints: Vector2[] = [];
+
+  // Add start of first merged segment (player position)
+  if (result.merged.length > 0) {
+    waypoints.push(result.merged[0]!.start);
+  }
+
+  // Add end of each merged segment
+  for (const seg of result.merged) {
+    waypoints.push(seg.end);
+  }
+
+  // Add end of each physicalDivergent segment
+  for (const seg of result.physicalDivergent) {
+    waypoints.push(seg.end);
+  }
+
+  return waypoints;
+}
