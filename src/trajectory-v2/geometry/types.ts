@@ -33,6 +33,17 @@ export interface Ray {
 }
 
 /**
+ * A line segment defined by two endpoints.
+ *
+ * This is the canonical Segment type for the geometry layer.
+ * Used for surface segments, startLines, and window boundaries.
+ */
+export interface Segment {
+  readonly start: Vector2;
+  readonly end: Vector2;
+}
+
+/**
  * Result of a line-line intersection calculation.
  *
  * Uses parametric representation:

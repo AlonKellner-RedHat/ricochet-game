@@ -121,9 +121,14 @@ describe("Two-Path Architecture Integration", () => {
       const redSegments = segments.filter(s => s.color === "red");
       expect(redSegments.length).toBeGreaterThan(0);
 
-      // Should have yellow segments (actual path after divergence)
-      const yellowSegments = segments.filter(s => s.color === "yellow");
-      expect(yellowSegments.length).toBeGreaterThan(0);
+      // When divergence occurs at the first segment (segment 0), the actual path
+      // is rendered as GREEN (the physical trajectory), not yellow.
+      // Yellow only appears for segments AFTER segment 0 when continuing past
+      // the divergence point.
+      // In this test, actual path is [player, blockedPoint] - only segment 0,
+      // which is rendered as GREEN because it's the physical trajectory.
+      const greenSegments = segments.filter(s => s.color === "green");
+      expect(greenSegments.length).toBeGreaterThan(0);
     });
   });
 

@@ -34,10 +34,13 @@ import {
   type SurfaceChain,
   isJunctionPoint,
 } from "@/trajectory-v2/geometry/SurfaceChain";
-import type { Ray, Vector2 } from "@/trajectory-v2/geometry/types";
+import type { Ray, Vector2, Segment } from "@/trajectory-v2/geometry/types";
 import { ContinuationRay } from "@/trajectory-v2/geometry/ContinuationRay";
 import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 import type { ReflectedTargetSet } from "./ReflectedTargets";
+
+// Re-export Segment for backward compatibility
+export type { Segment };
 
 // =============================================================================
 // FEATURE FLAGS
@@ -61,14 +64,6 @@ export const USE_REFLECTED_TARGETS = false;
 // =============================================================================
 // TYPES
 // =============================================================================
-
-/**
- * A line segment defined by two endpoints.
- */
-export interface Segment {
-  readonly start: Vector2;
-  readonly end: Vector2;
-}
 
 /**
  * A segment that preserves SourcePoint provenance.

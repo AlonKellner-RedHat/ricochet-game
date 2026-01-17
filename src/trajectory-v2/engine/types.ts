@@ -10,6 +10,7 @@ import type { SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { Surface } from "@/surfaces/Surface";
 import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 import type { ActualPathUnified } from "./ActualPathCalculator";
+import type { FullTrajectoryResult } from "./FullTrajectoryCalculator";
 
 /**
  * A reflected image with full provenance tracking.
@@ -182,6 +183,17 @@ export interface EngineResults {
    * Can be passed to visibility system for cache reuse.
    */
   readonly reflectionCache?: ReflectionCache;
+  /**
+   * Full trajectory result with all 4 sections.
+   * Uses the new shared-loop calculation with hit detection strategies.
+   * 
+   * Sections:
+   * - merged: GREEN (solid before cursor, dashed yellow after)
+   * - physicalDivergent: YELLOW dashed
+   * - plannedToCursor: RED solid
+   * - physicalFromCursor: RED dashed
+   */
+  readonly fullTrajectory?: FullTrajectoryResult;
 }
 
 /**

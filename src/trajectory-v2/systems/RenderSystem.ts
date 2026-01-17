@@ -14,7 +14,7 @@ import { distance } from "@/trajectory-v2/geometry/GeometryOps";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { AlignmentResult, EngineResults, PathResult } from "@/trajectory-v2/engine/types";
 import { findDivergence } from "@/trajectory-v2/engine/DivergenceDetector";
-import { renderDualPath, type RenderablePath, type RenderSegment, colorToHex } from "@/trajectory-v2/engine/DualPathRenderer";
+import { renderDualPath, renderFullTrajectory, type RenderablePath, type RenderSegment, colorToHex } from "@/trajectory-v2/engine/DualPathRenderer";
 import {
   DEFAULT_RENDER_CONFIG,
   type ITrajectorySystem,
@@ -72,8 +72,44 @@ export class RenderSystem implements ITrajectorySystem {
 
     this.graphics.clear();
 
-    // Use unified two-path architecture
-    this.renderTwoPath();
+    // Use new full trajectory if available
+    if (this.lastResults.fullTrajectory && this.lastResults.cursor) {
+      this.renderFullTrajectory();
+    } else {
+      // Fall back to two-path architecture
+      this.renderTwoPath();
+    }
+  }
+
+  /**
+   * NEW: Render using the unified FullTrajectoryResult.
+   *
+   * Uses renderFullTrajectory from DualPathRenderer which handles all 4 sections:
+   * - merged: GREEN (solid before cursor, dashed yellow after)
+   * - physicalDivergent: YELLOW dashed
+   * - plannedToCursor: RED solid
+   * - physicalFromCursor: RED dashed
+   */
+  private renderFullTrajectory(): void {
+    const { fullTrajectory, cursor } = this.lastResults!;
+    if (!fullTrajectory || !cursor) return;
+
+    const segments = renderFullTrajectory(fullTrajectory, cursor);
+
+    if (this.config.debug) {
+      console.log("[RenderSystem] Full trajectory rendering");
+      console.log("[RenderSystem] isFullyAligned:", fullTrajectory.isFullyAligned);
+      console.log("[RenderSystem] merged segments:", fullTrajectory.merged.length);
+      console.log("[RenderSystem] physicalDivergent:", fullTrajectory.physicalDivergent.length);
+      console.log("[RenderSystem] plannedToCursor:", fullTrajectory.plannedToCursor.length);
+      console.log("[RenderSystem] physicalFromCursor:", fullTrajectory.physicalFromCursor.length);
+      console.log("[RenderSystem] render segments:", segments.length);
+    }
+
+    // Draw all segments
+    for (const segment of segments) {
+      this.drawRenderSegment(segment);
+    }
   }
 
   /**

@@ -14,6 +14,8 @@
  */
 
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import type { FullTrajectoryResult } from "./FullTrajectoryCalculator";
+import type { TraceSegment } from "./TracePath";
 
 /**
  * Render color type.
@@ -224,22 +226,48 @@ function renderDivergedPaths(
         color: "green",
       });
     } else if (isDivergenceSegment && divergence.point) {
-      // Segment where divergence occurs - split at divergence point
-      // Part before divergence point: green
-      segments.push({
-        start,
-        end: divergence.point,
-        style: "solid",
-        color: "green",
-      });
-      // Part after divergence point: yellow (actual path continuation)
-      if (divergence.point.x !== end.x || divergence.point.y !== end.y) {
+      // Segment where divergence occurs - potentially split at divergence point
+      const divergeAtStart = divergence.point.x === start.x && divergence.point.y === start.y;
+      
+      if (divergeAtStart && i === 0) {
+        // Special case: divergence at segment 0 start (i.e., at player position)
+        // This is the "empty plan with obstruction" case: planned goes to cursor,
+        // actual goes to wall. The segment 0 IS the physical trajectory.
+        // Show it as GREEN (solid) - it's what the ball actually does.
         segments.push({
-          start: divergence.point,
+          start,
+          end,
+          style: "solid",
+          color: "green",
+        });
+      } else if (divergeAtStart) {
+        // Divergence at segment start, but not segment 0
+        // This means there was an aligned portion before, and now we're
+        // at the first segment after divergence. Show as YELLOW.
+        segments.push({
+          start,
           end,
           style: "dashed",
           color: "yellow",
         });
+      } else {
+        // Split at divergence point
+        // Part before divergence point: green
+        segments.push({
+          start,
+          end: divergence.point,
+          style: "solid",
+          color: "green",
+        });
+        // Part after divergence point: yellow (actual path continuation)
+        if (divergence.point.x !== end.x || divergence.point.y !== end.y) {
+          segments.push({
+            start: divergence.point,
+            end,
+            style: "dashed",
+            color: "yellow",
+          });
+        }
       }
     } else if (isAfterDiverge) {
       // After divergence: dashed yellow
@@ -319,3 +347,158 @@ function renderDivergedPaths(
   return segments;
 }
 
+// =============================================================================
+// RENDER FULL TRAJECTORY (New API)
+// =============================================================================
+
+/**
+ * Check if a point lies on a segment and return the parametric t value.
+ */
+function pointOnSegmentT(
+  point: Vector2,
+  segStart: Vector2,
+  segEnd: Vector2,
+  tolerance = 1e-6
+): number | null {
+  const dx = segEnd.x - segStart.x;
+  const dy = segEnd.y - segStart.y;
+  const lenSq = dx * dx + dy * dy;
+
+  if (lenSq === 0) {
+    return point.x === segStart.x && point.y === segStart.y ? 0 : null;
+  }
+
+  const t = ((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lenSq;
+  if (t < 0 || t > 1) return null;
+
+  const projX = segStart.x + t * dx;
+  const projY = segStart.y + t * dy;
+  const distSq = (point.x - projX) ** 2 + (point.y - projY) ** 2;
+
+  return distSq <= tolerance ? t : null;
+}
+
+/**
+ * Render a FullTrajectoryResult into RenderSegments.
+ *
+ * COLOR RULES:
+ * - merged: GREEN (solid before cursor, dashed yellow after)
+ * - physicalDivergent: YELLOW dashed
+ * - plannedToCursor: RED solid
+ * - physicalFromCursor: RED dashed
+ *
+ * @param trajectory The full trajectory result
+ * @param cursor The cursor position
+ * @returns Array of render segments
+ */
+export function renderFullTrajectory(
+  trajectory: FullTrajectoryResult,
+  cursor: Vector2
+): RenderSegment[] {
+  const segments: RenderSegment[] = [];
+
+  // 1. Render merged segments (GREEN)
+  // Find if cursor is on any merged segment
+  let cursorOnMergedIndex = -1;
+  let cursorT = 0;
+
+  for (let i = 0; i < trajectory.merged.length; i++) {
+    const seg = trajectory.merged[i]!;
+    if (!seg.start || !seg.end) continue; // Skip invalid segments
+    const t = pointOnSegmentT(cursor, seg.start, seg.end);
+    if (t !== null) {
+      cursorOnMergedIndex = i;
+      cursorT = t;
+      break;
+    }
+  }
+
+  for (let i = 0; i < trajectory.merged.length; i++) {
+    const seg = trajectory.merged[i]!;
+    
+    // Skip segments with null/undefined start or end
+    if (!seg.start || !seg.end) continue;
+
+    if (cursorOnMergedIndex < 0) {
+      // Cursor not on merged path - all solid green
+      segments.push({
+        start: seg.start,
+        end: seg.end,
+        style: "solid",
+        color: "green",
+      });
+    } else if (i < cursorOnMergedIndex) {
+      // Before cursor segment - solid green
+      segments.push({
+        start: seg.start,
+        end: seg.end,
+        style: "solid",
+        color: "green",
+      });
+    } else if (i === cursorOnMergedIndex) {
+      // Cursor is on this segment - split
+      const cursorPos = lerp(seg.start, seg.end, cursorT);
+
+      if (cursorT > 0.01) {
+        segments.push({
+          start: seg.start,
+          end: cursorPos,
+          style: "solid",
+          color: "green",
+        });
+      }
+
+      if (cursorT < 0.99) {
+        segments.push({
+          start: cursorPos,
+          end: seg.end,
+          style: "dashed",
+          color: "yellow",
+        });
+      }
+    } else {
+      // After cursor - dashed yellow
+      segments.push({
+        start: seg.start,
+        end: seg.end,
+        style: "dashed",
+        color: "yellow",
+      });
+    }
+  }
+
+  // 2. Render physicalDivergent (YELLOW dashed)
+  for (const seg of trajectory.physicalDivergent) {
+    if (!seg.start || !seg.end) continue; // Skip invalid segments
+    segments.push({
+      start: seg.start,
+      end: seg.end,
+      style: "dashed",
+      color: "yellow",
+    });
+  }
+
+  // 3. Render plannedToCursor (RED solid)
+  for (const seg of trajectory.plannedToCursor) {
+    if (!seg.start || !seg.end) continue; // Skip invalid segments
+    segments.push({
+      start: seg.start,
+      end: seg.end,
+      style: "solid",
+      color: "red",
+    });
+  }
+
+  // 4. Render physicalFromCursor (RED dashed)
+  for (const seg of trajectory.physicalFromCursor) {
+    if (!seg.start || !seg.end) continue; // Skip invalid segments
+    segments.push({
+      start: seg.start,
+      end: seg.end,
+      style: "dashed",
+      color: "red",
+    });
+  }
+
+  return segments;
+}

@@ -11,7 +11,7 @@
  * - Bidirectional: Reflecting back through a surface returns original points by identity
  */
 
-import type { Vector2, Ray } from "@/trajectory-v2/geometry/types";
+import type { Vector2, Ray, Segment } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
 import {
   createReflectionCache,
@@ -31,6 +31,16 @@ export interface PropagatorState {
   readonly depth: number;
   /** Surface of the last reflection (null if no reflections yet) */
   readonly lastSurface: Surface | null;
+  /**
+   * The startLine for hit detection.
+   * 
+   * After reflecting through a surface, this is set to that surface's segment.
+   * Hit detection should only find hits PAST this line (higher t values).
+   * This provides full provenance: we know which surface the ray started from.
+   * 
+   * null for the initial ray (starts from player position, no startLine).
+   */
+  readonly startLine: Segment | null;
 }
 
 /**
@@ -95,6 +105,9 @@ function createPropagatorWithState(
       targetImage: newTargetImage,
       depth: state.depth + 1,
       lastSurface: surface,
+      // The startLine is the surface we just reflected through.
+      // Hit detection will only find hits past this line.
+      startLine: surface.segment,
     };
 
     return createPropagatorWithState(newState, cache);
@@ -138,6 +151,7 @@ export function createRayPropagator(
     targetImage: target,
     depth: 0,
     lastSurface: null,
+    startLine: null, // Initial ray starts from origin, no startLine
   };
 
   return createPropagatorWithState(initialState, sharedCache);

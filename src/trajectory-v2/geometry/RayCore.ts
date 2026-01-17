@@ -11,22 +11,14 @@
  * 4. Cross-product for side/containment checks
  */
 
-import type { Vector2, Ray } from "./types";
+import type { Vector2, Ray, Segment } from "./types";
 
-// Re-export Ray for backward compatibility with files that import from RayCore
-export type { Ray };
+// Re-export Ray and Segment for backward compatibility with files that import from RayCore
+export type { Ray, Segment };
 
 // =============================================================================
 // Core Types
 // =============================================================================
-
-/**
- * A line segment defined by two endpoints.
- */
-export interface Segment {
-  readonly start: Vector2;
-  readonly end: Vector2;
-}
 
 /**
  * Result of ray-segment intersection.

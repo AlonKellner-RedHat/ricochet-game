@@ -20,19 +20,14 @@ import type { Surface } from "@/surfaces/Surface";
 import { lineLineIntersection } from "./GeometryOps";
 import { HitPoint, type SourcePoint, Endpoint, OriginPoint } from "./SourcePoint";
 import type { SurfaceChain, JunctionPoint } from "./SurfaceChain";
-import type { Ray, Vector2 } from "./types";
+import type { Ray, Vector2, Segment } from "./types";
+
+// Re-export Segment for backward compatibility
+export type { Segment };
 
 // =============================================================================
 // TYPES
 // =============================================================================
-
-/**
- * A line segment defined by two endpoints.
- */
-export interface Segment {
-  readonly start: Vector2;
-  readonly end: Vector2;
-}
 
 /**
  * Result of finding the closest hit on a ray.
@@ -82,6 +77,26 @@ export interface UnifiedHitOptions {
   readonly excludeSurfaces?: readonly Surface[];
   /** Minimum t value (hits before this are ignored) */
   readonly minT?: number;
+  /**
+   * The startLine for hit detection.
+   * 
+   * When provided, the effective minT is calculated as the t value where
+   * the ray intersects this line. This ensures hits are only detected
+   * PAST the startLine, not between the ray source and the startLine.
+   * 
+   * This is used after reflections: the ray source is the reflected origin
+   * image (geometrically behind the reflection surface), but we only want
+   * hits past the reflection surface.
+   */
+  readonly startLine?: Segment;
+  /**
+   * The surface corresponding to the startLine.
+   * 
+   * When provided, this surface is automatically excluded from hit detection.
+   * This provides full provenance: we know which surface the ray started from
+   * and can exclude it without needing to pass it in excludeSurfaces.
+   */
+  readonly startLineSurface?: Surface;
 }
 
 /**
@@ -175,10 +190,37 @@ export function findNextHit(
   surfaces: readonly Surface[],
   options: UnifiedHitOptions = {}
 ): UnifiedHitResult | null {
-  const { mode = "physical", excludeSurfaces = [], minT = 0 } = options;
+  const { 
+    mode = "physical", 
+    excludeSurfaces = [], 
+    minT: providedMinT = 0,
+    startLine,
+    startLineSurface,
+  } = options;
 
   // Build exclude set for quick lookup
+  // Automatically include startLineSurface if provided
   const excludeIds = new Set(excludeSurfaces.map((s) => s.id));
+  if (startLineSurface) {
+    excludeIds.add(startLineSurface.id);
+  }
+
+  // Calculate effective minT from startLine
+  // The startLine is the surface we just reflected from. We need to find
+  // where the ray intersects this line and only detect hits past that point.
+  let effectiveMinT = providedMinT;
+  if (startLine) {
+    const startLineHit = lineLineIntersection(
+      ray.source,
+      ray.target,
+      startLine.start,
+      startLine.end
+    );
+    // If the ray intersects the startLine going forward, use that as minT
+    if (startLineHit.valid && startLineHit.t > 0) {
+      effectiveMinT = Math.max(effectiveMinT, startLineHit.t);
+    }
+  }
 
   let closest: {
     surface: Surface;
@@ -202,8 +244,8 @@ export function findNextHit(
       surface.segment.end
     );
 
-    // Skip if no valid intersection or behind ray
-    if (!hit.valid || hit.t <= minT) {
+    // Skip if no valid intersection or behind the effective start point
+    if (!hit.valid || hit.t <= effectiveMinT) {
       continue;
     }
 

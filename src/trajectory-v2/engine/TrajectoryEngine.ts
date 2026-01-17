@@ -18,6 +18,7 @@ import { findDivergence, type DivergenceInfo } from "./DivergenceDetector";
 import { evaluateBypass, type BypassResult } from "./BypassEvaluator";
 import { calculateActualPathUnified, type ActualPathUnified } from "./ActualPathCalculator";
 import { calculatePlannedPath, type PlannedPath } from "./PlannedPathCalculator";
+import { calculateFullTrajectory, type FullTrajectoryResult } from "./FullTrajectoryCalculator";
 import { type SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { ITrajectoryEngine } from "./ITrajectoryEngine";
 import type {
@@ -44,6 +45,7 @@ interface DirtyFlags {
   plannedPath: boolean;
   actualPath: boolean;
   actualPathUnified: boolean;
+  fullTrajectory: boolean;
   alignment: boolean;
   ghost: boolean;
   unifiedPath: boolean;
@@ -59,6 +61,7 @@ interface CachedResults {
   plannedPath: PathResult | null;
   actualPath: PathResult | null;
   actualPathUnified: ActualPathUnified | null;
+  fullTrajectory: FullTrajectoryResult | null;
   alignment: AlignmentResult | null;
   plannedGhost: readonly GhostPoint[];
   actualGhost: readonly GhostPoint[];
@@ -87,6 +90,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     plannedPath: true,
     actualPath: true,
     actualPathUnified: true,
+    fullTrajectory: true,
     alignment: true,
     ghost: true,
     unifiedPath: true,
@@ -99,6 +103,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     plannedPath: null,
     actualPath: null,
     actualPathUnified: null,
+    fullTrajectory: null,
     alignment: null,
     plannedGhost: [],
     actualGhost: [],
@@ -123,6 +128,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     this.dirty.plannedPath = true;
     this.dirty.actualPath = true;
     this.dirty.actualPathUnified = true;
+    this.dirty.fullTrajectory = true;
     this.dirty.alignment = true;
     this.dirty.ghost = true;
     this.dirty.unifiedPath = true;
@@ -138,6 +144,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     this.dirty.plannedPath = true;
     this.dirty.actualPath = true;
     this.dirty.actualPathUnified = true;
+    this.dirty.fullTrajectory = true;
     this.dirty.alignment = true;
     this.dirty.ghost = true;
     this.dirty.unifiedPath = true;
@@ -155,6 +162,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     this.dirty.plannedPath = true;
     this.dirty.actualPath = true;
     this.dirty.actualPathUnified = true;
+    this.dirty.fullTrajectory = true;
     this.dirty.alignment = true;
     this.dirty.ghost = true;
     this.dirty.unifiedPath = true;
@@ -168,6 +176,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     this.dirty.bypass = true;
     this.dirty.actualPath = true;
     this.dirty.actualPathUnified = true;
+    this.dirty.fullTrajectory = true;
     this.dirty.alignment = true;
     this.dirty.ghost = true;
     this.dirty.unifiedPath = true;
@@ -192,6 +201,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
     this.dirty.bypass = true;
     this.dirty.actualPath = true;
     this.dirty.actualPathUnified = true;
+    this.dirty.fullTrajectory = true;
     this.dirty.alignment = true;
     this.dirty.ghost = true;
     this.dirty.unifiedPath = true;
@@ -351,6 +361,34 @@ export class TrajectoryEngine implements ITrajectoryEngine {
       this.dirty.actualPathUnified = false;
     }
     return this.cache.actualPathUnified;
+  }
+
+  /**
+   * Get full trajectory using the new shared-loop calculation.
+   *
+   * This is the preferred method for trajectory calculation as it uses
+   * the unified hit detection strategy pattern, ensuring consistent
+   * calculation for all path types (merged, physical divergent, planned, etc.).
+   *
+   * Returns all 4 sections:
+   * - merged: GREEN (solid before cursor, dashed yellow after)
+   * - physicalDivergent: YELLOW dashed
+   * - plannedToCursor: RED solid
+   * - physicalFromCursor: RED dashed
+   */
+  getFullTrajectory(): FullTrajectoryResult {
+    if (this.dirty.fullTrajectory || !this.cache.fullTrajectory) {
+      const bypassResult = this.getBypassResult();
+      this.cache.fullTrajectory = calculateFullTrajectory(
+        this.player,
+        this.cursor,
+        bypassResult.activeSurfaces,
+        this.allSurfaces,
+        this.getReflectionCache()
+      );
+      this.dirty.fullTrajectory = false;
+    }
+    return this.cache.fullTrajectory;
   }
 
   /**
@@ -538,6 +576,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
       plannedPath,
       actualPath,
       actualPathUnified: this.getActualPathUnified(),
+      fullTrajectory: this.getFullTrajectory(),
       alignment: this.getAlignment(),
       plannedGhost: this.getPlannedGhost(),
       actualGhost: this.getActualGhost(),
@@ -631,6 +670,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
       plannedPath: true,
       actualPath: true,
       actualPathUnified: true,
+      fullTrajectory: true,
       alignment: true,
       ghost: true,
       unifiedPath: true,
@@ -647,6 +687,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
       plannedPath: null,
       actualPath: null,
       actualPathUnified: null,
+      fullTrajectory: null,
       alignment: null,
       plannedGhost: [],
       actualGhost: [],

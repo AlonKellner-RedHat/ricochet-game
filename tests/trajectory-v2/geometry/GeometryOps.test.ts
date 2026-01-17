@@ -331,7 +331,7 @@ describe("GeometryOps", () => {
 
   describe("raySegmentIntersect", () => {
     it("should detect hit when ray intersects segment", () => {
-      const ray: Ray = { from: { x: 0, y: 5 }, to: { x: 10, y: 5 } };
+      const ray: Ray = { source: { x: 0, y: 5 }, target: { x: 10, y: 5 } };
       const result = raySegmentIntersect(
         ray,
         { x: 5, y: 0 },
@@ -345,7 +345,7 @@ describe("GeometryOps", () => {
     });
 
     it("should not hit when ray misses segment", () => {
-      const ray: Ray = { from: { x: 0, y: 5 }, to: { x: 10, y: 5 } };
+      const ray: Ray = { source: { x: 0, y: 5 }, target: { x: 10, y: 5 } };
       const result = raySegmentIntersect(
         ray,
         { x: 5, y: 10 },
@@ -357,7 +357,7 @@ describe("GeometryOps", () => {
     });
 
     it("should not hit when intersection is behind ray", () => {
-      const ray: Ray = { from: { x: 10, y: 5 }, to: { x: 20, y: 5 } };
+      const ray: Ray = { source: { x: 10, y: 5 }, target: { x: 20, y: 5 } };
       const result = raySegmentIntersect(
         ray,
         { x: 5, y: 0 },
@@ -369,7 +369,7 @@ describe("GeometryOps", () => {
     });
 
     it("should report onSegment correctly for extended line hit", () => {
-      const ray: Ray = { from: { x: 0, y: 5 }, to: { x: 10, y: 5 } };
+      const ray: Ray = { source: { x: 0, y: 5 }, target: { x: 10, y: 5 } };
       // Segment is short, ray extends beyond and hits the infinite line
       const result = raySegmentIntersect(
         ray,
@@ -384,7 +384,7 @@ describe("GeometryOps", () => {
 
     it("should return correct t value (parametric distance)", () => {
       // Ray from (0,0) to (10,0), segment at x=5
-      const ray: Ray = { from: { x: 0, y: 0 }, to: { x: 10, y: 0 } };
+      const ray: Ray = { source: { x: 0, y: 0 }, target: { x: 10, y: 0 } };
       const result = raySegmentIntersect(
         ray,
         { x: 5, y: -5 },
@@ -444,7 +444,7 @@ describe("GeometryOps", () => {
       // Surface from (50, 0) to (50, 100)
       // Ray should hit at (50, 50)
 
-      const ray: Ray = { from: { x: 0, y: 0 }, to: { x: 100, y: 100 } };
+      const ray: Ray = { source: { x: 0, y: 0 }, target: { x: 100, y: 100 } };
       const result = raySegmentIntersect(
         ray,
         { x: 50, y: 0 },
@@ -471,7 +471,7 @@ describe("GeometryOps", () => {
       expect(cursorImage.y).toBeCloseTo(100);
 
       // Ray from player to cursor image
-      const ray: Ray = { from: player, to: cursorImage };
+      const ray: Ray = { source: player, target: cursorImage };
       const hit = raySegmentIntersect(ray, surfaceP1, surfaceP2);
 
       expect(hit.hit).toBe(true);

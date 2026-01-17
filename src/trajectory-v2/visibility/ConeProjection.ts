@@ -12,19 +12,14 @@
 
 import type { Surface } from "@/surfaces/Surface";
 import { lineLineIntersection } from "@/trajectory-v2/geometry/GeometryOps";
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import type { Vector2, Segment } from "@/trajectory-v2/geometry/types";
+
+// Re-export Segment for backward compatibility
+export type { Segment };
 
 // =============================================================================
 // TYPES
 // =============================================================================
-
-/**
- * A line segment defined by two endpoints.
- */
-export interface Segment {
-  readonly start: Vector2;
-  readonly end: Vector2;
-}
 
 /**
  * Screen/viewport bounds for clipping.

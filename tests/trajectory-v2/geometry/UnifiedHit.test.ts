@@ -208,4 +208,101 @@ describe("findNextHit", () => {
       expect(result).toBeNull();
     });
   });
+
+  describe("startLine", () => {
+    it("should ignore hits before the startLine", () => {
+      // Create two surfaces: one at x=100, one at x=200
+      const surface1 = createMockSurface("s1", { x: 100, y: 50 }, { x: 100, y: 150 });
+      const surface2 = createMockSurface("s2", { x: 200, y: 50 }, { x: 200, y: 150 });
+
+      // Ray from x=0 to x=300
+      const ray: Ray = { source: { x: 0, y: 100 }, target: { x: 300, y: 100 } };
+
+      // With startLine at x=150, should skip surface1 (at x=100) and hit surface2 (at x=200)
+      const startLine = { start: { x: 150, y: 0 }, end: { x: 150, y: 200 } };
+
+      const result = findNextHit(ray, [surface1, surface2], {
+        mode: "physical",
+        startLine,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.hitPoint.hitSurface.id).toBe("s2");
+    });
+
+    it("should use startLine intersection as effective minT", () => {
+      // Surface at x=200
+      const surface2 = createMockSurface("s2", { x: 200, y: 50 }, { x: 200, y: 150 });
+
+      // Ray from x=0 to x=300
+      const ray: Ray = { source: { x: 0, y: 100 }, target: { x: 300, y: 100 } };
+
+      // startLine at x=100
+      const startLine = { start: { x: 100, y: 0 }, end: { x: 100, y: 200 } };
+
+      const result = findNextHit(ray, [surface2], {
+        mode: "physical",
+        startLine,
+      });
+
+      // Should still hit surface2 because it's past the startLine
+      expect(result).not.toBeNull();
+      expect(result!.hitPoint.computeXY().x).toBeCloseTo(200);
+    });
+
+    it("should work correctly with reflected rays (origin behind startLine)", () => {
+      // This simulates the case after reflection:
+      // - Ray source is the reflected origin image (behind the startLine)
+      // - startLine is the surface we just reflected from
+      // - We should only detect hits past the startLine
+
+      // Surface at x=300
+      const targetSurface = createMockSurface("target", { x: 300, y: 50 }, { x: 300, y: 150 });
+
+      // Surface at x=100 (the one we "reflected from" - should be excluded)
+      const reflectionSurface = createMockSurface(
+        "reflection",
+        { x: 100, y: 50 },
+        { x: 100, y: 150 }
+      );
+
+      // After reflecting at x=100, the ray source (reflected origin image) might be at x=-50
+      // (geometrically behind x=100). The ray goes toward x=400.
+      const ray: Ray = { source: { x: -50, y: 100 }, target: { x: 400, y: 100 } };
+
+      // startLine is the reflection surface
+      const startLine = reflectionSurface.segment;
+
+      const result = findNextHit(ray, [reflectionSurface, targetSurface], {
+        mode: "physical",
+        startLine,
+        startLineSurface: reflectionSurface,
+      });
+
+      // Should hit targetSurface, not reflectionSurface
+      expect(result).not.toBeNull();
+      expect(result!.hitPoint.hitSurface.id).toBe("target");
+    });
+
+    it("should auto-exclude startLineSurface", () => {
+      // Only the reflection surface exists
+      const reflectionSurface = createMockSurface(
+        "reflection",
+        { x: 100, y: 50 },
+        { x: 100, y: 150 }
+      );
+
+      // Ray from behind the surface toward it
+      const ray: Ray = { source: { x: -50, y: 100 }, target: { x: 200, y: 100 } };
+
+      const result = findNextHit(ray, [reflectionSurface], {
+        mode: "physical",
+        startLine: reflectionSurface.segment,
+        startLineSurface: reflectionSurface,
+      });
+
+      // Should return null because the only surface is excluded
+      expect(result).toBeNull();
+    });
+  });
 });

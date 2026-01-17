@@ -29,7 +29,8 @@ import {
 } from "@/trajectory-v2/geometry/SourcePoint";
 import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 import { createRayPropagator, type RayPropagator } from "./RayPropagator";
-import { tracePath } from "./TracePath";
+import { tracePath, traceWithStrategy } from "./TracePath";
+import { createPhysicalStrategy } from "./HitDetectionStrategy";
 
 /**
  * Information about a surface hit during actual path calculation.
@@ -216,9 +217,11 @@ export function calculateActualPathUnified(
   let forwardProjectionSources: SourcePoint[] = [];
 
   if (reachedCursor) {
-    // Continue from cursor using the propagator state
-    const forwardResult = tracePath(toCursorResult.propagator, allSurfaces, {
-      mode: "physical",
+    // Continue from cursor using the SAME propagator with continueFromPosition.
+    // This uses the unified approach - same origin/target images, just start from cursor.
+    const physicalStrategy = createPhysicalStrategy(allSurfaces);
+    const forwardResult = traceWithStrategy(toCursorResult.propagator, physicalStrategy, {
+      continueFromPosition: cursor,
       maxReflections: maxReflections - toCursorResult.segments.length,
       maxDistance,
     });

@@ -166,6 +166,55 @@ describe("tracePath", () => {
       // Should have at least 2 segments from bouncing between surfaces
       expect(result.segments.length).toBeGreaterThanOrEqual(2);
     });
+
+    it("should have connected segments where each segment start equals previous segment end", () => {
+      // BUG FIX TEST: After a reflection, the next segment must start from the 
+      // physical hit point, NOT from the reflected origin image.
+      //
+      // Setup: ray bouncing between two parallel horizontal surfaces
+      const origin = { x: 100, y: 150 };
+      const target = { x: 100, y: 500 }; // Going down
+      const propagator = createRayPropagator(origin, target);
+
+      // Two parallel horizontal surfaces for bouncing
+      const surface1 = createHorizontalSurface("s1", 200, 50, 150); // y=200
+      const surface2 = createHorizontalSurface("s2", 100, 50, 150); // y=100
+
+      const result = tracePath(propagator, [surface1, surface2], {
+        mode: "physical",
+        maxReflections: 5,
+      });
+
+      // Should have at least 2 segments
+      expect(result.segments.length).toBeGreaterThanOrEqual(2);
+
+      // CRITICAL: Each segment's start must equal the previous segment's end
+      // This ensures a physically connected path, not jumps to reflected images
+      for (let i = 1; i < result.segments.length; i++) {
+        const prevEnd = result.segments[i - 1]!.end;
+        const currStart = result.segments[i]!.start;
+        
+        expect(currStart.x).toBeCloseTo(prevEnd.x, 10);
+        expect(currStart.y).toBeCloseTo(prevEnd.y, 10);
+      }
+    });
+
+    it("should start first segment from physical origin, not reflected image", () => {
+      // Verify first segment starts from player position
+      const origin = { x: 100, y: 150 };
+      const target = { x: 100, y: 500 };
+      const propagator = createRayPropagator(origin, target);
+
+      const surface = createHorizontalSurface("s1", 200, 50, 150);
+
+      const result = tracePath(propagator, [surface], {
+        mode: "physical",
+        maxReflections: 3,
+      });
+
+      // First segment must start at origin
+      expect(result.segments[0]!.start).toEqual(origin);
+    });
   });
 
   describe("planned mode reflections", () => {

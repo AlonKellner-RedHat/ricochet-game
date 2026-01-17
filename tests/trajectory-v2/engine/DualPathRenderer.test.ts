@@ -332,6 +332,97 @@ describe("DualPathRenderer", () => {
     });
   });
 
+  describe("Empty Plan Divergence (obstruction between player and cursor)", () => {
+    it("should render green to obstruction and red from player to cursor when actual blocked", () => {
+      // BUG FIX TEST: When actual path is blocked by obstruction but planned path is direct
+      // actualPath: [player, wall_hit] - stopped at wall
+      // plannedPath: [player, cursor] - direct (no plan, ignores obstructions)
+      //
+      // Expected rendering:
+      // - GREEN: player to wall_hit (actual path before divergence)
+      // - RED: player to cursor (planned divergent path)
+      //
+      // Divergence happens at the SECOND waypoint (index 1) because:
+      // - actual[0] = player, planned[0] = player (match)
+      // - actual[1] = wall_hit, planned[1] = cursor (mismatch)
+      
+      const player = { x: 0, y: 0 };
+      const wallHit = { x: 50, y: 0 };  // Obstruction at x=50
+      const cursor = { x: 100, y: 0 };
+      
+      const actual: RenderablePath = {
+        waypoints: [player, wallHit],
+        cursorIndex: -1,  // Cursor not on path (blocked)
+        cursorT: 0,
+      };
+      
+      const planned: RenderablePath = {
+        waypoints: [player, cursor],
+        cursorIndex: 0,
+        cursorT: 1,  // Cursor at end of only segment
+      };
+      
+      const divergence: DivergenceForRender = {
+        segmentIndex: 1,  // Divergence at waypoint 1 (second point)
+        point: player,    // Last shared point is player
+        isAligned: false,
+      };
+      
+      const segments = renderDualPath(actual, planned, divergence, cursor);
+      
+      // Should have both green (actual) and red (planned) segments
+      const greenSegments = segments.filter(s => s.color === "green");
+      const redSegments = segments.filter(s => s.color === "red");
+      
+      // CRITICAL: When divergence is at first waypoint after player,
+      // we should still see the actual path (green) and planned path (red)
+      expect(greenSegments.length).toBeGreaterThan(0);
+      expect(redSegments.length).toBeGreaterThan(0);
+      
+      // Green segment should go from player toward the wall hit
+      const greenSeg = greenSegments[0]!;
+      expect(greenSeg.start).toEqual(player);
+      expect(greenSeg.end.x).toBeCloseTo(wallHit.x, 5);
+      
+      // Red segment should go from player toward cursor
+      const redSeg = redSegments.find(s => s.style === "solid");
+      expect(redSeg).toBeDefined();
+      expect(redSeg!.end.x).toBeCloseTo(cursor.x, 5);
+    });
+
+    it("should show yellow actual continuation when actual path extends beyond divergence", () => {
+      // When actual path continues after divergence (e.g., reflecting off wall)
+      const player = { x: 0, y: 0 };
+      const firstReflect = { x: 50, y: 0 };  // First hit point
+      const actualContinued = { x: 50, y: 50 };  // Continues after reflection
+      const cursor = { x: 100, y: 0 };  // Planned goes straight
+      
+      const actual: RenderablePath = {
+        waypoints: [player, firstReflect, actualContinued],
+        cursorIndex: -1,
+        cursorT: 0,
+      };
+      
+      const planned: RenderablePath = {
+        waypoints: [player, cursor],
+        cursorIndex: 0,
+        cursorT: 1,
+      };
+      
+      const divergence: DivergenceForRender = {
+        segmentIndex: 1,
+        point: player,
+        isAligned: false,
+      };
+      
+      const segments = renderDualPath(actual, planned, divergence, cursor);
+      
+      // Should have yellow for actual path after divergence
+      const yellowSegments = segments.filter(s => s.color === "yellow");
+      expect(yellowSegments.length).toBeGreaterThan(0);
+    });
+  });
+
   describe("Edge Cases", () => {
     it("should handle empty paths", () => {
       const actual: ActualPath = {

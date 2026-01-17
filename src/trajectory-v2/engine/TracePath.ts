@@ -16,10 +16,12 @@
  * - Provenance: All hit points carry full ray/surface provenance
  */
 
-import type { Vector2 } from "@/trajectory-v2/geometry/types";
+import type { Vector2, Ray, Segment } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
 import type { RayPropagator } from "./RayPropagator";
-import { findNextHit } from "@/trajectory-v2/geometry/RayCasting";
+import type { HitDetectionStrategy, StrategyHitResult } from "./HitDetectionStrategy";
+import { findNextHit, type HitDetectionMode } from "@/trajectory-v2/geometry/RayCasting";
+import { lineLineIntersection } from "@/trajectory-v2/geometry/GeometryOps";
 
 // =============================================================================
 // TYPES
@@ -81,6 +83,28 @@ export interface TraceResult {
   readonly cursorT: number;
   /** How the trace terminated */
   readonly terminationType: TerminationType;
+}
+
+/**
+ * Options for traceWithStrategy.
+ *
+ * Uses HitDetectionStrategy for hit detection, so mode is determined
+ * by the strategy, not passed explicitly.
+ */
+export interface TraceStrategyOptions {
+  /** If provided, stop when cursor is reached */
+  readonly stopAtCursor?: Vector2;
+  /**
+   * If provided, the first segment starts from this position instead of
+   * the computed segment start. Use this for continuation after reaching
+   * cursor or divergence - same propagator (same origin/target images),
+   * but first segment starts from the waypoint position.
+   */
+  readonly continueFromPosition?: Vector2;
+  /** Maximum number of reflections (default: 10) */
+  readonly maxReflections?: number;
+  /** Maximum distance to trace (default: 10000) */
+  readonly maxDistance?: number;
 }
 
 // =============================================================================
@@ -151,6 +175,38 @@ function computeRayEndpoint(
 }
 
 /**
+ * Compute the physical start point of a segment.
+ * 
+ * For the first segment (no startLine), this is the ray source.
+ * For subsequent segments, this is where the ray intersects the startLine.
+ * 
+ * The startLine is the surface we just reflected from. The ray source is
+ * the reflected origin image, which is geometrically "behind" the startLine.
+ * The physical position is where the ray crosses the startLine.
+ */
+function computeSegmentStart(ray: Ray, startLine: Segment | null): Vector2 {
+  if (!startLine) {
+    // First segment - start from ray source (player position)
+    return ray.source;
+  }
+
+  // Find where the ray intersects the startLine
+  const hit = lineLineIntersection(
+    ray.source,
+    ray.target,
+    startLine.start,
+    startLine.end
+  );
+
+  if (hit.valid && hit.t > 0) {
+    return hit.point;
+  }
+
+  // Fallback (shouldn't happen with valid startLine)
+  return ray.source;
+}
+
+/**
  * Trace a path through surfaces using the RayPropagator.
  *
  * This function implements the unified reflection algorithm:
@@ -184,29 +240,26 @@ export function tracePath(
   let cursorT = 0;
   let terminationType: TerminationType = "no_hit";
 
-  // Track surfaces to exclude (starts with provided list, adds last hit surface)
-  let currentExcludeSurfaces = [...excludeSurfaces];
-
   for (let i = 0; i < maxReflections; i++) {
     const ray = currentPropagator.getRay();
     const state = currentPropagator.getState();
 
-    // Add last surface to exclude list to prevent immediate re-hit
-    if (state.lastSurface && !currentExcludeSurfaces.includes(state.lastSurface)) {
-      currentExcludeSurfaces = [state.lastSurface];
-    } else if (i === 0) {
-      currentExcludeSurfaces = [...excludeSurfaces];
-    }
+    // Compute the physical start of this segment.
+    // For the first segment, this is the ray source (player position).
+    // For subsequent segments, this is where the ray intersects the startLine
+    // (the surface we just reflected from).
+    const segmentStart = computeSegmentStart(ray, state.startLine);
 
-    // Find next hit
+    // Find next hit using the image-based ray with startLine for hit detection.
+    // The startLine ensures we only detect hits PAST the reflection point,
+    // even though the ray source (reflected origin image) is geometrically
+    // "behind" that point.
     const hit = findNextHit(ray, surfaces, {
       mode,
-      excludeSurfaces: currentExcludeSurfaces,
-      minT: 0,
+      excludeSurfaces,
+      startLine: state.startLine ?? undefined,
+      startLineSurface: state.lastSurface ?? undefined,
     });
-
-    // Compute segment start (ray source)
-    const segmentStart = ray.source;
 
     // Check for cursor on this segment before processing hit
     if (stopAtCursor) {
@@ -214,7 +267,7 @@ export function tracePath(
       if (hit) {
         segmentEnd = hit.hitPoint.computeXY();
       } else {
-        segmentEnd = computeRayEndpoint(ray.source, ray.target, maxDistance);
+        segmentEnd = computeRayEndpoint(segmentStart, ray.target, maxDistance);
       }
 
       const cursorPos = pointOnSegment(stopAtCursor, segmentStart, segmentEnd);
@@ -245,7 +298,7 @@ export function tracePath(
 
     if (!hit) {
       // No hit - add final segment and terminate
-      const endpoint = computeRayEndpoint(ray.source, ray.target, maxDistance);
+      const endpoint = computeRayEndpoint(segmentStart, ray.target, maxDistance);
       segments.push({
         start: segmentStart,
         end: endpoint,
@@ -280,19 +333,271 @@ export function tracePath(
       break;
     }
 
-    // Reflect propagator and continue
+    // Reflect propagator - this automatically sets startLine to surface.segment
     currentPropagator = currentPropagator.reflectThrough(hit.hitPoint.hitSurface);
   }
 
-  // Check if we exhausted reflections
-  if (segments.length === 0 || terminationType === "no_hit") {
-    // Already handled
-  } else if (
-    terminationType !== "wall" &&
-    terminationType !== "off_segment" &&
-    terminationType !== "cursor"
+  // Determine final termination type
+  // If we have segments with surface hits and no explicit termination (wall/off_segment/cursor),
+  // and the last segment can reflect, we must have hit max_reflections
+  if (
+    terminationType === "no_hit" &&
+    segments.length > 0 &&
+    segments[segments.length - 1]!.surface !== null &&
+    segments[segments.length - 1]!.canReflect
   ) {
-    // Must have hit max reflections
+    terminationType = "max_reflections";
+  }
+
+  return {
+    segments,
+    propagator: currentPropagator,
+    cursorSegmentIndex,
+    cursorT,
+    terminationType,
+  };
+}
+
+// =============================================================================
+// STRATEGY HELPERS
+// =============================================================================
+
+/**
+ * Internal cache for strategy surfaces.
+ * This is a workaround to get surfaces from a strategy for minT-based hit detection.
+ */
+const strategyToSurfaces = new WeakMap<HitDetectionStrategy, readonly Surface[]>();
+
+/**
+ * Register surfaces for a strategy. Called by strategy factory functions.
+ */
+export function registerStrategySurfaces(
+  strategy: HitDetectionStrategy,
+  surfaces: readonly Surface[]
+): void {
+  strategyToSurfaces.set(strategy, surfaces);
+}
+
+/**
+ * Get surfaces from a strategy.
+ */
+function getAllSurfacesFromStrategy(
+  strategy: HitDetectionStrategy
+): readonly Surface[] | null {
+  return strategyToSurfaces.get(strategy) ?? null;
+}
+
+/**
+ * Find next hit with a minimum t value.
+ * This is used when continueFromPosition is set and we need to skip hits before it.
+ */
+function findNextHitWithMinT(
+  ray: Ray,
+  surfaces: readonly Surface[],
+  mode: HitDetectionMode,
+  minT: number,
+  startLine?: Segment,
+  startLineSurface?: Surface
+): StrategyHitResult | null {
+  const result = findNextHit(ray, surfaces, {
+    mode,
+    minT,
+    startLine,
+    startLineSurface,
+  });
+
+  if (!result) {
+    return null;
+  }
+
+  const point = result.hitPoint.computeXY();
+
+  return {
+    point,
+    surface: result.hitPoint.hitSurface,
+    onSegment: result.onSegment,
+    canReflect: result.canReflect,
+    hitPoint: result.hitPoint,
+  };
+}
+
+// =============================================================================
+// STRATEGY-BASED TRACING
+// =============================================================================
+
+/**
+ * Trace a path using a HitDetectionStrategy.
+ *
+ * This is the ONE shared loop for all path types. The strategy determines:
+ * - Which surfaces to check
+ * - Whether off-segment hits count
+ * - Whether reflection is allowed
+ *
+ * The loop logic is identical regardless of strategy:
+ * 1. Ask strategy for next hit
+ * 2. If no hit, add final segment and stop
+ * 3. If hit, add segment and check reflection eligibility
+ * 4. If can reflect, reflect propagator and continue
+ * 5. Otherwise, stop
+ *
+ * @param propagator Initial propagator state
+ * @param strategy Hit detection strategy (physical or planned)
+ * @param options Tracing options
+ * @returns TraceResult with segments and final propagator state
+ */
+export function traceWithStrategy(
+  propagator: RayPropagator,
+  strategy: HitDetectionStrategy,
+  options: TraceStrategyOptions
+): TraceResult {
+  const {
+    stopAtCursor,
+    continueFromPosition,
+    maxReflections = 10,
+    maxDistance = 10000,
+  } = options;
+
+  const segments: TraceSegment[] = [];
+  let currentPropagator = propagator;
+  let cursorSegmentIndex = -1;
+  let cursorT = 0;
+  let terminationType: TerminationType = "no_hit";
+
+  for (let i = 0; i < maxReflections; i++) {
+    const ray = currentPropagator.getRay();
+    const state = currentPropagator.getState();
+
+    // Compute the physical start of this segment.
+    // For the first segment with continueFromPosition, use that position instead
+    // of the computed segment start. This allows continuation from a mid-segment
+    // waypoint (like cursor) without creating a new propagator.
+    const segmentStart = (i === 0 && continueFromPosition)
+      ? continueFromPosition
+      : computeSegmentStart(ray, state.startLine);
+
+    // Use strategy to find next hit.
+    // For the first segment with continueFromPosition, we need to find hits
+    // AFTER continueFromPosition. We do this by computing the minT for
+    // continueFromPosition and only accepting hits past that point.
+    let hit = strategy.findNextHit(currentPropagator);
+
+    // If continueFromPosition is set for the first segment, filter hits
+    if (i === 0 && continueFromPosition && hit) {
+      // Compute t of continueFromPosition on the ray
+      const dx = ray.target.x - ray.source.x;
+      const dy = ray.target.y - ray.source.y;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq > 0) {
+        const continueT = ((continueFromPosition.x - ray.source.x) * dx +
+                           (continueFromPosition.y - ray.source.y) * dy) / lenSq;
+        
+        // If the hit is before or at continueFromPosition, we need to find
+        // the next hit. We do this by calling findNextHit directly with minT.
+        if (hit.hitPoint.t <= continueT + 1e-10) {
+          // Find next hit with minT > continueT
+          // Use the underlying findNextHit from RayCasting which supports minT
+          const allSurfaces = getAllSurfacesFromStrategy(strategy);
+          if (allSurfaces) {
+            const nextHit = findNextHitWithMinT(
+              ray,
+              allSurfaces,
+              strategy.mode,
+              continueT + 1e-10,
+              state.startLine ?? undefined,
+              state.lastSurface ?? undefined
+            );
+            hit = nextHit;
+          } else {
+            hit = null;
+          }
+        }
+      }
+    }
+
+    // Check for cursor on this segment before processing hit
+    if (stopAtCursor) {
+      let segmentEnd: Vector2;
+      if (hit) {
+        segmentEnd = hit.point;
+      } else {
+        segmentEnd = computeRayEndpoint(segmentStart, ray.target, maxDistance);
+      }
+
+      const cursorPos = pointOnSegment(stopAtCursor, segmentStart, segmentEnd);
+      if (cursorPos !== null) {
+        // Cursor is on this segment
+        cursorSegmentIndex = segments.length;
+        cursorT = cursorPos;
+
+        // Stop at cursor
+        segments.push({
+          start: segmentStart,
+          end: stopAtCursor,
+          surface: null,
+          onSegment: true,
+          canReflect: false,
+        });
+
+        terminationType = "cursor";
+        return {
+          segments,
+          propagator: currentPropagator,
+          cursorSegmentIndex,
+          cursorT,
+          terminationType,
+        };
+      }
+    }
+
+    if (!hit) {
+      // No hit - add final segment and terminate
+      const endpoint = computeRayEndpoint(segmentStart, ray.target, maxDistance);
+      segments.push({
+        start: segmentStart,
+        end: endpoint,
+        surface: null,
+        onSegment: true,
+        canReflect: false,
+      });
+
+      terminationType = "no_hit";
+      break;
+    }
+
+    // Add segment to hit point
+    segments.push({
+      start: segmentStart,
+      end: hit.point,
+      surface: hit.surface,
+      onSegment: hit.onSegment,
+      canReflect: hit.canReflect,
+    });
+
+    // Check termination conditions
+    if (!hit.canReflect) {
+      terminationType = "wall";
+      break;
+    }
+
+    // In physical mode, off-segment hits terminate
+    if (strategy.mode === "physical" && !hit.onSegment) {
+      terminationType = "off_segment";
+      break;
+    }
+
+    // Reflect propagator
+    currentPropagator = currentPropagator.reflectThrough(hit.surface);
+  }
+
+  // Determine final termination type
+  // If we have segments with surface hits and no explicit termination (wall/off_segment/cursor),
+  // and the last segment can reflect, we must have hit max_reflections
+  if (
+    terminationType === "no_hit" &&
+    segments.length > 0 &&
+    segments[segments.length - 1]!.surface !== null &&
+    segments[segments.length - 1]!.canReflect
+  ) {
     terminationType = "max_reflections";
   }
 
