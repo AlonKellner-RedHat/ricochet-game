@@ -307,17 +307,25 @@ export class OriginPoint extends SourcePoint {
 // =============================================================================
 
 /**
- * Point on the range limit circle boundary.
+ * Point on the range limit circle boundary (obstruction hit by ray).
  *
  * Used to track provenance when a visibility ray terminates at the
  * range limit distance. This enables arc section detection during rendering.
  *
- * Similar to OriginPoint but with distinct provenance for arc detection.
+ * Provenance: The ray source (endpoint/junction) that the continuation ray
+ * was cast through. This enables stable keys for PreComputedPairs lookup
+ * even when floating-point coordinates differ slightly.
+ *
+ * Note: For surface-circle intersections, use IntersectionPoint instead.
  */
 export class RangeLimitPoint extends SourcePoint {
   readonly type = "range_limit" as const;
 
-  constructor(readonly value: Vector2) {
+  constructor(
+    readonly value: Vector2,
+    /** The source point of the ray that hit this range limit (for provenance) */
+    readonly raySource?: SourcePoint
+  ) {
     super();
   }
 
@@ -331,6 +339,11 @@ export class RangeLimitPoint extends SourcePoint {
   }
 
   equals(other: SourcePoint): boolean {
+    // If both have ray sources, compare by source (provenance-based)
+    if (this.raySource && other instanceof RangeLimitPoint && other.raySource) {
+      return this.raySource.equals(other.raySource);
+    }
+    // Otherwise compare by coordinates
     return (
       other instanceof RangeLimitPoint &&
       this.value.x === other.value.x &&
@@ -339,6 +352,11 @@ export class RangeLimitPoint extends SourcePoint {
   }
 
   getKey(): string {
+    // Provenance-based key: use ray source for stability
+    if (this.raySource) {
+      return `range_limit:ray:${this.raySource.getKey()}`;
+    }
+    // Coordinate-based fallback for boundary hits (not from continuation rays)
     return `range_limit:${this.value.x},${this.value.y}`;
   }
 

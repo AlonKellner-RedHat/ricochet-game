@@ -809,6 +809,12 @@ function computeRangeLimitIntersection(
  *
  * If the point is beyond the range limit distance, returns a new HitPoint
  * at the range limit intersection. Otherwise returns the original point.
+ *
+ * IMPORTANT: Some point types are excluded from range limit processing:
+ * - RangeLimitPoint: Already represents a range limit hit (has provenance)
+ * - IntersectionPoint with "range_limit" type: IS the range limit intersection
+ * These exclusions follow the pattern of excluding the range limit when
+ * casting toward range limit points - the point itself is the blocking entity.
  */
 function applyRangeLimit(
   point: SourcePoint,
@@ -819,12 +825,25 @@ function applyRangeLimit(
     return point;
   }
 
+  // Skip RangeLimitPoints - they already have correct provenance from continuation rays
+  if (isRangeLimitPoint(point)) {
+    return point;
+  }
+
+  // Skip IntersectionPoints that are ON the range limit circle
+  // They represent surface-circle intersections and are the correct hit points
+  if (isIntersectionPoint(point) && point.intersectionType === "range_limit") {
+    return point;
+  }
+
   const xy = point.computeXY();
   if (!isPointBeyondRangeLimit(xy, rangeLimit)) {
     return point;
   }
 
   // Point exceeds range limit - compute point on range limit circle
+  // Note: This creates a RangeLimitPoint WITHOUT provenance (no raySource)
+  // because it's a boundary hit, not from a continuation ray
   const limitedPoint = computeRangeLimitIntersection(origin, xy, rangeLimit);
   return new RangeLimitPoint(limitedPoint);
 }
@@ -849,11 +868,17 @@ interface RangeLimitedContinuationResult {
  *
  * Used during continuation ray construction so RangeLimitPoint becomes
  * a proper member of the ContinuationRay with correct PreComputedPairs.
+ *
+ * @param origin - The cone origin
+ * @param contResult - The continuation ray result to process
+ * @param rangeLimit - Optional range limit configuration
+ * @param raySource - The source point (endpoint/junction) of the continuation ray (for provenance)
  */
 function applyRangeLimitToContinuation(
   origin: Vector2,
   contResult: CastRayResult,
-  rangeLimit: RangeLimitConfig | undefined
+  rangeLimit: RangeLimitConfig | undefined,
+  raySource: SourcePoint
 ): RangeLimitedContinuationResult {
   if (!rangeLimit || !contResult.hit) {
     return {
@@ -880,9 +905,10 @@ function applyRangeLimitToContinuation(
   }
 
   // Hit exceeds range limit - replace with RangeLimitPoint
+  // Pass raySource for provenance-based key stability
   const limitedPoint = computeRangeLimitIntersection(origin, hitXY, rangeLimit);
   return {
-    hit: new RangeLimitPoint(limitedPoint),
+    hit: new RangeLimitPoint(limitedPoint, raySource),
     passedThroughEndpoints: filteredPassedThrough,
     wasLimited: true,
   };
@@ -1548,7 +1574,8 @@ export function projectConeV2(
           // Apply range limit to the continuation ray
           // This filters out passed-through endpoints beyond the range limit
           // and replaces the final hit with RangeLimitPoint if needed
-          const limitedContResult = applyRangeLimitToContinuation(origin, contResult, rangeLimit);
+          // Pass 'target' (junction) as ray source for provenance
+          const limitedContResult = applyRangeLimitToContinuation(origin, contResult, rangeLimit, target);
 
           if (limitedContResult.hit) {
             // Reuse existing HitPoint at same position to ensure consistent PreComputedPairs
@@ -1773,7 +1800,8 @@ export function projectConeV2(
         // Apply range limit to the continuation ray
         // This filters out passed-through endpoints beyond the range limit
         // and replaces the final hit with RangeLimitPoint if needed
-        const limitedContResult = applyRangeLimitToContinuation(origin, contResult, rangeLimit);
+        // Pass 'targetEndpoint' as ray source for provenance
+        const limitedContResult = applyRangeLimitToContinuation(origin, contResult, rangeLimit, targetEndpoint);
 
         if (limitedContResult.hit) {
           // Check if continuation HitPoint already exists (shared by multiple endpoints)
