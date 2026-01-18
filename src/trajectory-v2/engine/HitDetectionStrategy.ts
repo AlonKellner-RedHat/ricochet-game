@@ -13,9 +13,10 @@
 import type { Vector2 } from "@/types";
 import type { Surface } from "@/surfaces/Surface";
 import type { RayPropagator } from "./RayPropagator";
-import { findNextHit, type HitDetectionMode } from "@/trajectory-v2/geometry/RayCasting";
+import { findNextHit, type HitDetectionMode, type RangeLimitOption } from "@/trajectory-v2/geometry/RayCasting";
 import { HitPoint } from "@/trajectory-v2/geometry/SourcePoint";
 import { registerStrategySurfaces } from "./TracePath";
+import type { RangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
 
 // =============================================================================
 // TYPES
@@ -32,14 +33,16 @@ import { registerStrategySurfaces } from "./TracePath";
 export interface StrategyHitResult {
   /** The world-space hit point */
   readonly point: Vector2;
-  /** The surface that was hit */
-  readonly surface: Surface;
+  /** The surface that was hit (null for range limit hits) */
+  readonly surface: Surface | null;
   /** Whether the hit is on the actual segment (true) or extended line (false) */
   readonly onSegment: boolean;
   /** Whether reflection is allowed (strategy-specific) */
   readonly canReflect: boolean;
   /** The HitPoint with full provenance */
   readonly hitPoint: HitPoint;
+  /** Type of hit: surface or range_limit */
+  readonly hitType: "surface" | "range_limit";
 }
 
 /**
@@ -70,29 +73,47 @@ export interface HitDetectionStrategy {
 // =============================================================================
 
 /**
+ * Options for physical strategy.
+ */
+export interface PhysicalStrategyOptions {
+  /** Optional range limit pair */
+  readonly rangeLimit?: RangeLimitPair;
+}
+
+/**
  * Create a strategy for physical hit detection.
  *
  * Physical mode:
  * - Only detects hits on actual surface segments (s in [0, 1])
  * - Uses all provided surfaces for detection
  * - Respects surface.canReflectFrom() for reflection eligibility
+ * - Optionally checks range limit
  *
  * @param surfaces All surfaces to check for hits
+ * @param options Optional configuration (e.g., range limit)
  * @returns A physical hit detection strategy
  */
 export function createPhysicalStrategy(
-  surfaces: readonly Surface[]
+  surfaces: readonly Surface[],
+  options: PhysicalStrategyOptions = {}
 ): HitDetectionStrategy {
   const mode: HitDetectionMode = "physical";
+  const { rangeLimit } = options;
 
   function findNextHitImpl(propagator: RayPropagator): StrategyHitResult | null {
     const ray = propagator.getRay();
     const state = propagator.getState();
 
+    // Build range limit option if provided
+    const rangeLimitOption: RangeLimitOption | undefined = rangeLimit
+      ? { pair: rangeLimit, center: state.originImage }
+      : undefined;
+
     const hit = findNextHit(ray, surfaces, {
       mode,
       startLine: state.startLine ?? undefined,
       startLineSurface: state.lastSurface ?? undefined,
+      rangeLimit: rangeLimitOption,
     });
 
     if (!hit) {
@@ -101,12 +122,25 @@ export function createPhysicalStrategy(
 
     const point = hit.hitPoint.computeXY();
 
+    // Handle range limit hits
+    if (hit.hitType === "range_limit") {
+      return {
+        point,
+        surface: null, // No surface for range limit
+        onSegment: true,
+        canReflect: false, // Range limit never reflects
+        hitPoint: hit.hitPoint,
+        hitType: "range_limit",
+      };
+    }
+
     return {
       point,
       surface: hit.hitPoint.hitSurface,
       onSegment: hit.onSegment,
       canReflect: hit.canReflect,
       hitPoint: hit.hitPoint,
+      hitType: "surface",
     };
   }
 
@@ -132,6 +166,7 @@ export function createPhysicalStrategy(
  * - Detects hits on extended lines (not just segments)
  * - Uses only the provided planned surfaces
  * - Always allows reflection (planned surfaces are assumed reflective)
+ * - Does NOT use range limit (planned paths ignore range restrictions)
  *
  * @param plannedSurfaces The planned surfaces to check
  * @returns A planned hit detection strategy
@@ -149,6 +184,7 @@ export function createPlannedStrategy(
       mode,
       startLine: state.startLine ?? undefined,
       startLineSurface: state.lastSurface ?? undefined,
+      // No range limit for planned paths
     });
 
     if (!hit) {
@@ -164,6 +200,7 @@ export function createPlannedStrategy(
       // In planned mode, surfaces are always considered reflective
       canReflect: true,
       hitPoint: hit.hitPoint,
+      hitType: "surface",
     };
   }
 

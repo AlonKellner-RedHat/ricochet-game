@@ -68,6 +68,16 @@ export interface RayCastOptions {
 export type HitDetectionMode = "physical" | "planned";
 
 /**
+ * Range limit option for hit detection.
+ */
+export interface RangeLimitOption {
+  /** The range limit pair (two semi-circles) */
+  readonly pair: import("@/trajectory-v2/obstacles/RangeLimit").RangeLimitPair;
+  /** Center of the range limit (current player image) */
+  readonly center: Vector2;
+}
+
+/**
  * Options for unified hit detection.
  */
 export interface UnifiedHitOptions {
@@ -97,6 +107,13 @@ export interface UnifiedHitOptions {
    * and can exclude it without needing to pass it in excludeSurfaces.
    */
   readonly startLineSurface?: Surface;
+  /**
+   * Optional range limit to check against.
+   * 
+   * When provided, the range limit is checked alongside surfaces.
+   * The closest hit (surface or range limit) is returned.
+   */
+  readonly rangeLimit?: RangeLimitOption;
 }
 
 /**
@@ -109,6 +126,10 @@ export interface UnifiedHitResult {
   readonly onSegment: boolean;
   /** Whether the surface allows reflection */
   readonly canReflect: boolean;
+  /** Type of hit: surface or range_limit */
+  readonly hitType: "surface" | "range_limit";
+  /** Range limit hit info (only present when hitType is "range_limit") */
+  readonly rangeLimitHit?: import("@/trajectory-v2/obstacles/RangeLimit").RangeLimitHit;
 }
 
 // =============================================================================
@@ -196,6 +217,7 @@ export function findNextHit(
     minT: providedMinT = 0,
     startLine,
     startLineSurface,
+    rangeLimit,
   } = options;
 
   // Build exclude set for quick lookup
@@ -209,6 +231,7 @@ export function findNextHit(
   // The startLine is the surface we just reflected from. We need to find
   // where the ray intersects this line and only detect hits past that point.
   let effectiveMinT = providedMinT;
+  let startPosition = ray.source; // Default start position is ray source
   if (startLine) {
     const startLineHit = lineLineIntersection(
       ray.source,
@@ -219,17 +242,24 @@ export function findNextHit(
     // If the ray intersects the startLine going forward, use that as minT
     if (startLineHit.valid && startLineHit.t > 0) {
       effectiveMinT = Math.max(effectiveMinT, startLineHit.t);
+      startPosition = startLineHit.point; // Start position for range limit check
     }
   }
 
-  let closest: {
+  // Compute ray direction (for range limit check)
+  const dx = ray.target.x - ray.source.x;
+  const dy = ray.target.y - ray.source.y;
+  const direction = { x: dx, y: dy };
+
+  // Find closest surface hit
+  let closestSurface: {
     surface: Surface;
     t: number;
     s: number;
     point: Vector2;
     onSegment: boolean;
   } | null = null;
-  let closestT = Number.POSITIVE_INFINITY;
+  let closestSurfaceT = Number.POSITIVE_INFINITY;
 
   for (const surface of surfaces) {
     // Skip excluded surfaces
@@ -257,9 +287,9 @@ export function findNextHit(
     }
 
     // Track closest hit
-    if (hit.t < closestT) {
-      closestT = hit.t;
-      closest = {
+    if (hit.t < closestSurfaceT) {
+      closestSurfaceT = hit.t;
+      closestSurface = {
         surface,
         t: hit.t,
         s: hit.s,
@@ -269,23 +299,59 @@ export function findNextHit(
     }
   }
 
-  if (!closest) {
-    return null;
+  // Check range limit if provided
+  let rangeLimitResult: import("@/trajectory-v2/obstacles/RangeLimit").RangeLimitHit | null = null;
+  let rangeLimitT = Number.POSITIVE_INFINITY;
+
+  if (rangeLimit) {
+    const rlHit = rangeLimit.pair.findHit(rangeLimit.center, direction, startPosition);
+    if (rlHit) {
+      rangeLimitResult = rlHit;
+      // Calculate t value for range limit hit
+      const rayLen = Math.sqrt(dx * dx + dy * dy);
+      if (rayLen > 0) {
+        const hitDx = rlHit.point.x - ray.source.x;
+        const hitDy = rlHit.point.y - ray.source.y;
+        rangeLimitT = (hitDx * dx + hitDy * dy) / (rayLen * rayLen);
+      }
+    }
   }
 
-  // Compute direction for reflection check
-  const dx = ray.target.x - ray.source.x;
-  const dy = ray.target.y - ray.source.y;
-  const direction = { x: dx, y: dy };
+  // Determine which hit is closer
+  const surfaceIsCloser = closestSurface && closestSurfaceT < rangeLimitT;
+  const rangeLimitIsCloser = rangeLimitResult && rangeLimitT <= closestSurfaceT;
 
-  // Create HitPoint with provenance
-  const hitPoint = new HitPoint(ray, closest.surface, closest.t, closest.s);
+  if (surfaceIsCloser && closestSurface) {
+    // Surface hit is closer
+    const hitPoint = new HitPoint(ray, closestSurface.surface, closestSurface.t, closestSurface.s);
+    return {
+      hitPoint,
+      onSegment: closestSurface.onSegment,
+      canReflect: closestSurface.surface.canReflectFrom(direction),
+      hitType: "surface",
+    };
+  }
 
-  return {
-    hitPoint,
-    onSegment: closest.onSegment,
-    canReflect: closest.surface.canReflectFrom(direction),
-  };
+  if (rangeLimitIsCloser && rangeLimitResult) {
+    // Range limit hit is closer
+    // Create a synthetic HitPoint for range limit (no surface)
+    // We use t=rangeLimitT, s=0 as there's no surface segment
+    const hitPoint = new HitPoint(ray, null as unknown as Surface, rangeLimitT, 0);
+    // Override the computed x,y with the actual range limit hit point
+    (hitPoint as { x: number }).x = rangeLimitResult.point.x;
+    (hitPoint as { y: number }).y = rangeLimitResult.point.y;
+
+    return {
+      hitPoint,
+      onSegment: true, // Range limit is always "on segment"
+      canReflect: false, // Range limit never reflects
+      hitType: "range_limit",
+      rangeLimitHit: rangeLimitResult,
+    };
+  }
+
+  // No hit found
+  return null;
 }
 
 /**
