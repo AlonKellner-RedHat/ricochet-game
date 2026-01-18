@@ -378,6 +378,98 @@ export function isRangeLimitPoint(point: SourcePoint): point is RangeLimitPoint 
 }
 
 // =============================================================================
+// INTERSECTION POINT
+// =============================================================================
+
+/**
+ * Type of intersection - what the surface intersects with.
+ */
+export type IntersectionType = "range_limit" | "surface";
+
+/**
+ * Point where a surface segment intersects another shape.
+ *
+ * Used to represent critical points for visibility polygon construction:
+ * - Where a surface crosses the range limit circle
+ * - Where two surfaces cross each other (mid-segment intersection)
+ *
+ * Carries provenance: the surface and parametric t value along that surface.
+ */
+export class IntersectionPoint extends SourcePoint {
+  readonly type = "intersection" as const;
+
+  constructor(
+    /** The surface being intersected */
+    readonly surface: Surface,
+    /** Parameter along surface (0 = start, 1 = end) */
+    readonly t: number,
+    /** What the surface intersects with */
+    readonly intersectionType: IntersectionType
+  ) {
+    super();
+  }
+
+  computeXY(): Vector2 {
+    const { start, end } = this.surface.segment;
+    return {
+      x: start.x + this.t * (end.x - start.x),
+      y: start.y + this.t * (end.y - start.y),
+    };
+  }
+
+  isOnSurface(surface: Surface): boolean {
+    return this.surface.id === surface.id;
+  }
+
+  equals(other: SourcePoint): boolean {
+    return (
+      other instanceof IntersectionPoint &&
+      this.surface.id === other.surface.id &&
+      this.t === other.t
+    );
+  }
+
+  getKey(): string {
+    return `intersection:${this.surface.id}:${this.t}`;
+  }
+
+  /**
+   * IntersectionPoints never block - continuation rays continue through.
+   * Like Endpoint, the intersection creates a boundary but light passes.
+   */
+  isBlocking(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): boolean {
+    return false;
+  }
+
+  /**
+   * Exclude this intersection's surface when casting rays through it.
+   */
+  getExcludedSurfaceIds(): string[] {
+    return [this.surface.id];
+  }
+
+  /**
+   * IntersectionPoints have no blocking in either direction.
+   */
+  getBlockingStatus(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): BlockingStatus {
+    return NON_BLOCKING;
+  }
+}
+
+/**
+ * Type guard to check if a SourcePoint is an IntersectionPoint.
+ */
+export function isIntersectionPoint(point: SourcePoint): point is IntersectionPoint {
+  return point instanceof IntersectionPoint;
+}
+
+// =============================================================================
 // ENDPOINT
 // =============================================================================
 

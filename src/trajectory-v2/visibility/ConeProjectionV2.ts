@@ -21,6 +21,7 @@ import { lineLineIntersection } from "@/trajectory-v2/geometry/GeometryOps";
 import {
   type Endpoint,
   HitPoint,
+  IntersectionPoint,
   OriginPoint,
   RangeLimitPoint,
   type SourcePoint,
@@ -30,6 +31,7 @@ import {
   isOriginPoint,
   startOf,
 } from "@/trajectory-v2/geometry/SourcePoint";
+import { computeLineCircleIntersections } from "@/trajectory-v2/geometry/RangeLimitOps";
 import {
   type JunctionPoint,
   type SurfaceChain,
@@ -965,8 +967,8 @@ export function projectConeV2(
 
   const effectiveObstacles = obstacles.filter((o) => !excludedIds.has(o.id));
 
-  // Collect all ray targets (Endpoints and JunctionPoints)
-  type RayTarget = Endpoint | JunctionPoint;
+  // Collect all ray targets (Endpoints, JunctionPoints, and IntersectionPoints)
+  type RayTarget = Endpoint | JunctionPoint | IntersectionPoint;
   const rayTargets: RayTarget[] = [];
 
   // Cache endpoints by key to ensure consistent object references
@@ -1013,6 +1015,26 @@ export function projectConeV2(
   for (const chain of chains) {
     for (const junction of chain.getJunctionPoints()) {
       rayTargets.push(junction);
+    }
+  }
+
+  // Add IntersectionPoints where surfaces cross the range limit circle
+  // These are critical points for visibility polygon construction
+  if (rangeLimit) {
+    for (const obstacle of obstacles) {
+      const intersections = computeLineCircleIntersections(
+        obstacle.segment.start,
+        obstacle.segment.end,
+        rangeLimit.center,
+        rangeLimit.pair.radius
+      );
+
+      for (const { t } of intersections) {
+        // Only add if t is strictly in (0, 1) - endpoints are already covered by Endpoint
+        if (t > 0 && t < 1) {
+          rayTargets.push(new IntersectionPoint(obstacle, t, "range_limit"));
+        }
+      }
     }
   }
 
