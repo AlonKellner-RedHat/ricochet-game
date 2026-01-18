@@ -66,6 +66,11 @@ export interface HitDetectionStrategy {
    * The mode of this strategy ("physical" or "planned").
    */
   readonly mode: HitDetectionMode;
+  
+  /**
+   * Get the range limit pair if this strategy uses one.
+   */
+  getRangeLimitPair?(): RangeLimitPair | undefined;
 }
 
 // =============================================================================
@@ -147,6 +152,7 @@ export function createPhysicalStrategy(
   const strategy: HitDetectionStrategy = {
     findNextHit: findNextHitImpl,
     mode,
+    getRangeLimitPair: () => rangeLimit,
   };
 
   // Register surfaces for continueFromPosition support
@@ -207,6 +213,7 @@ export function createPlannedStrategy(
   const strategy: HitDetectionStrategy = {
     findNextHit: findNextHitImpl,
     mode,
+    getRangeLimitPair: () => undefined,
   };
 
   // Register surfaces for continueFromPosition support

@@ -20,7 +20,7 @@ import type { Vector2, Ray, Segment } from "@/trajectory-v2/geometry/types";
 import type { Surface } from "@/surfaces/Surface";
 import type { RayPropagator } from "./RayPropagator";
 import type { HitDetectionStrategy, StrategyHitResult } from "./HitDetectionStrategy";
-import { findNextHit, type HitDetectionMode } from "@/trajectory-v2/geometry/RayCasting";
+import { findNextHit, type HitDetectionMode, type RangeLimitOption } from "@/trajectory-v2/geometry/RayCasting";
 import { lineLineIntersection } from "@/trajectory-v2/geometry/GeometryOps";
 
 // =============================================================================
@@ -397,13 +397,15 @@ function findNextHitWithMinT(
   mode: HitDetectionMode,
   minT: number,
   startLine?: Segment,
-  startLineSurface?: Surface
+  startLineSurface?: Surface,
+  rangeLimit?: RangeLimitOption
 ): StrategyHitResult | null {
   const result = findNextHit(ray, surfaces, {
     mode,
     minT,
     startLine,
     startLineSurface,
+    rangeLimit,
   });
 
   if (!result) {
@@ -418,6 +420,7 @@ function findNextHitWithMinT(
     onSegment: result.onSegment,
     canReflect: result.canReflect,
     hitPoint: result.hitPoint,
+    hitType: result.hitType,
   };
 }
 
@@ -498,13 +501,20 @@ export function traceWithStrategy(
           // Use the underlying findNextHit from RayCasting which supports minT
           const allSurfaces = getAllSurfacesFromStrategy(strategy);
           if (allSurfaces) {
+            // Build range limit option if strategy has one
+            const rangeLimitPair = strategy.getRangeLimitPair?.();
+            const rangeLimitOption: RangeLimitOption | undefined = rangeLimitPair
+              ? { pair: rangeLimitPair, center: state.originImage }
+              : undefined;
+            
             const nextHit = findNextHitWithMinT(
               ray,
               allSurfaces,
               strategy.mode,
               continueT + 1e-10,
               state.startLine ?? undefined,
-              state.lastSurface ?? undefined
+              state.lastSurface ?? undefined,
+              rangeLimitOption
             );
             hit = nextHit;
           } else {
