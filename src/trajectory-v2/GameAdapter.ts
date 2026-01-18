@@ -172,6 +172,8 @@ export class GameAdapter {
       strokePath: () => graphics.strokePath(),
       fillRect: (x, y, w, h) => graphics.fillRect(x, y, w, h),
       setBlendMode: (mode) => graphics.setBlendMode(mode),
+      arc: (x, y, radius, startAngle, endAngle, anticlockwise) =>
+        graphics.arc(x, y, radius, startAngle, endAngle, anticlockwise),
     };
   }
 
