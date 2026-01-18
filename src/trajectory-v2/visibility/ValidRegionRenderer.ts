@@ -806,13 +806,19 @@ export class ValidRegionRenderer {
       // Determine if this stage uses a window (all stages after stage 0 do, or stage 0 if hasWindow)
       const stageHasWindow = stageIndex > 0 || hasWindow;
 
+      // Update range limit center to match this stage's origin (reflected player image)
+      // This ensures arcs are drawn centered on the correct reflected position
+      const stageRangeLimit = this.currentRangeLimit
+        ? { pair: this.currentRangeLimit.pair, center: stage.origin }
+        : null;
+
       // Step 2a: ERASE the polygon area (removes shadow/earlier stage overlay)
       this.graphics.setBlendMode(BlendModes.ERASE);
       this.graphics.fillStyle(0xffffff, 1.0);
 
       // Use arc-aware rendering when range limit is active
-      if (this.currentRangeLimit) {
-        this.drawPolygonWithArcs(stage.sourcePoints);
+      if (stageRangeLimit) {
+        this.drawPolygonWithArcs(stage.sourcePoints, stageRangeLimit);
       } else if (stageHasWindow) {
         this.drawPolygon(vertices);
       } else {
@@ -824,8 +830,8 @@ export class ValidRegionRenderer {
       this.graphics.fillStyle(this.config.overlayColor, overlayAlpha);
 
       // Use arc-aware rendering when range limit is active
-      if (this.currentRangeLimit) {
-        this.drawPolygonWithArcs(stage.sourcePoints);
+      if (stageRangeLimit) {
+        this.drawPolygonWithArcs(stage.sourcePoints, stageRangeLimit);
       } else if (stageHasWindow) {
         this.drawPolygon(vertices);
       } else {
@@ -873,30 +879,28 @@ export class ValidRegionRenderer {
    *
    * Converts SourcePoint[] to VisibilityVertex[], then builds PolygonEdge[],
    * and finally draws with native arc primitives for consecutive range_limit vertices.
+   *
+   * @param sourcePoints - The source points defining the polygon
+   * @param stageRangeLimit - The range limit for this stage (with center at stage origin)
    */
-  private drawPolygonWithArcs(sourcePoints: readonly SourcePoint[]): void {
+  private drawPolygonWithArcs(
+    sourcePoints: readonly SourcePoint[],
+    stageRangeLimit: RangeLimitConfig
+  ): void {
     if (sourcePoints.length < 3) return;
 
     // Convert to visibility vertices with provenance tracking
     const vertices = toVisibilityVertices(sourcePoints);
 
-    // Build arc config if range limit is active
-    const arcConfig: ArcConfig | null = this.currentRangeLimit
-      ? {
-          center: this.currentRangeLimit.center,
-          radius: this.currentRangeLimit.pair.radius,
-        }
-      : null;
+    // Build arc config from the stage-specific range limit
+    const arcConfig: ArcConfig = {
+      center: stageRangeLimit.center,
+      radius: stageRangeLimit.pair.radius,
+    };
 
-    // If we have arc config, use edge-based rendering
-    if (arcConfig) {
-      const edges = buildPolygonEdges(vertices, arcConfig);
-      drawPolygonEdges(this.graphics, edges);
-    } else {
-      // Fallback to simple polygon drawing
-      const positions = vertices.map((v) => ({ position: v.position }));
-      this.drawPolygon(positions);
-    }
+    // Use edge-based rendering with arc support
+    const edges = buildPolygonEdges(vertices, arcConfig);
+    drawPolygonEdges(this.graphics, edges);
   }
 
   /**
