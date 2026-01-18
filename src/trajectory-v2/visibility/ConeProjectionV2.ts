@@ -773,6 +773,38 @@ function findSourcePointAtEndpoint(
 // =============================================================================
 
 /**
+ * Check if a point is beyond the range limit.
+ */
+function isPointBeyondRangeLimit(
+  point: Vector2,
+  rangeLimit: RangeLimitConfig
+): boolean {
+  const dx = point.x - rangeLimit.center.x;
+  const dy = point.y - rangeLimit.center.y;
+  const distSq = dx * dx + dy * dy;
+  const radiusSq = rangeLimit.pair.radius * rangeLimit.pair.radius;
+  return distSq > radiusSq;
+}
+
+/**
+ * Compute the range limit intersection point along a ray from origin to target.
+ */
+function computeRangeLimitIntersection(
+  origin: Vector2,
+  target: Vector2,
+  rangeLimit: RangeLimitConfig
+): Vector2 {
+  const dx = target.x - rangeLimit.center.x;
+  const dy = target.y - rangeLimit.center.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const scale = rangeLimit.pair.radius / dist;
+  return {
+    x: rangeLimit.center.x + dx * scale,
+    y: rangeLimit.center.y + dy * scale,
+  };
+}
+
+/**
  * Apply range limit to a SourcePoint.
  *
  * If the point is beyond the range limit distance, returns a new HitPoint
@@ -788,27 +820,72 @@ function applyRangeLimit(
   }
 
   const xy = point.computeXY();
-  const dx = xy.x - rangeLimit.center.x;
-  const dy = xy.y - rangeLimit.center.y;
-  const distSq = dx * dx + dy * dy;
-  const radiusSq = rangeLimit.pair.radius * rangeLimit.pair.radius;
-
-  // If point is within range limit, return as-is
-  if (distSq <= radiusSq) {
+  if (!isPointBeyondRangeLimit(xy, rangeLimit)) {
     return point;
   }
 
   // Point exceeds range limit - compute point on range limit circle
-  const dist = Math.sqrt(distSq);
-  const scale = rangeLimit.pair.radius / dist;
-  const limitedPoint: Vector2 = {
-    x: rangeLimit.center.x + dx * scale,
-    y: rangeLimit.center.y + dy * scale,
-  };
-
-  // Return a RangeLimitPoint at the range limit position
-  // RangeLimitPoint tracks provenance for arc section detection
+  const limitedPoint = computeRangeLimitIntersection(origin, xy, rangeLimit);
   return new RangeLimitPoint(limitedPoint);
+}
+
+/**
+ * Result of applying range limit to a continuation ray.
+ */
+interface RangeLimitedContinuationResult {
+  /** The final hit (possibly replaced with RangeLimitPoint) */
+  hit: SourcePoint | null;
+  /** Passed-through endpoints that are within range limit */
+  passedThroughEndpoints: Endpoint[];
+  /** True if the final hit was replaced with a RangeLimitPoint */
+  wasLimited: boolean;
+}
+
+/**
+ * Apply range limit to a continuation ray result.
+ *
+ * This filters out passed-through endpoints that exceed the range limit,
+ * and replaces the final hit with a RangeLimitPoint if it exceeds the limit.
+ *
+ * Used during continuation ray construction so RangeLimitPoint becomes
+ * a proper member of the ContinuationRay with correct PreComputedPairs.
+ */
+function applyRangeLimitToContinuation(
+  origin: Vector2,
+  contResult: CastRayResult,
+  rangeLimit: RangeLimitConfig | undefined
+): RangeLimitedContinuationResult {
+  if (!rangeLimit || !contResult.hit) {
+    return {
+      hit: contResult.hit,
+      passedThroughEndpoints: contResult.passedThroughEndpoints,
+      wasLimited: false,
+    };
+  }
+
+  // Filter passed-through endpoints that are within range limit
+  const filteredPassedThrough = contResult.passedThroughEndpoints.filter(
+    (ep) => !isPointBeyondRangeLimit(ep.computeXY(), rangeLimit)
+  );
+
+  // Check if the final hit exceeds range limit
+  const hitXY = contResult.hit.computeXY();
+  if (!isPointBeyondRangeLimit(hitXY, rangeLimit)) {
+    // Hit is within range - return as-is (with filtered passed-through)
+    return {
+      hit: contResult.hit,
+      passedThroughEndpoints: filteredPassedThrough,
+      wasLimited: false,
+    };
+  }
+
+  // Hit exceeds range limit - replace with RangeLimitPoint
+  const limitedPoint = computeRangeLimitIntersection(origin, hitXY, rangeLimit);
+  return {
+    hit: new RangeLimitPoint(limitedPoint),
+    passedThroughEndpoints: filteredPassedThrough,
+    wasLimited: true,
+  };
 }
 
 // =============================================================================
@@ -1468,14 +1545,19 @@ export function projectConeV2(
             );
           }
 
-          if (contResult.hit) {
+          // Apply range limit to the continuation ray
+          // This filters out passed-through endpoints beyond the range limit
+          // and replaces the final hit with RangeLimitPoint if needed
+          const limitedContResult = applyRangeLimitToContinuation(origin, contResult, rangeLimit);
+
+          if (limitedContResult.hit) {
             // Reuse existing HitPoint at same position to ensure consistent PreComputedPairs
-            const normalizedContinuation = isHitPoint(contResult.hit)
-              ? getOrCreateHitPoint(contResult.hit)
-              : contResult.hit;
+            const normalizedContinuation = isHitPoint(limitedContResult.hit)
+              ? getOrCreateHitPoint(limitedContResult.hit)
+              : limitedContResult.hit;
 
             // Add passed-through endpoints to vertices (including collinear surface endpoints)
-            for (const passedThrough of contResult.passedThroughEndpoints) {
+            for (const passedThrough of limitedContResult.passedThroughEndpoints) {
               vertices.push(passedThrough);
             }
 
@@ -1483,11 +1565,11 @@ export function projectConeV2(
 
             // Create ContinuationRay for provenance tracking
             // Now includes passed-through endpoints from the unified castRay
-            const contRay = new ContinuationRay(target, contResult.passedThroughEndpoints, normalizedContinuation);
+            const contRay = new ContinuationRay(target, limitedContResult.passedThroughEndpoints, normalizedContinuation);
             continuationRays.push(contRay);
             // Assign continuationRay reference to all member points
             target.continuationRay = contRay;
-            for (const passedThrough of contResult.passedThroughEndpoints) {
+            for (const passedThrough of limitedContResult.passedThroughEndpoints) {
               passedThrough.continuationRay = contRay;
             }
             normalizedContinuation.continuationRay = contRay;
@@ -1505,7 +1587,7 @@ export function projectConeV2(
               // Collect all points on this ray
               const junctionRayPoints: SourcePoint[] = [
                 target,
-                ...contResult.passedThroughEndpoints,
+                ...limitedContResult.passedThroughEndpoints,
                 normalizedContinuation,
               ];
 
@@ -1688,27 +1770,38 @@ export function projectConeV2(
           endpointCache
         );
 
-        if (contResult.hit) {
+        // Apply range limit to the continuation ray
+        // This filters out passed-through endpoints beyond the range limit
+        // and replaces the final hit with RangeLimitPoint if needed
+        const limitedContResult = applyRangeLimitToContinuation(origin, contResult, rangeLimit);
+
+        if (limitedContResult.hit) {
           // Check if continuation HitPoint already exists (shared by multiple endpoints)
           let normalizedContinuation: SourcePoint;
           let isSharedContinuation = false;
 
-          if (isHitPoint(contResult.hit)) {
-            const xy = contResult.hit.computeXY();
+          if (isHitPoint(limitedContResult.hit)) {
+            const xy = limitedContResult.hit.computeXY();
             const key = `${xy.x},${xy.y}`;
             isSharedContinuation = hitPointsByPosition.has(key);
-            normalizedContinuation = getOrCreateHitPoint(contResult.hit);
+            normalizedContinuation = getOrCreateHitPoint(limitedContResult.hit);
           } else {
-            normalizedContinuation = contResult.hit;
+            normalizedContinuation = limitedContResult.hit;
           }
 
           vertices.push(normalizedContinuation);
 
           // Create ContinuationRay for provenance tracking
           // Combine passed-through endpoints from both the "to" cast and the "through" cast
+          // Filter castResult passed-through endpoints that exceed range limit
+          const filteredCastResultPassedThrough = rangeLimit
+            ? castResult.passedThroughEndpoints.filter(
+                (ep) => !isPointBeyondRangeLimit(ep.computeXY(), rangeLimit)
+              )
+            : castResult.passedThroughEndpoints;
           const allPassedThrough = [
-            ...castResult.passedThroughEndpoints,
-            ...contResult.passedThroughEndpoints,
+            ...filteredCastResultPassedThrough,
+            ...limitedContResult.passedThroughEndpoints,
           ];
           const contRay = new ContinuationRay(
             targetEndpoint,
@@ -1885,27 +1978,13 @@ export function projectConeV2(
     // This eliminates floating-point instability in the oppositeSides check.
   }
 
-  // Apply range limit to all vertices
-  // When a point is clipped to the range limit, we need to add precomputed pairs
-  // because the RangeLimitPoint and original point are on the same ray
-  const rangeLimitedVertices: SourcePoint[] = [];
-  if (rangeLimit) {
-    for (const v of vertices) {
-      const limited = applyRangeLimit(v, origin, rangeLimit);
-      rangeLimitedVertices.push(limited);
-
-      // If the point was clipped (new RangeLimitPoint created), add precomputed pair
-      // RangeLimitPoint is at the boundary, original was beyond - RangeLimitPoint comes first
-      if (limited !== v && isRangeLimitPoint(limited)) {
-        // The range limit point replaces the original, so we need pairs with other
-        // points on the same ray. The limited point is the boundary.
-        // We use the RangeLimitPoint as the vertex, so no pair with original needed
-        // (original is not in the vertex list)
-      }
-    }
-  } else {
-    rangeLimitedVertices.push(...vertices);
-  }
+  // Apply range limit to remaining vertices (non-continuation vertices like boundary hits)
+  // Continuation rays are already handled by applyRangeLimitToContinuation with proper pairs.
+  // This bulk application handles cone boundary hits and blocking hits that exceed range limit.
+  // Note: These are typically not on the same ray as other points, so no PreComputedPairs needed.
+  const rangeLimitedVertices = rangeLimit
+    ? vertices.map((v) => applyRangeLimit(v, origin, rangeLimit))
+    : vertices;
 
   // Remove duplicate points using equals()
   const uniqueVertices = removeDuplicatesSourcePoint(rangeLimitedVertices);
