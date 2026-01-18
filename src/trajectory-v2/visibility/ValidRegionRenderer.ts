@@ -24,6 +24,7 @@ import {
   projectConeV2,
   toVector2Array,
   type SourceSegment,
+  type RangeLimitConfig,
 } from "./ConeProjectionV2";
 import type { ValidRegionOutline } from "./OutlineBuilder";
 import { preparePolygonForRendering } from "./RenderingDedup";
@@ -474,7 +475,8 @@ export class ValidRegionRenderer {
     plannedSurfaces: readonly Surface[],
     allChains: readonly SurfaceChain[],
     windowConfig: WindowConfig | null = null,
-    externalCache?: ReflectionCache
+    externalCache?: ReflectionCache,
+    rangeLimit?: RangeLimitConfig
   ): void {
     // Combine user chains with screen boundary chain
     // Screen boundaries are just another SurfaceChain - no special handling
@@ -514,7 +516,7 @@ export class ValidRegionRenderer {
       const umbrellaWindows = getWindowSegments(windowConfig);
       for (const window of umbrellaWindows) {
         const cone = createConeThroughWindow(player, window.start, window.end);
-        const sourcePoints = projectConeV2(cone, allChainsWithScreen, undefined, reflectionCache);
+        const sourcePoints = projectConeV2(cone, allChainsWithScreen, undefined, reflectionCache, undefined, rangeLimit);
         stage1SourcePoints.push(...sourcePoints);
         const polygon = preparePolygonForRendering(sourcePoints);
         if (polygon.length >= 3) {
@@ -524,7 +526,7 @@ export class ValidRegionRenderer {
     } else {
       // Full 360° visibility from player
       const cone = createFullCone(player);
-      const sourcePoints = projectConeV2(cone, allChainsWithScreen, undefined, reflectionCache);
+      const sourcePoints = projectConeV2(cone, allChainsWithScreen, undefined, reflectionCache, undefined, rangeLimit);
       stage1SourcePoints.push(...sourcePoints);
       const polygon = preparePolygonForRendering(sourcePoints);
       if (polygon.length >= 3) {
@@ -620,7 +622,8 @@ export class ValidRegionRenderer {
             allChainsWithScreen,
             currentSurface.id, // Exclude the current reflection surface
             reflectionCache,
-            reflectedTargets   // Pass reflected targets for image-space ray casting
+            reflectedTargets,   // Pass reflected targets for image-space ray casting
+            rangeLimit
           );
           stageSourcePoints.push(...sourcePoints);
           const polygon = preparePolygonForRendering(sourcePoints);

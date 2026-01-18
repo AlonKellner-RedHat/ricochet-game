@@ -28,6 +28,7 @@ import {
   type SourcePoint,
 } from "@/trajectory-v2/geometry/SourcePoint";
 import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
+import type { RangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
 import { createRayPropagator, type RayPropagator } from "./RayPropagator";
 import { tracePath, traceWithStrategy } from "./TracePath";
 import { createPhysicalStrategy } from "./HitDetectionStrategy";
@@ -141,7 +142,8 @@ export function calculateActualPathUnified(
   allSurfaces: readonly Surface[],
   externalCache?: ReflectionCache,
   maxReflections: number = 10,
-  maxDistance: number = 2000
+  maxDistance: number = 2000,
+  rangeLimitPair?: RangeLimitPair
 ): ActualPathUnified {
   // Handle degenerate case where player and cursor are the same
   if (player.x === cursor.x && player.y === cursor.y) {
@@ -219,7 +221,7 @@ export function calculateActualPathUnified(
   if (reachedCursor) {
     // Continue from cursor using the SAME propagator with continueFromPosition.
     // This uses the unified approach - same origin/target images, just start from cursor.
-    const physicalStrategy = createPhysicalStrategy(allSurfaces);
+    const physicalStrategy = createPhysicalStrategy(allSurfaces, { rangeLimit: rangeLimitPair });
     const forwardResult = traceWithStrategy(toCursorResult.propagator, physicalStrategy, {
       continueFromPosition: cursor,
       maxReflections: maxReflections - toCursorResult.segments.length,

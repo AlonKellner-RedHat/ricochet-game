@@ -38,6 +38,15 @@ import type { Ray, Vector2, Segment } from "@/trajectory-v2/geometry/types";
 import { ContinuationRay } from "@/trajectory-v2/geometry/ContinuationRay";
 import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
 import type { ReflectedTargetSet } from "./ReflectedTargets";
+import type { RangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
+
+/**
+ * Configuration for range limit in visibility projection.
+ */
+export interface RangeLimitConfig {
+  readonly pair: RangeLimitPair;
+  readonly center: Vector2;
+}
 
 // Re-export Segment for backward compatibility
 export type { Segment };
@@ -755,6 +764,49 @@ function findSourcePointAtEndpoint(
 }
 
 // =============================================================================
+// RANGE LIMIT HELPERS
+// =============================================================================
+
+/**
+ * Apply range limit to a SourcePoint.
+ *
+ * If the point is beyond the range limit distance, returns a new HitPoint
+ * at the range limit intersection. Otherwise returns the original point.
+ */
+function applyRangeLimit(
+  point: SourcePoint,
+  origin: Vector2,
+  rangeLimit: RangeLimitConfig | undefined
+): SourcePoint {
+  if (!rangeLimit) {
+    return point;
+  }
+
+  const xy = point.computeXY();
+  const dx = xy.x - rangeLimit.center.x;
+  const dy = xy.y - rangeLimit.center.y;
+  const distSq = dx * dx + dy * dy;
+  const radiusSq = rangeLimit.pair.radius * rangeLimit.pair.radius;
+
+  // If point is within range limit, return as-is
+  if (distSq <= radiusSq) {
+    return point;
+  }
+
+  // Point exceeds range limit - compute point on range limit circle
+  const dist = Math.sqrt(distSq);
+  const scale = rangeLimit.pair.radius / dist;
+  const limitedPoint: Vector2 = {
+    x: rangeLimit.center.x + dx * scale,
+    y: rangeLimit.center.y + dy * scale,
+  };
+
+  // Return an OriginPoint at the range limit position
+  // OriginPoint doesn't require a surface and represents a standalone vertex
+  return new OriginPoint(limitedPoint);
+}
+
+// =============================================================================
 // MAIN ALGORITHM
 // =============================================================================
 
@@ -771,7 +823,8 @@ export function projectConeV2(
   chains: readonly SurfaceChain[],
   excludeSurfaceId?: string,
   cache?: ReflectionCache,
-  reflectedTargets?: ReflectedTargetSet
+  reflectedTargets?: ReflectedTargetSet,
+  rangeLimit?: RangeLimitConfig
 ): SourcePoint[] {
   const { origin, startLine } = source;
   const isWindowed = startLine !== null;
@@ -1755,8 +1808,13 @@ export function projectConeV2(
     // This eliminates floating-point instability in the oppositeSides check.
   }
 
+  // Apply range limit to all vertices
+  const rangeLimitedVertices = rangeLimit
+    ? vertices.map(v => applyRangeLimit(v, origin, rangeLimit))
+    : vertices;
+
   // Remove duplicate points using equals()
-  const uniqueVertices = removeDuplicatesSourcePoint(vertices);
+  const uniqueVertices = removeDuplicatesSourcePoint(rangeLimitedVertices);
 
   // Sort by angle from origin, using pre-computed pairs
   const sorted = sortPolygonVerticesSourcePoint(

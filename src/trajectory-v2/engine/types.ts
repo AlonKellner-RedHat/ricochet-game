@@ -9,6 +9,7 @@ import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import type { SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { Surface } from "@/surfaces/Surface";
 import type { ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
+import type { RangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
 import type { ActualPathUnified } from "./ActualPathCalculator";
 import type { FullTrajectoryResult } from "./FullTrajectoryCalculator";
 
@@ -194,6 +195,11 @@ export interface EngineResults {
    * - physicalFromCursor: RED dashed
    */
   readonly fullTrajectory?: FullTrajectoryResult;
+  /**
+   * Range limit pair for trajectory distance limiting.
+   * Centered on player image, limits trajectory to 10 player heights (480px).
+   */
+  readonly rangeLimitPair: RangeLimitPair;
 }
 
 /**

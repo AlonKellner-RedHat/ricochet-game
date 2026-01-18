@@ -21,6 +21,7 @@ import {
   createReflectionCache,
 } from "@/trajectory-v2/geometry/ReflectionCache";
 import type { Vector2 } from "@/types";
+import type { RangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
 import { createPhysicalStrategy, createPlannedStrategy } from "./HitDetectionStrategy";
 import { calculateMergedPath } from "./MergedPathCalculator";
 import type { RayPropagator } from "./RayPropagator";
@@ -78,7 +79,8 @@ export function calculateFullTrajectory(
   cursor: Vector2,
   plannedSurfaces: readonly Surface[],
   allSurfaces: readonly Surface[],
-  cache?: ReflectionCache
+  cache?: ReflectionCache,
+  rangeLimitPair?: RangeLimitPair
 ): FullTrajectoryResult {
   const reflectionCache = cache ?? createReflectionCache();
 
@@ -88,7 +90,8 @@ export function calculateFullTrajectory(
     cursor,
     plannedSurfaces,
     allSurfaces,
-    reflectionCache
+    reflectionCache,
+    rangeLimitPair
   );
 
   // If fully aligned, we're done
@@ -109,7 +112,7 @@ export function calculateFullTrajectory(
 
   // Step 2a: Physical divergent path (continues from divergence)
   // Only if physical can continue (wasn't blocked by a wall)
-  const physicalStrategy = createPhysicalStrategy(allSurfaces);
+  const physicalStrategy = createPhysicalStrategy(allSurfaces, { rangeLimit: rangeLimitPair });
   let physicalDivergent: readonly TraceSegment[] = [];
 
   // Check if the divergence was due to physical hitting a wall

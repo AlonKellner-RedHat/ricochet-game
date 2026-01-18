@@ -216,12 +216,17 @@ export class GameAdapter {
     // Pass the shared ReflectionCache from engine results for cache reuse
     if (this.validRegionRenderer && this.showValidRegion) {
       const engineResults = this.engine.getResults();
+      const rangeLimit = {
+        pair: engineResults.rangeLimitPair,
+        center: player,
+      };
       this.validRegionRenderer.render(
         player,
         plannedSurfaces,
         allChains,
         windowConfig,
-        engineResults.reflectionCache  // Share cache with trajectory system
+        engineResults.reflectionCache,  // Share cache with trajectory system
+        rangeLimit
       );
     }
   }

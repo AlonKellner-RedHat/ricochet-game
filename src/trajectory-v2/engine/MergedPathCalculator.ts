@@ -18,6 +18,7 @@ import {
 } from "@/trajectory-v2/geometry/ReflectionCache";
 import type { Segment } from "@/trajectory-v2/geometry/types";
 import type { Vector2 } from "@/types";
+import type { RangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
 import {
   type HitDetectionStrategy,
   type StrategyHitResult,
@@ -172,7 +173,8 @@ export function calculateMergedPath(
   cursor: Vector2,
   plannedSurfaces: readonly Surface[],
   allSurfaces: readonly Surface[],
-  cache?: ReflectionCache
+  cache?: ReflectionCache,
+  rangeLimitPair?: RangeLimitPair
 ): MergedPathResult {
   const reflectionCache = cache ?? createReflectionCache();
 
@@ -184,7 +186,7 @@ export function calculateMergedPath(
   // Create propagator with pre-reflected target
   const propagator = createRayPropagator(player, initialTarget, reflectionCache);
 
-  const physicalStrategy = createPhysicalStrategy(allSurfaces);
+  const physicalStrategy = createPhysicalStrategy(allSurfaces, { rangeLimit: rangeLimitPair });
   const plannedStrategy = createPlannedStrategy(plannedSurfaces);
 
   const segments: TraceSegment[] = [];

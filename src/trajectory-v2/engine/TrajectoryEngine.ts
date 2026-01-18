@@ -10,6 +10,8 @@ import type { Surface } from "@/surfaces/Surface";
 import type { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import { extractSurfacesFromChains } from "@/trajectory-v2/geometry/RayCasting";
 import { createReflectionCache, type ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
+import { createRangeLimitPair, type RangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
+import { DEFAULT_RANGE_LIMIT_RADIUS } from "@/types";
 import { TrajectoryDebugLogger } from "../TrajectoryDebugLogger";
 
 import { buildBackwardImages, buildForwardImages } from "./ImageCache";
@@ -113,6 +115,12 @@ export class TrajectoryEngine implements ITrajectoryEngine {
 
   // Event subscribers
   private subscribers: Set<EngineResultsCallback> = new Set();
+
+  // Range limit (created once, constant for engine lifetime)
+  private readonly rangeLimitPair: RangeLimitPair = createRangeLimitPair(
+    DEFAULT_RANGE_LIMIT_RADIUS,
+    "horizontal"
+  );
 
   // =========================================================================
   // INPUT SETTERS
@@ -356,7 +364,10 @@ export class TrajectoryEngine implements ITrajectoryEngine {
         this.player,
         this.cursor,
         this.allSurfaces,
-        this.getReflectionCache()
+        this.getReflectionCache(),
+        10, // maxReflections
+        2000, // maxDistance
+        this.rangeLimitPair
       );
       this.dirty.actualPathUnified = false;
     }
@@ -384,7 +395,8 @@ export class TrajectoryEngine implements ITrajectoryEngine {
         this.cursor,
         bypassResult.activeSurfaces,
         this.allSurfaces,
-        this.getReflectionCache()
+        this.getReflectionCache(),
+        this.rangeLimitPair
       );
       this.dirty.fullTrajectory = false;
     }
@@ -585,6 +597,7 @@ export class TrajectoryEngine implements ITrajectoryEngine {
       allSurfaces: this.allSurfaces,
       activePlannedSurfaces: bypassResult.activeSurfaces,
       reflectionCache: this.getReflectionCache(),
+      rangeLimitPair: this.rangeLimitPair,
     };
   }
 
