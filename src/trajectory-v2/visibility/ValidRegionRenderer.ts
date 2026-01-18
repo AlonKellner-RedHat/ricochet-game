@@ -616,6 +616,13 @@ export class ValidRegionRenderer {
         const stageSourcePoints: SourcePoint[] = [];
         const stagePolygons: (readonly Vector2[])[] = [];
 
+        // Reflect range limit center to match the current origin image
+        // This ensures the range limit circle follows the reflected player position,
+        // matching how the trajectory uses originImage as the range limit center
+        const stageRangeLimit = rangeLimit
+          ? { pair: rangeLimit.pair, center: currentOrigin }
+          : undefined;
+
         for (const window of visibleSegments) {
           // Pass SourcePoint provenance through the cascade
           // This preserves JunctionPoint info so segment extraction works correctly
@@ -632,7 +639,7 @@ export class ValidRegionRenderer {
             currentSurface.id, // Exclude the current reflection surface
             reflectionCache,
             reflectedTargets,   // Pass reflected targets for image-space ray casting
-            rangeLimit
+            stageRangeLimit     // Uses reflected center for this stage
           );
           stageSourcePoints.push(...sourcePoints);
           const polygon = preparePolygonForRendering(sourcePoints);
