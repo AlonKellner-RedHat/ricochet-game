@@ -16,6 +16,7 @@ All calculations must be **exact and stable**. Never introduce floating-point in
 - **No re-calculation**: If a property was computed, store and retrieve via provenance
 - **No screen boundary special cases**: Screen boundaries are a regular `SurfaceChain` - same code paths as all obstacles
 - **No distance-based tie breaking for same-ray points**: Points on the SAME continuation ray must use `PreComputedPairs` with shadow boundary order (determined by surface orientation). Distance ordering is only valid for UNRELATED collinear points.
+- **No distance-based sorting fallback**: Never use distance as a fallback for sorting collinear points. All collinear points must have pre-computed order via `PreComputedPairs` or be handled by provenance.
 
 ### Required Patterns
 

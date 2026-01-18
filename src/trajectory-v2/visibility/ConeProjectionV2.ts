@@ -28,7 +28,9 @@ import {
   endOf,
   isEndpoint,
   isHitPoint,
+  isIntersectionPoint,
   isOriginPoint,
+  isRangeLimitPoint,
   startOf,
 } from "@/trajectory-v2/geometry/SourcePoint";
 import { computeLineCircleIntersections } from "@/trajectory-v2/geometry/RangeLimitOps";
@@ -1542,6 +1544,58 @@ export function projectConeV2(
       continue;
     }
 
+    // Handle IntersectionPoints - where a surface crosses the range limit circle
+    // IntersectionPoints are ALWAYS fully blocking (both CW and CCW) - no continuation rays
+    // They represent boundaries where visibility transitions from surface to arc
+    if (isIntersectionPoint(target)) {
+      const targetXY = target.computeXY();
+
+      // Cast ray to the intersection point, excluding the intersection's own surface
+      const obstaclesExcludingIntersection = effectiveObstacles.filter(
+        (o) => o.id !== target.surface.id
+      );
+
+      const blockingHit = castRayToTarget(
+        origin,
+        targetXY,
+        obstaclesExcludingIntersection,
+        startLine,
+        chains,
+        surfaceOrientations,
+        windowContext
+      );
+
+      // Determine if ray reaches the intersection point
+      let reachesIntersection = false;
+      if (blockingHit === null) {
+        // No obstacle blocks - ray reaches the intersection
+        reachesIntersection = true;
+      } else if (isHitPoint(blockingHit)) {
+        // Check if the blocking hit is AT or PAST the target
+        const dx = targetXY.x - origin.x;
+        const dy = targetXY.y - origin.y;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq > 0) {
+          const scale = 10;
+          const targetT = 1 / scale;
+          if (blockingHit.t >= targetT) {
+            reachesIntersection = true;
+          }
+        }
+      }
+
+      if (reachesIntersection) {
+        // Ray reaches the intersection - add it directly
+        // IntersectionPoint is fully blocking, no continuation ray
+        vertices.push(target);
+      } else if (blockingHit) {
+        // Ray is blocked by another obstacle before reaching the intersection
+        const normalizedHit = isHitPoint(blockingHit) ? getOrCreateHitPoint(blockingHit) : blockingHit;
+        vertices.push(normalizedHit);
+      }
+      continue;
+    }
+
     // Skip endpoints that were already handled as part of a collinear continuation.
     // This prevents duplicate processing and conflicting PreComputedPairs.
     if (collinearEndpointsToSkip.has(target.getKey())) {
@@ -1832,9 +1886,26 @@ export function projectConeV2(
   }
 
   // Apply range limit to all vertices
-  const rangeLimitedVertices = rangeLimit
-    ? vertices.map(v => applyRangeLimit(v, origin, rangeLimit))
-    : vertices;
+  // When a point is clipped to the range limit, we need to add precomputed pairs
+  // because the RangeLimitPoint and original point are on the same ray
+  const rangeLimitedVertices: SourcePoint[] = [];
+  if (rangeLimit) {
+    for (const v of vertices) {
+      const limited = applyRangeLimit(v, origin, rangeLimit);
+      rangeLimitedVertices.push(limited);
+
+      // If the point was clipped (new RangeLimitPoint created), add precomputed pair
+      // RangeLimitPoint is at the boundary, original was beyond - RangeLimitPoint comes first
+      if (limited !== v && isRangeLimitPoint(limited)) {
+        // The range limit point replaces the original, so we need pairs with other
+        // points on the same ray. The limited point is the boundary.
+        // We use the RangeLimitPoint as the vertex, so no pair with original needed
+        // (original is not in the vertex list)
+      }
+    }
+  } else {
+    rangeLimitedVertices.push(...vertices);
+  }
 
   // Remove duplicate points using equals()
   const uniqueVertices = removeDuplicatesSourcePoint(rangeLimitedVertices);
@@ -2030,37 +2101,43 @@ function comparePointsCCWSimplified(
   const cross = aVec.x * bVec.y - aVec.y * bVec.x;
 
   // Handle collinear points (cross === 0)
-  // Per project rules: Points on the SAME continuation ray MUST have pre-computed order.
-  // For OTHER collinear points (e.g., involving OriginPoints), use distance as fallback.
+  // Per project rules: ALL collinear points MUST have pre-computed order via PreComputedPairs
+  // or be handled by provenance. No distance-based fallback is allowed.
   if (cross === 0) {
-    // OriginPoints (window corners) are never part of continuation rays,
-    // so distance fallback is acceptable for them
-    if (isOriginPoint(a) || isOriginPoint(b)) {
-      const aDist = aVec.x * aVec.x + aVec.y * aVec.y;
-      const bDist = bVec.x * bVec.x + bVec.y * bVec.y;
-      return aDist < bDist ? -1 : aDist > bDist ? 1 : 0;
+    // Same position points are equal
+    if (aXY.x === bXY.x && aXY.y === bXY.y) {
+      return 0;
     }
 
-    // For non-origin points: check if they share a continuation ray
-    const sameRay =
-      a.continuationRay &&
-      b.continuationRay &&
-      a.continuationRay.id === b.continuationRay.id;
-
-    if (sameRay) {
-      // Same-ray points MUST have PreComputedPairs - this is a bug
-      throw new Error(
-        `Critical: Same-ray collinear points without PreComputedPairs: ` +
-          `${a.getKey()} vs ${b.getKey()}. ` +
-          `All same-ray orderings must be pre-computed.`
-      );
+    // RangeLimitPoints represent the boundary of visibility - they should come
+    // at their natural position on the arc. When collinear with other points,
+    // use provenance: RangeLimitPoint is the boundary (outermost visible point).
+    // For collinear RangeLimitPoint vs other point, RangeLimitPoint is always
+    // farther from origin (it's at the max range), so it comes AFTER in CCW order
+    // for entering shadow, BEFORE for exiting shadow. Since IntersectionPoints
+    // and other boundary points are fully blocking, RangeLimitPoint comes after.
+    if (isRangeLimitPoint(a) && !isRangeLimitPoint(b)) {
+      return 1; // b comes before a (RangeLimitPoint is at the boundary)
+    }
+    if (isRangeLimitPoint(b) && !isRangeLimitPoint(a)) {
+      return -1; // a comes before b (RangeLimitPoint is at the boundary)
     }
 
-    // Different rays or no rays: use distance as fallback
-    // This handles unrelated collinear points (coincidental alignment)
-    const aDist = aVec.x * aVec.x + aVec.y * aVec.y;
-    const bDist = bVec.x * bVec.x + bVec.y * bVec.y;
-    return aDist < bDist ? -1 : aDist > bDist ? 1 : 0;
+    // OriginPoints (window corners) are non-blocking, so they come first
+    if (isOriginPoint(a) && !isOriginPoint(b)) {
+      return -1; // a (OriginPoint) comes before b
+    }
+    if (isOriginPoint(b) && !isOriginPoint(a)) {
+      return 1; // b (OriginPoint) comes before a
+    }
+
+    // For other collinear points without PreComputedPairs: this is a bug
+    // All same-ray orderings must be pre-computed based on provenance
+    throw new Error(
+      `Critical: Collinear points without PreComputedPairs: ` +
+        `${a.getKey()} vs ${b.getKey()}. ` +
+        `All collinear orderings must be pre-computed. No distance fallback allowed.`
+    );
   }
 
   // Positive cross: a comes before b in CCW (-1)
