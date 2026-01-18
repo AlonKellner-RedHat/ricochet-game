@@ -1,104 +1,122 @@
 /**
  * Tests for RangeLimitOps - Semi-circle geometry operations for range limits.
+ *
+ * Refactored to use coordinate sign checks instead of atan2 for project rule compliance.
  */
 
 import { describe, it, expect } from "vitest";
 import {
-  directionToAngle,
-  isAngleInSemiCircle,
+  isDirectionInSemiCircle,
   isInsideCircle,
   computeRangeLimitHitPoint,
 } from "@/trajectory-v2/geometry/RangeLimitOps";
 
-describe("directionToAngle", () => {
-  it("should return 0 for direction pointing right", () => {
-    const angle = directionToAngle({ x: 1, y: 0 });
-    expect(angle).toBeCloseTo(0);
-  });
-
-  it("should return PI/2 for direction pointing up", () => {
-    const angle = directionToAngle({ x: 0, y: -1 }); // -y is up in screen coords
-    expect(angle).toBeCloseTo(-Math.PI / 2);
-  });
-
-  it("should return -PI/2 for direction pointing down", () => {
-    const angle = directionToAngle({ x: 0, y: 1 }); // +y is down in screen coords
-    expect(angle).toBeCloseTo(Math.PI / 2);
-  });
-
-  it("should return PI for direction pointing left", () => {
-    const angle = directionToAngle({ x: -1, y: 0 });
-    expect(Math.abs(angle)).toBeCloseTo(Math.PI);
-  });
-
-  it("should return PI/4 for direction pointing down-right", () => {
-    const angle = directionToAngle({ x: 1, y: 1 });
-    expect(angle).toBeCloseTo(Math.PI / 4);
-  });
-});
-
-describe("isAngleInSemiCircle", () => {
-  describe("top semi-circle (0 to PI)", () => {
-    it("should return true for angle 0 (right)", () => {
-      expect(isAngleInSemiCircle(0, "top")).toBe(true);
+describe("isDirectionInSemiCircle", () => {
+  describe("top semi-circle (directions pointing upward, y <= 0 in screen coords)", () => {
+    it("should return true for direction pointing up", () => {
+      expect(isDirectionInSemiCircle({ x: 0, y: -1 }, "top")).toBe(true);
     });
 
-    it("should return true for angle PI/2 (down in screen coords)", () => {
-      expect(isAngleInSemiCircle(Math.PI / 2, "top")).toBe(true);
+    it("should return true for direction pointing up-right", () => {
+      expect(isDirectionInSemiCircle({ x: 1, y: -1 }, "top")).toBe(true);
     });
 
-    it("should return true for angle PI (left)", () => {
-      expect(isAngleInSemiCircle(Math.PI, "top")).toBe(true);
+    it("should return true for direction pointing up-left", () => {
+      expect(isDirectionInSemiCircle({ x: -1, y: -1 }, "top")).toBe(true);
     });
 
-    it("should return false for angle -PI/2 (up in screen coords)", () => {
-      expect(isAngleInSemiCircle(-Math.PI / 2, "top")).toBe(false);
+    it("should return true for direction pointing horizontally right (y=0 boundary)", () => {
+      expect(isDirectionInSemiCircle({ x: 1, y: 0 }, "top")).toBe(true);
+    });
+
+    it("should return true for direction pointing horizontally left (y=0 boundary)", () => {
+      expect(isDirectionInSemiCircle({ x: -1, y: 0 }, "top")).toBe(true);
+    });
+
+    it("should return false for direction pointing down", () => {
+      expect(isDirectionInSemiCircle({ x: 0, y: 1 }, "top")).toBe(false);
+    });
+
+    it("should return false for direction pointing down-right", () => {
+      expect(isDirectionInSemiCircle({ x: 1, y: 1 }, "top")).toBe(false);
     });
   });
 
-  describe("bottom semi-circle (-PI to 0)", () => {
-    it("should return true for angle -PI/2 (up in screen coords)", () => {
-      expect(isAngleInSemiCircle(-Math.PI / 2, "bottom")).toBe(true);
+  describe("bottom semi-circle (directions pointing downward, y >= 0 in screen coords)", () => {
+    it("should return true for direction pointing down", () => {
+      expect(isDirectionInSemiCircle({ x: 0, y: 1 }, "bottom")).toBe(true);
     });
 
-    it("should return true for angle 0 (right)", () => {
-      expect(isAngleInSemiCircle(0, "bottom")).toBe(true);
+    it("should return true for direction pointing down-right", () => {
+      expect(isDirectionInSemiCircle({ x: 1, y: 1 }, "bottom")).toBe(true);
     });
 
-    it("should return false for angle PI/2 (down in screen coords)", () => {
-      expect(isAngleInSemiCircle(Math.PI / 2, "bottom")).toBe(false);
-    });
-  });
-
-  describe("right semi-circle (-PI/2 to PI/2)", () => {
-    it("should return true for angle 0 (right)", () => {
-      expect(isAngleInSemiCircle(0, "right")).toBe(true);
+    it("should return true for direction pointing down-left", () => {
+      expect(isDirectionInSemiCircle({ x: -1, y: 1 }, "bottom")).toBe(true);
     });
 
-    it("should return true for angle PI/4 (down-right)", () => {
-      expect(isAngleInSemiCircle(Math.PI / 4, "right")).toBe(true);
+    it("should return true for direction pointing horizontally right (y=0 boundary)", () => {
+      expect(isDirectionInSemiCircle({ x: 1, y: 0 }, "bottom")).toBe(true);
     });
 
-    it("should return false for angle PI (left)", () => {
-      expect(isAngleInSemiCircle(Math.PI, "right")).toBe(false);
+    it("should return false for direction pointing up", () => {
+      expect(isDirectionInSemiCircle({ x: 0, y: -1 }, "bottom")).toBe(false);
+    });
+
+    it("should return false for direction pointing up-left", () => {
+      expect(isDirectionInSemiCircle({ x: -1, y: -1 }, "bottom")).toBe(false);
     });
   });
 
-  describe("left semi-circle (PI/2 to -PI/2, wrapping)", () => {
-    it("should return true for angle PI (left)", () => {
-      expect(isAngleInSemiCircle(Math.PI, "left")).toBe(true);
+  describe("right semi-circle (directions pointing right, x >= 0)", () => {
+    it("should return true for direction pointing right", () => {
+      expect(isDirectionInSemiCircle({ x: 1, y: 0 }, "right")).toBe(true);
     });
 
-    it("should return true for angle -PI (left, negative)", () => {
-      expect(isAngleInSemiCircle(-Math.PI, "left")).toBe(true);
+    it("should return true for direction pointing up-right", () => {
+      expect(isDirectionInSemiCircle({ x: 1, y: -1 }, "right")).toBe(true);
     });
 
-    it("should return true for angle 3*PI/4 (up-left)", () => {
-      expect(isAngleInSemiCircle((3 * Math.PI) / 4, "left")).toBe(true);
+    it("should return true for direction pointing down-right", () => {
+      expect(isDirectionInSemiCircle({ x: 1, y: 1 }, "right")).toBe(true);
     });
 
-    it("should return false for angle 0 (right)", () => {
-      expect(isAngleInSemiCircle(0, "left")).toBe(false);
+    it("should return true for direction pointing vertically up (x=0 boundary)", () => {
+      expect(isDirectionInSemiCircle({ x: 0, y: -1 }, "right")).toBe(true);
+    });
+
+    it("should return false for direction pointing left", () => {
+      expect(isDirectionInSemiCircle({ x: -1, y: 0 }, "right")).toBe(false);
+    });
+
+    it("should return false for direction pointing up-left", () => {
+      expect(isDirectionInSemiCircle({ x: -1, y: -1 }, "right")).toBe(false);
+    });
+  });
+
+  describe("left semi-circle (directions pointing left, x <= 0)", () => {
+    it("should return true for direction pointing left", () => {
+      expect(isDirectionInSemiCircle({ x: -1, y: 0 }, "left")).toBe(true);
+    });
+
+    it("should return true for direction pointing up-left", () => {
+      expect(isDirectionInSemiCircle({ x: -1, y: -1 }, "left")).toBe(true);
+    });
+
+    it("should return true for direction pointing down-left", () => {
+      expect(isDirectionInSemiCircle({ x: -1, y: 1 }, "left")).toBe(true);
+    });
+
+    it("should return true for direction pointing vertically up (x=0 boundary)", () => {
+      expect(isDirectionInSemiCircle({ x: 0, y: -1 }, "left")).toBe(true);
+    });
+
+    it("should return false for direction pointing right", () => {
+      expect(isDirectionInSemiCircle({ x: 1, y: 0 }, "left")).toBe(false);
+    });
+
+    it("should return false for direction pointing down-right", () => {
+      expect(isDirectionInSemiCircle({ x: 1, y: 1 }, "left")).toBe(false);
     });
   });
 });

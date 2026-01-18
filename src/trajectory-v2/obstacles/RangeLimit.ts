@@ -14,8 +14,7 @@
 
 import type { Vector2, RangeSemiCircle, RangePairOrientation } from "@/trajectory-v2/geometry/types";
 import {
-  directionToAngle,
-  isAngleInSemiCircle,
+  isDirectionInSemiCircle,
   computeRangeLimitHitPoint,
 } from "@/trajectory-v2/geometry/RangeLimitOps";
 
@@ -44,6 +43,7 @@ export interface RangeLimitHalf {
 
   /**
    * Check if a ray direction falls within this semi-circle.
+   * Uses coordinate sign checks (no atan2) for project rule compliance.
    */
   isDirectionInHalf(direction: Vector2): boolean;
 
@@ -97,8 +97,7 @@ export function createRangeLimitHalf(
     radius,
 
     isDirectionInHalf(direction: Vector2): boolean {
-      const angle = directionToAngle(direction);
-      return isAngleInSemiCircle(angle, half);
+      return isDirectionInSemiCircle(direction, half);
     },
 
     computeHitPoint(

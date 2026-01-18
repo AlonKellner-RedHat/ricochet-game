@@ -1,5 +1,11 @@
 /**
  * Tests for RangeLimit - Semi-circle range obstacles.
+ *
+ * Uses coordinate-sign definitions (no atan2):
+ * - "top":    y <= 0 (pointing upward in screen coords)
+ * - "bottom": y >= 0 (pointing downward in screen coords)
+ * - "left":   x <= 0 (pointing left)
+ * - "right":  x >= 0 (pointing right)
  */
 
 import { describe, it, expect } from "vitest";
@@ -13,38 +19,48 @@ import type { Vector2 } from "@/types";
 
 describe("RangeLimitHalf", () => {
   describe("isDirectionInHalf", () => {
-    it("should return true for direction in top half", () => {
+    it("should return true for direction in top half (y <= 0)", () => {
       const half = createRangeLimitHalf("top", 100);
       
-      // Right (0°) is in top
+      // Up (y=-1) is in top
+      expect(half.isDirectionInHalf({ x: 0, y: -1 })).toBe(true);
+      // Up-right is in top
+      expect(half.isDirectionInHalf({ x: 1, y: -1 })).toBe(true);
+      // Up-left is in top
+      expect(half.isDirectionInHalf({ x: -1, y: -1 })).toBe(true);
+      // Horizontal right (y=0) is boundary, in top
       expect(half.isDirectionInHalf({ x: 1, y: 0 })).toBe(true);
-      // Down (90°) is in top
-      expect(half.isDirectionInHalf({ x: 0, y: 1 })).toBe(true);
-      // Left (180°) is in top
+      // Horizontal left (y=0) is boundary, in top
       expect(half.isDirectionInHalf({ x: -1, y: 0 })).toBe(true);
     });
 
     it("should return false for direction not in top half", () => {
       const half = createRangeLimitHalf("top", 100);
       
-      // Up (-90°) is NOT in top
-      expect(half.isDirectionInHalf({ x: 0, y: -1 })).toBe(false);
+      // Down (y=1) is NOT in top
+      expect(half.isDirectionInHalf({ x: 0, y: 1 })).toBe(false);
+      // Down-right is NOT in top
+      expect(half.isDirectionInHalf({ x: 1, y: 1 })).toBe(false);
     });
 
-    it("should return true for direction in bottom half", () => {
+    it("should return true for direction in bottom half (y >= 0)", () => {
       const half = createRangeLimitHalf("bottom", 100);
       
-      // Up (-90°) is in bottom
-      expect(half.isDirectionInHalf({ x: 0, y: -1 })).toBe(true);
-      // Right (0°) is boundary - should be in bottom
+      // Down (y=1) is in bottom
+      expect(half.isDirectionInHalf({ x: 0, y: 1 })).toBe(true);
+      // Down-right is in bottom
+      expect(half.isDirectionInHalf({ x: 1, y: 1 })).toBe(true);
+      // Horizontal right (y=0) is boundary, in bottom
       expect(half.isDirectionInHalf({ x: 1, y: 0 })).toBe(true);
     });
 
     it("should return false for direction not in bottom half", () => {
       const half = createRangeLimitHalf("bottom", 100);
       
-      // Down (90°) is NOT in bottom
-      expect(half.isDirectionInHalf({ x: 0, y: 1 })).toBe(false);
+      // Up (y=-1) is NOT in bottom
+      expect(half.isDirectionInHalf({ x: 0, y: -1 })).toBe(false);
+      // Up-left is NOT in bottom
+      expect(half.isDirectionInHalf({ x: -1, y: -1 })).toBe(false);
     });
   });
 
@@ -55,10 +71,10 @@ describe("RangeLimitHalf", () => {
     it("should return null if direction not in half", () => {
       const half = createRangeLimitHalf("top", radius);
       
-      // Up is not in top half
+      // Down (y=1) is not in top half
       const result = half.computeHitPoint(
         originImage,
-        { x: 0, y: -1 }, // up
+        { x: 0, y: 1 }, // down
         { x: 100, y: 100 } // start at origin
       );
       
@@ -70,30 +86,30 @@ describe("RangeLimitHalf", () => {
       
       const result = half.computeHitPoint(
         originImage,
-        { x: 1, y: 0 }, // right (in top half)
+        { x: 0, y: -1 }, // up (in top half)
         { x: 100, y: 100 } // start at origin
       );
       
       expect(result).not.toBeNull();
       expect(result!.wasInsideCircle).toBe(true);
-      expect(result!.point.x).toBeCloseTo(150); // 100 + 50
-      expect(result!.point.y).toBeCloseTo(100);
+      expect(result!.point.x).toBeCloseTo(100);
+      expect(result!.point.y).toBeCloseTo(50); // 100 - 50
     });
 
     it("should return hit at start position when outside circle", () => {
       const half = createRangeLimitHalf("top", radius);
-      const startOutside: Vector2 = { x: 200, y: 100 };
+      const startOutside: Vector2 = { x: 100, y: 0 }; // 100 units above origin (outside circle of radius 50)
       
       const result = half.computeHitPoint(
         originImage,
-        { x: 1, y: 0 }, // right (in top half)
+        { x: 0, y: -1 }, // up (in top half)
         startOutside
       );
       
       expect(result).not.toBeNull();
       expect(result!.wasInsideCircle).toBe(false);
-      expect(result!.point.x).toBeCloseTo(200);
-      expect(result!.point.y).toBeCloseTo(100);
+      expect(result!.point.x).toBeCloseTo(100);
+      expect(result!.point.y).toBeCloseTo(0);
     });
   });
 });
@@ -127,7 +143,7 @@ describe("RangeLimitPair", () => {
       
       const result = pair.findHit(
         originImage,
-        { x: 1, y: 0 }, // right - in top half
+        { x: 0, y: -1 }, // up - in top half only
         { x: 100, y: 100 }
       );
       
@@ -140,7 +156,7 @@ describe("RangeLimitPair", () => {
       
       const result = pair.findHit(
         originImage,
-        { x: 0, y: -1 }, // up - in bottom half
+        { x: 0, y: 1 }, // down - in bottom half only
         { x: 100, y: 100 }
       );
       
@@ -148,18 +164,19 @@ describe("RangeLimitPair", () => {
       expect(result!.half.half).toBe("bottom");
     });
 
-    it("should return null for direction on boundary (covered by both)", () => {
-      // Direction exactly at 0° (right) should hit top
+    it("should find hit for direction on boundary (covered by both)", () => {
+      // Direction exactly horizontal (y=0) is in both top and bottom
       const pair = createRangeLimitPair(radius);
       
       const result = pair.findHit(
         originImage,
-        { x: 1, y: 0 },
+        { x: 1, y: 0 }, // right, y=0 is boundary
         { x: 100, y: 100 }
       );
       
-      // Should match one of them (top includes 0°)
+      // Should match top (first) since it's checked first
       expect(result).not.toBeNull();
+      expect(result!.half.half).toBe("top");
     });
   });
 });

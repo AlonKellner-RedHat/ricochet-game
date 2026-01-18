@@ -8,56 +8,42 @@
  * - Semi-circles with quadrant-aligned boundaries (top/bottom or left/right)
  * - Direction-based filtering (only rays pointing INTO a semi-circle are affected)
  * - Inside/outside logic determines hit point location
+ *
+ * IMPORTANT: Uses coordinate sign checks (not atan2) for project rule compliance.
+ * This ensures exact, floating-point-stable comparisons.
  */
 
 import type { Vector2, RangeSemiCircle } from "./types";
 
 /**
- * Angular bounds for each semi-circle (radians, 0 = right, CCW positive).
- * Each covers 180° (π radians).
- * 
- * Defined here instead of imported to avoid potential circular import issues.
- */
-const SEMICIRCLE_ANGLES: Record<RangeSemiCircle, { start: number; end: number }> = {
-  "top":    { start: 0,              end: Math.PI },       // 0° to 180°
-  "bottom": { start: -Math.PI,       end: 0 },             // -180° to 0°
-  "right":  { start: -Math.PI / 2,   end: Math.PI / 2 },   // -90° to 90°
-  "left":   { start: Math.PI / 2,    end: -Math.PI / 2 },  // 90° to -90° (wraps)
-};
-
-/**
- * Get the angle of a direction vector (radians, -PI to PI).
- * Uses standard atan2 convention: 0 = right (+x), positive = CCW.
+ * Check if a direction vector points into a semi-circle.
  *
- * Note: In screen coordinates where +y is down, this means:
- * - 0 = right
- * - PI/2 = down
- * - PI or -PI = left
- * - -PI/2 = up
- */
-export function directionToAngle(direction: Vector2): number {
-  return Math.atan2(direction.y, direction.x);
-}
-
-/**
- * Check if an angle falls within a semi-circle's bounds.
+ * Uses exact coordinate sign checks (no atan2, no epsilon comparisons).
  *
- * @param angle - The angle to check (radians, -PI to PI)
+ * Semi-circle definitions (in screen coordinates where +y is down):
+ * - "top":    y <= 0 (pointing upward)
+ * - "bottom": y >= 0 (pointing downward)
+ * - "left":   x <= 0 (pointing left)
+ * - "right":  x >= 0 (pointing right)
+ *
+ * @param direction - The direction vector to check (does not need to be normalized)
  * @param half - Which semi-circle to check against
- * @returns true if the angle is within the semi-circle's angular span
+ * @returns true if the direction points into the specified semi-circle
  */
-export function isAngleInSemiCircle(angle: number, half: RangeSemiCircle): boolean {
-  const bounds = SEMICIRCLE_ANGLES[half];
-
-  // Handle the "left" semi-circle which wraps around ±PI
-  if (half === "left") {
-    // Left covers PI/2 to PI and -PI to -PI/2
-    // Equivalently: angle >= PI/2 OR angle <= -PI/2
-    return angle >= bounds.start || angle <= bounds.end;
+export function isDirectionInSemiCircle(
+  direction: Vector2,
+  half: RangeSemiCircle
+): boolean {
+  switch (half) {
+    case "top":
+      return direction.y <= 0; // Pointing upward (screen coords)
+    case "bottom":
+      return direction.y >= 0; // Pointing downward
+    case "left":
+      return direction.x <= 0; // Pointing left
+    case "right":
+      return direction.x >= 0; // Pointing right
   }
-
-  // For non-wrapping semi-circles, just check if angle is in [start, end]
-  return angle >= bounds.start && angle <= bounds.end;
 }
 
 /**

@@ -401,3 +401,6 @@ export const DEFAULT_AIMING_CONFIG: AimingConfig = {
 
 /** Arrow speed constant (legacy - use DEFAULT_ARROW_CONFIG) */
 export const ARROW_SPEED = 5000;
+
+/** Default range limit radius (10 player heights) */
+export const DEFAULT_RANGE_LIMIT_RADIUS = DEFAULT_MOVEMENT_CONFIG.playerHeight * 10;
