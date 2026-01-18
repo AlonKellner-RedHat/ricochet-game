@@ -303,6 +303,81 @@ export class OriginPoint extends SourcePoint {
 }
 
 // =============================================================================
+// RANGE LIMIT POINT
+// =============================================================================
+
+/**
+ * Point on the range limit circle boundary.
+ *
+ * Used to track provenance when a visibility ray terminates at the
+ * range limit distance. This enables arc section detection during rendering.
+ *
+ * Similar to OriginPoint but with distinct provenance for arc detection.
+ */
+export class RangeLimitPoint extends SourcePoint {
+  readonly type = "range_limit" as const;
+
+  constructor(readonly value: Vector2) {
+    super();
+  }
+
+  computeXY(): Vector2 {
+    return this.value;
+  }
+
+  isOnSurface(_surface: Surface): boolean {
+    // Range limit points are never "on" a surface
+    return false;
+  }
+
+  equals(other: SourcePoint): boolean {
+    return (
+      other instanceof RangeLimitPoint &&
+      this.value.x === other.value.x &&
+      this.value.y === other.value.y
+    );
+  }
+
+  getKey(): string {
+    return `range_limit:${this.value.x},${this.value.y}`;
+  }
+
+  /**
+   * RangeLimitPoints never block - they represent the visibility boundary.
+   */
+  isBlocking(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): boolean {
+    return false;
+  }
+
+  /**
+   * RangeLimitPoints are not on any surface - exclude nothing.
+   */
+  getExcludedSurfaceIds(): string[] {
+    return [];
+  }
+
+  /**
+   * RangeLimitPoints have no blocking in either direction.
+   */
+  getBlockingStatus(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): BlockingStatus {
+    return NON_BLOCKING;
+  }
+}
+
+/**
+ * Type guard to check if a SourcePoint is a RangeLimitPoint.
+ */
+export function isRangeLimitPoint(point: SourcePoint): point is RangeLimitPoint {
+  return point instanceof RangeLimitPoint;
+}
+
+// =============================================================================
 // ENDPOINT
 // =============================================================================
 

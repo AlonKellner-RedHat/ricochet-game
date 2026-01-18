@@ -22,6 +22,7 @@ import {
   type Endpoint,
   HitPoint,
   OriginPoint,
+  RangeLimitPoint,
   type SourcePoint,
   endOf,
   isEndpoint,
@@ -801,9 +802,9 @@ function applyRangeLimit(
     y: rangeLimit.center.y + dy * scale,
   };
 
-  // Return an OriginPoint at the range limit position
-  // OriginPoint doesn't require a surface and represents a standalone vertex
-  return new OriginPoint(limitedPoint);
+  // Return a RangeLimitPoint at the range limit position
+  // RangeLimitPoint tracks provenance for arc section detection
+  return new RangeLimitPoint(limitedPoint);
 }
 
 // =============================================================================

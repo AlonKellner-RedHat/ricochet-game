@@ -30,6 +30,9 @@ import type { ValidRegionOutline } from "./OutlineBuilder";
 import { preparePolygonForRendering } from "./RenderingDedup";
 import { type Segment, type WindowConfig, getWindowSegments } from "./WindowConfig";
 import { createReflectedTargetSet, type RayTarget } from "./ReflectedTargets";
+import { toVisibilityVertices } from "./VisibilityVertexConverter";
+import { buildPolygonEdges, type ArcConfig } from "./ArcSectionBuilder";
+import { drawPolygonEdges } from "./EdgeRenderer";
 
 /**
  * Configuration for the valid region overlay.
@@ -133,6 +136,9 @@ export class ValidRegionRenderer {
 
   /** All visibility stages from the last render (Stage 1, Stage 2, etc.) */
   private visibilityStages: VisibilityStage[] = [];
+  
+  /** Current range limit configuration for arc rendering */
+  private currentRangeLimit: RangeLimitConfig | null = null;
 
   /**
    * Mapping from coordinate keys to connected surface IDs.
@@ -478,6 +484,9 @@ export class ValidRegionRenderer {
     externalCache?: ReflectionCache,
     rangeLimit?: RangeLimitConfig
   ): void {
+    // Store range limit for arc rendering
+    this.currentRangeLimit = rangeLimit ?? null;
+    
     // Combine user chains with screen boundary chain
     // Screen boundaries are just another SurfaceChain - no special handling
     const allChainsWithScreen: readonly SurfaceChain[] = [...allChains, this.screenChain];
@@ -784,7 +793,7 @@ export class ValidRegionRenderer {
 
       const visibility = this.calculateStageVisibility(stageIndex, totalStages);
       const overlayAlpha = this.visibilityToOverlayAlpha(visibility);
-      // Convert flat polygon array to vertex format for drawing
+      // Convert flat polygon array to vertex format for drawing (fallback)
       const vertices = stage.polygon.map((pos) => ({ position: pos }));
 
       // Determine if this stage uses a window (all stages after stage 0 do, or stage 0 if hasWindow)
@@ -794,7 +803,10 @@ export class ValidRegionRenderer {
       this.graphics.setBlendMode(BlendModes.ERASE);
       this.graphics.fillStyle(0xffffff, 1.0);
 
-      if (stageHasWindow) {
+      // Use arc-aware rendering when range limit is active
+      if (this.currentRangeLimit) {
+        this.drawPolygonWithArcs(stage.sourcePoints);
+      } else if (stageHasWindow) {
         this.drawPolygon(vertices);
       } else {
         this.drawTriangleFan(stage.origin, vertices);
@@ -804,7 +816,10 @@ export class ValidRegionRenderer {
       this.graphics.setBlendMode(BlendModes.NORMAL);
       this.graphics.fillStyle(this.config.overlayColor, overlayAlpha);
 
-      if (stageHasWindow) {
+      // Use arc-aware rendering when range limit is active
+      if (this.currentRangeLimit) {
+        this.drawPolygonWithArcs(stage.sourcePoints);
+      } else if (stageHasWindow) {
         this.drawPolygon(vertices);
       } else {
         this.drawTriangleFan(stage.origin, vertices);
@@ -844,6 +859,37 @@ export class ValidRegionRenderer {
 
     this.graphics.closePath();
     this.graphics.fillPath();
+  }
+
+  /**
+   * Draw a polygon with arc support for range limit edges.
+   *
+   * Converts SourcePoint[] to VisibilityVertex[], then builds PolygonEdge[],
+   * and finally draws with native arc primitives for consecutive range_limit vertices.
+   */
+  private drawPolygonWithArcs(sourcePoints: readonly SourcePoint[]): void {
+    if (sourcePoints.length < 3) return;
+
+    // Convert to visibility vertices with provenance tracking
+    const vertices = toVisibilityVertices(sourcePoints);
+
+    // Build arc config if range limit is active
+    const arcConfig: ArcConfig | null = this.currentRangeLimit
+      ? {
+          center: this.currentRangeLimit.center,
+          radius: this.currentRangeLimit.pair.radius,
+        }
+      : null;
+
+    // If we have arc config, use edge-based rendering
+    if (arcConfig) {
+      const edges = buildPolygonEdges(vertices, arcConfig);
+      drawPolygonEdges(this.graphics, edges);
+    } else {
+      // Fallback to simple polygon drawing
+      const positions = vertices.map((v) => ({ position: v.position }));
+      this.drawPolygon(positions);
+    }
   }
 
   /**

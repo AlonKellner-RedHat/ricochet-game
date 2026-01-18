@@ -28,7 +28,47 @@ describe("ValidRegionRenderer with Range Limit", () => {
       }).not.toThrow();
     });
 
-    it("should produce smaller visibility polygon with range limit", () => {
+    it("should produce visibility polygon with range limit using lineTo and arc", () => {
+      const screenBounds = { minX: 0, minY: 0, maxX: 800, maxY: 600 };
+      const mockGraphics = createMockGraphics();
+      const renderer = new ValidRegionRenderer(mockGraphics, screenBounds);
+      
+      const player = { x: 400, y: 300 };
+      const screenChain = createScreenBoundaryChain(screenBounds);
+      
+      // Render with range limit
+      const rangeLimitPair = createRangeLimitPair(100);
+      const rangeLimit = { pair: rangeLimitPair, center: player };
+      renderer.render(player, [], [screenChain], null, undefined, rangeLimit);
+      
+      // With range limit, the polygon should render using a mix of lineTo and arc
+      // At least one of them should be called
+      const lineToCallCount = mockGraphics.lineTo.mock.calls.length;
+      const arcCallCount = mockGraphics.arc.mock.calls.length;
+      expect(lineToCallCount + arcCallCount).toBeGreaterThan(0);
+    });
+  });
+
+  describe("arc rendering", () => {
+    it("should call arc() when range limit is active and has consecutive range_limit vertices", () => {
+      const screenBounds = { minX: 0, minY: 0, maxX: 800, maxY: 600 };
+      const mockGraphics = createMockGraphics();
+      const renderer = new ValidRegionRenderer(mockGraphics, screenBounds);
+      
+      const player = { x: 400, y: 300 };
+      const screenChain = createScreenBoundaryChain(screenBounds);
+      
+      // Use a small range limit so most rays hit it (not screen boundary)
+      const rangeLimitPair = createRangeLimitPair(100);
+      const rangeLimit = { pair: rangeLimitPair, center: player };
+      
+      renderer.render(player, [], [screenChain], null, undefined, rangeLimit);
+      
+      // arc() should be called for range limit edge sections
+      expect(mockGraphics.arc).toHaveBeenCalled();
+    });
+
+    it("should NOT call arc() when no range limit is provided", () => {
       const screenBounds = { minX: 0, minY: 0, maxX: 800, maxY: 600 };
       const mockGraphics = createMockGraphics();
       const renderer = new ValidRegionRenderer(mockGraphics, screenBounds);
@@ -38,19 +78,9 @@ describe("ValidRegionRenderer with Range Limit", () => {
       
       // Render without range limit
       renderer.render(player, [], [screenChain], null);
-      const withoutRangeLimitCalls = mockGraphics.lineTo.mock.calls.length;
       
-      // Reset mock
-      mockGraphics.lineTo.mockClear();
-      
-      // Render with range limit
-      const rangeLimitPair = createRangeLimitPair(100);
-      const rangeLimit = { pair: rangeLimitPair, center: player };
-      renderer.render(player, [], [screenChain], null, undefined, rangeLimit);
-      
-      // With range limit, the polygon should still render (has lineTo calls)
-      const withRangeLimitCalls = mockGraphics.lineTo.mock.calls.length;
-      expect(withRangeLimitCalls).toBeGreaterThan(0);
+      // arc() should NOT be called (no range limit)
+      expect(mockGraphics.arc).not.toHaveBeenCalled();
     });
   });
 });
