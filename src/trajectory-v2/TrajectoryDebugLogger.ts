@@ -31,17 +31,49 @@ export interface TrajectoryDebugLog {
 }
 
 /**
+ * Vertex type for debug logging - includes all SourcePoint types
+ */
+export type VertexDebugType = 
+  | "surface"      // Endpoint or HitPoint on a surface
+  | "screen"       // Endpoint on screen boundary
+  | "origin"       // OriginPoint (window endpoint)
+  | "junction"     // JunctionPoint between surfaces
+  | "arc_hit"      // ArcHitPoint - ray hit the range limit
+  | "arc_intersection" // ArcIntersectionPoint - surface crosses range limit
+  | "arc_junction"; // ArcJunctionPoint - semi-circle boundary
+
+/**
+ * Debug info for a single vertex in the visibility polygon
+ */
+export interface VertexDebugInfo {
+  position: Vector2;
+  type: VertexDebugType;
+  /** Surface ID if vertex is on a surface */
+  surfaceId?: string;
+  /** Additional provenance info (e.g., raySource key for arc_hit) */
+  provenance?: string;
+}
+
+/**
+ * Debug info for range limit configuration
+ */
+export interface RangeLimitDebugInfo {
+  center: Vector2;
+  radius: number;
+  orientation: "horizontal" | "vertical";
+}
+
+/**
  * Debug info for visibility/outline calculation.
  */
 export interface VisibilityDebugInfo {
   origin: Vector2;
   coneSections: Array<{ startAngle: number; endAngle: number }>;
   coneSpan: number;
-  outlineVertices: Array<{
-    position: Vector2;
-    type: "surface" | "screen" | "origin";
-  }>;
+  outlineVertices: VertexDebugInfo[];
   isValid: boolean;
+  /** Range limit configuration if active */
+  rangeLimit?: RangeLimitDebugInfo;
   /** @deprecated Use validPolygons and plannedPolygons instead */
   intermediatePolygons?: IntermediatePolygonDebugInfo[];
   /** Valid polygons - full visibility from each origin (N+1 for N surfaces) */
@@ -436,8 +468,17 @@ class TrajectoryDebugLoggerImpl {
               x: v.position.x,
               y: v.position.y,
               type: v.type,
+              surfaceId: v.surfaceId,
+              provenance: v.provenance,
             })),
             isValid: log.visibility.isValid,
+            rangeLimit: log.visibility.rangeLimit
+              ? {
+                  center: { x: log.visibility.rangeLimit.center.x, y: log.visibility.rangeLimit.center.y },
+                  radius: log.visibility.rangeLimit.radius,
+                  orientation: log.visibility.rangeLimit.orientation,
+                }
+              : null,
             validPolygons: log.visibility.validPolygons?.map((p) => ({
               stepIndex: p.stepIndex,
               origin: { x: p.origin.x, y: p.origin.y },

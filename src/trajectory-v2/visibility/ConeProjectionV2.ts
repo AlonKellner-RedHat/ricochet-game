@@ -1127,8 +1127,11 @@ export function projectConeV2(
 
   // Add ArcIntersectionPoints where surfaces cross the range limit circle
   // These are critical points for visibility polygon construction
+  // IMPORTANT: Use effectiveObstacles (excludes window surface) to honor provenance propagation.
+  // If Stage 1 computed an ArcIntersectionPoint on the window, it's passed via leftBoundarySource/
+  // rightBoundarySource. We reuse that exact point - no recomputation, no floating-point drift.
   if (rangeLimit) {
-    for (const obstacle of obstacles) {
+    for (const obstacle of effectiveObstacles) {
       const intersections = computeLineCircleIntersections(
         obstacle.segment.start,
         obstacle.segment.end,
@@ -2033,7 +2036,17 @@ export function projectConeV2(
         windowContext
       );
       // Normalize HitPoints to ensure consistent object references
-      leftHit = rawLeftHit && isHitPoint(rawLeftHit) ? getOrCreateHitPoint(rawLeftHit) : rawLeftHit;
+      let normalizedLeftHit = rawLeftHit && isHitPoint(rawLeftHit) ? getOrCreateHitPoint(rawLeftHit) : rawLeftHit;
+      // Apply range limit to cone boundary ray - creates ArcHitPoint if hit exceeds range
+      // Use leftWindowOrigin as raySource for provenance if available
+      if (normalizedLeftHit && rangeLimit) {
+        const hitXY = normalizedLeftHit.computeXY();
+        if (isPointBeyondRangeLimit(hitXY, rangeLimit)) {
+          const limitedPoint = computeRangeLimitIntersection(origin, hitXY, rangeLimit);
+          normalizedLeftHit = new ArcHitPoint(limitedPoint, leftWindowOrigin ?? undefined);
+        }
+      }
+      leftHit = normalizedLeftHit;
       if (leftHit) {
         vertices.push(leftHit);
       }
@@ -2052,7 +2065,17 @@ export function projectConeV2(
         windowContext
       );
       // Normalize HitPoints to ensure consistent object references
-      rightHit = rawRightHit && isHitPoint(rawRightHit) ? getOrCreateHitPoint(rawRightHit) : rawRightHit;
+      let normalizedRightHit = rawRightHit && isHitPoint(rawRightHit) ? getOrCreateHitPoint(rawRightHit) : rawRightHit;
+      // Apply range limit to cone boundary ray - creates ArcHitPoint if hit exceeds range
+      // Use rightWindowOrigin as raySource for provenance if available
+      if (normalizedRightHit && rangeLimit) {
+        const hitXY = normalizedRightHit.computeXY();
+        if (isPointBeyondRangeLimit(hitXY, rangeLimit)) {
+          const limitedPoint = computeRangeLimitIntersection(origin, hitXY, rangeLimit);
+          normalizedRightHit = new ArcHitPoint(limitedPoint, rightWindowOrigin ?? undefined);
+        }
+      }
+      rightHit = normalizedRightHit;
       if (rightHit) {
         vertices.push(rightHit);
       }
@@ -2359,6 +2382,20 @@ function comparePointsCCWSimplified(
     }
     if (isOriginPoint(b) && !isOriginPoint(a)) {
       return 1; // b (OriginPoint) comes before a
+    }
+
+    // HitPoints on DIFFERENT surfaces are UNRELATED collinear points.
+    // Per project rules: "Distance ordering is only valid for UNRELATED collinear points."
+    // These come from rays to different targets that happen to be collinear.
+    // Order by distance: closer to origin comes first in CCW order.
+    if (isHitPoint(a) && isHitPoint(b) && a.hitSurface?.id !== b.hitSurface?.id) {
+      const aDistSq = aVec.x * aVec.x + aVec.y * aVec.y;
+      const bDistSq = bVec.x * bVec.x + bVec.y * bVec.y;
+      if (aDistSq !== bDistSq) {
+        return aDistSq < bDistSq ? -1 : 1;
+      }
+      // Same distance (shouldn't happen for different surfaces), use surface ID as tiebreaker
+      return (a.hitSurface?.id ?? "") < (b.hitSurface?.id ?? "") ? -1 : 1;
     }
 
     // For other collinear points without PreComputedPairs: this is a bug

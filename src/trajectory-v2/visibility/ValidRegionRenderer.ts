@@ -13,10 +13,25 @@ import type { Surface } from "@/surfaces/Surface";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
 import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { createReflectionCache, type ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
-import { type SourcePoint, isEndpoint, isHitPoint, isArcIntersectionPoint, Endpoint } from "@/trajectory-v2/geometry/SourcePoint";
+import { 
+  type SourcePoint, 
+  isEndpoint, 
+  isHitPoint, 
+  isArcIntersectionPoint,
+  isArcHitPoint,
+  isArcJunctionPoint,
+  isOriginPoint,
+  Endpoint 
+} from "@/trajectory-v2/geometry/SourcePoint";
 import { type SurfaceChain, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
-import { TrajectoryDebugLogger, type VisibilityDebugInfo } from "../TrajectoryDebugLogger";
+import { 
+  TrajectoryDebugLogger, 
+  type VisibilityDebugInfo,
+  type VertexDebugInfo,
+  type VertexDebugType,
+  type RangeLimitDebugInfo,
+} from "../TrajectoryDebugLogger";
 import type { ScreenBounds } from "./AnalyticalPropagation";
 import {
   createConeThroughWindow,
@@ -962,6 +977,63 @@ export class ValidRegionRenderer {
   }
 
   /**
+   * Convert a SourcePoint to its debug type.
+   */
+  private getVertexDebugType(point: SourcePoint): VertexDebugType {
+    if (isOriginPoint(point)) return "origin";
+    if (isArcHitPoint(point)) return "arc_hit";
+    if (isArcIntersectionPoint(point)) return "arc_intersection";
+    if (isArcJunctionPoint(point)) return "arc_junction";
+    if (isJunctionPoint(point)) return "junction";
+    if (isHitPoint(point)) return "surface";
+    if (isEndpoint(point)) {
+      // Check if it's a screen boundary endpoint
+      const surface = point.surface;
+      if (surface?.id?.startsWith("screen-")) return "screen";
+      return "surface";
+    }
+    return "surface";
+  }
+
+  /**
+   * Get surface ID from a SourcePoint if applicable.
+   */
+  private getVertexSurfaceId(point: SourcePoint): string | undefined {
+    if (isEndpoint(point)) return point.surface?.id;
+    if (isHitPoint(point)) return point.hitSurface?.id; // HitPoint uses hitSurface
+    if (isArcIntersectionPoint(point)) return point.surface?.id;
+    return undefined;
+  }
+
+  /**
+   * Get provenance info for a SourcePoint.
+   */
+  private getVertexProvenance(point: SourcePoint): string | undefined {
+    if (isArcHitPoint(point)) {
+      return point.raySource ? `ray:${point.raySource.getKey()}` : "no-ray-source";
+    }
+    if (isArcIntersectionPoint(point)) {
+      return `${point.intersectionType}:${point.surface?.id ?? "unknown"}`;
+    }
+    if (isArcJunctionPoint(point)) {
+      return point.boundary;
+    }
+    return undefined;
+  }
+
+  /**
+   * Convert SourcePoints to debug vertex info.
+   */
+  private convertToDebugVertices(sourcePoints: readonly SourcePoint[]): VertexDebugInfo[] {
+    return sourcePoints.map((point) => ({
+      position: { ...point.computeXY() },
+      type: this.getVertexDebugType(point),
+      surfaceId: this.getVertexSurfaceId(point),
+      provenance: this.getVertexProvenance(point),
+    }));
+  }
+
+  /**
    * Log visibility data for debugging.
    */
   private logVisibilitySimple(result: {
@@ -971,15 +1043,30 @@ export class ValidRegionRenderer {
   }): void {
     if (!TrajectoryDebugLogger.isEnabled()) return;
 
+    // Use lastSourcePoints if available for accurate type logging
+    const outlineVertices: VertexDebugInfo[] = this.lastSourcePoints.length > 0
+      ? this.convertToDebugVertices(this.lastSourcePoints)
+      : result.polygon.map((pos) => ({
+          position: { ...pos },
+          type: "surface" as VertexDebugType,
+        }));
+
+    // Convert range limit config to debug info format
+    const rangeLimitDebug: RangeLimitDebugInfo | undefined = this.currentRangeLimit
+      ? {
+          center: { ...this.currentRangeLimit.center },
+          radius: this.currentRangeLimit.pair.radius,
+          orientation: this.currentRangeLimit.pair.orientation,
+        }
+      : undefined;
+
     const visibilityInfo: VisibilityDebugInfo = {
       origin: { ...result.origin },
       coneSections: [{ startAngle: 0, endAngle: 2 * Math.PI }],
       coneSpan: 360,
-      outlineVertices: result.polygon.map((pos) => ({
-        position: { ...pos },
-        type: "surface" as const,
-      })),
+      outlineVertices,
       isValid: result.isValid,
+      rangeLimit: rangeLimitDebug,
     };
 
     TrajectoryDebugLogger.logVisibility(visibilityInfo);

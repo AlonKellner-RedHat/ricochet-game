@@ -139,10 +139,14 @@ function cursorOnSegment(
 
 /**
  * Check if two hits are on the same surface.
+ * Returns true if both are null, both are range limit hits, or both hit the same surface.
  */
 function sameSurface(hit1: StrategyHitResult | null, hit2: StrategyHitResult | null): boolean {
   if (hit1 === null && hit2 === null) return true;
   if (hit1 === null || hit2 === null) return false;
+  // Handle range limit hits (surface is null)
+  if (hit1.surface === null && hit2.surface === null) return true;
+  if (hit1.surface === null || hit2.surface === null) return false;
   return hit1.surface.id === hit2.surface.id;
 }
 
