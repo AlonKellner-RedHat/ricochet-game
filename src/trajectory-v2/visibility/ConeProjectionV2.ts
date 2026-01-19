@@ -2172,9 +2172,10 @@ function removeDuplicatesSourcePoint(points: SourcePoint[]): SourcePoint[] {
     }
     if (isDuplicate) continue;
 
-    // For JunctionPoints and Endpoints: skip if an OriginPoint exists at same position
+    // For JunctionPoints, Endpoints, and ArcIntersectionPoints: skip if an OriginPoint exists at same position
     // (OriginPoint from window definition takes precedence - provenance-based dedup)
-    if ((isJunctionPoint(p) || isEndpoint(p)) && originPointCoords.has(coordKey)) {
+    // ArcIntersectionPoint is included because it's a surface point (where surface crosses arc)
+    if ((isJunctionPoint(p) || isEndpoint(p) || isArcIntersectionPoint(p)) && originPointCoords.has(coordKey)) {
       continue;
     }
 

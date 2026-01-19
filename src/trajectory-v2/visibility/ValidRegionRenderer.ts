@@ -13,7 +13,7 @@ import type { Surface } from "@/surfaces/Surface";
 import { reflectPointThroughLine } from "@/trajectory-v2/geometry/GeometryOps";
 import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { createReflectionCache, type ReflectionCache } from "@/trajectory-v2/geometry/ReflectionCache";
-import { type SourcePoint, isEndpoint, isHitPoint, Endpoint } from "@/trajectory-v2/geometry/SourcePoint";
+import { type SourcePoint, isEndpoint, isHitPoint, isArcIntersectionPoint, Endpoint } from "@/trajectory-v2/geometry/SourcePoint";
 import { type SurfaceChain, isJunctionPoint } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 import { TrajectoryDebugLogger, type VisibilityDebugInfo } from "../TrajectoryDebugLogger";
@@ -405,6 +405,11 @@ export class ValidRegionRenderer {
             coords = hitCoords;
           }
         }
+      } else if (isArcIntersectionPoint(sp) && sp.surface.id === targetSurfaceId) {
+        // ArcIntersectionPoint is where a surface crosses the arc
+        // It belongs to the surface, so count it as being on the target surface
+        isOnTarget = true;
+        coords = sp.computeXY();
       }
 
       if (isOnTarget && coords) {
