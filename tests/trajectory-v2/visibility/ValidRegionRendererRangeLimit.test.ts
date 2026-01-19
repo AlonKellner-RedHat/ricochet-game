@@ -8,7 +8,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ValidRegionRenderer } from "@/trajectory-v2/visibility/ValidRegionRenderer";
 import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { createRangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
+import { createSingleSurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import type { IValidRegionGraphics } from "@/trajectory-v2/visibility/ValidRegionRenderer";
+
+/**
+ * Create a small obstacle inside the range limit to ensure valid polygon.
+ * Without obstacles, only 2 ArcJunctionPoints exist (< 3 = invalid polygon).
+ */
+function createSmallObstacle() {
+  const surface = {
+    id: "small-obstacle",
+    segment: { start: { x: 380, y: 290 }, end: { x: 420, y: 290 } },
+    canReflect: true,
+  };
+  return createSingleSurfaceChain(surface);
+}
 
 describe("ValidRegionRenderer with Range Limit", () => {
   describe("render configuration", () => {
@@ -35,11 +49,12 @@ describe("ValidRegionRenderer with Range Limit", () => {
       
       const player = { x: 400, y: 300 };
       const screenChain = createScreenBoundaryChain(screenBounds);
+      const obstacleChain = createSmallObstacle();
       
-      // Render with range limit
+      // Render with range limit and an obstacle (to create valid polygon)
       const rangeLimitPair = createRangeLimitPair(100);
       const rangeLimit = { pair: rangeLimitPair, center: player };
-      renderer.render(player, [], [screenChain], null, undefined, rangeLimit);
+      renderer.render(player, [], [screenChain, obstacleChain], null, undefined, rangeLimit);
       
       // With range limit, the polygon should render using a mix of lineTo and arc
       // At least one of them should be called
@@ -57,12 +72,14 @@ describe("ValidRegionRenderer with Range Limit", () => {
       
       const player = { x: 400, y: 300 };
       const screenChain = createScreenBoundaryChain(screenBounds);
+      const obstacleChain = createSmallObstacle();
       
       // Use a small range limit so most rays hit it (not screen boundary)
+      // Include an obstacle to create enough vertices for a valid polygon
       const rangeLimitPair = createRangeLimitPair(100);
       const rangeLimit = { pair: rangeLimitPair, center: player };
       
-      renderer.render(player, [], [screenChain], null, undefined, rangeLimit);
+      renderer.render(player, [], [screenChain, obstacleChain], null, undefined, rangeLimit);
       
       // arc() should be called for range limit edge sections
       expect(mockGraphics.arc).toHaveBeenCalled();

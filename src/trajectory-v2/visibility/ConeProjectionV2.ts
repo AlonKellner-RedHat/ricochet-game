@@ -1748,6 +1748,54 @@ export function projectConeV2(
       continue;
     }
 
+    // Handle ArcJunctionPoints - where two semi-circles of the range limit meet
+    // ArcJunctionPoints are ALWAYS fully blocking (both CW and CCW) - no continuation rays
+    // They represent the corners of the range limit circle (left/right or top/bottom)
+    if (isArcJunctionPoint(target)) {
+      const targetXY = target.computeXY();
+
+      // Cast ray to the junction point - no surfaces to exclude
+      const blockingHit = castRayToTarget(
+        origin,
+        targetXY,
+        effectiveObstacles,
+        startLine,
+        chains,
+        surfaceOrientations,
+        windowContext
+      );
+
+      // Determine if ray reaches the arc junction point
+      let reachesJunction = false;
+      if (blockingHit === null) {
+        // No obstacle blocks - ray reaches the junction
+        reachesJunction = true;
+      } else if (isHitPoint(blockingHit)) {
+        // Check if the blocking hit is AT or PAST the target
+        const dx = targetXY.x - origin.x;
+        const dy = targetXY.y - origin.y;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq > 0) {
+          const scale = 10;
+          const targetT = 1 / scale;
+          if (blockingHit.t >= targetT) {
+            reachesJunction = true;
+          }
+        }
+      }
+
+      if (reachesJunction) {
+        // Ray reaches the arc junction - add it directly
+        // ArcJunctionPoint is fully blocking, no continuation ray
+        vertices.push(target);
+      } else if (blockingHit) {
+        // Ray is blocked by another obstacle before reaching the junction
+        const normalizedHit = isHitPoint(blockingHit) ? getOrCreateHitPoint(blockingHit) : blockingHit;
+        vertices.push(normalizedHit);
+      }
+      continue;
+    }
+
     // Skip endpoints that were already handled as part of a collinear continuation.
     // This prevents duplicate processing and conflicting PreComputedPairs.
     if (collinearEndpointsToSkip.has(target.getKey())) {
@@ -2054,13 +2102,15 @@ export function projectConeV2(
   // Vertices beyond range are unreachable - they would have been hit by the range limit circle
   // first, and that hit is already captured via continuation rays.
   //
-  // Exception: ArcHitPoints and ArcIntersectionPoints are always kept (they're on the arc).
+  // Exception: All arc-related points are always kept (they're on the arc by definition).
   const rangeLimitedVertices = rangeLimit
     ? vertices.filter((v) => {
         // Always keep ArcHitPoints (they have proper provenance from continuation rays)
         if (isArcHitPoint(v)) return true;
         // Always keep ArcIntersectionPoints (they're on the arc by definition)
         if (isArcIntersectionPoint(v)) return true;
+        // Always keep ArcJunctionPoints (they're on the arc by definition)
+        if (isArcJunctionPoint(v)) return true;
         
         // Filter out other vertices beyond range limit
         const xy = v.computeXY();

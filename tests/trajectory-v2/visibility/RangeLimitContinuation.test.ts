@@ -9,7 +9,7 @@ import {
 import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { type RangeLimitConfig } from "@/trajectory-v2/visibility/ValidRegionRenderer";
 import { createRangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
-import { isArcHitPoint, isEndpoint, type SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
+import { isArcHitPoint, isArcJunctionPoint, isEndpoint, type SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import { type Vector2 } from "@/trajectory-v2/geometry/types";
 
 // Test geometry constants
@@ -208,7 +208,7 @@ describe("Range Limit Continuation Rays", () => {
   });
 
   describe("Range limit with no obstacles", () => {
-    it("should create ArcHitPoints for screen corner rays that exceed range", () => {
+    it("should create ArcJunctionPoints for arc boundary when all screen corners exceed range", () => {
       const chains = createChainsWithScreen([]);
 
       // Small range limit - all screen corners are beyond
@@ -220,9 +220,10 @@ describe("Range Limit Continuation Rays", () => {
       const cone = createFullCone(SCREEN_CENTER);
       const vertices = projectConeV2(cone, chains, undefined, undefined, undefined, rangeLimit);
 
-      // Should have ArcHitPoints for the corners that exceed range
-      const rangeLimitVertices = vertices.filter(isArcHitPoint);
-      expect(rangeLimitVertices.length).toBeGreaterThan(0);
+      // Should have ArcJunctionPoints at the arc boundaries
+      // With no obstacles, only arc junctions form the visibility boundary
+      const arcJunctionVertices = vertices.filter(isArcJunctionPoint);
+      expect(arcJunctionVertices.length).toBe(2); // left and right junctions
     });
   });
 });
