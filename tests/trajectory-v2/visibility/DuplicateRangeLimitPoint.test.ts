@@ -495,6 +495,125 @@ describe("Duplicate RangeLimitPoint Bug", () => {
       // but equals() returns false due to coordinate differences
     });
 
+    it("should prove the bug is caused by SAME RAY having two points pushed", () => {
+      // THE ACTUAL BUG SCENARIO:
+      //
+      // Line 1737: vertices.push(hit);  where hit === targetEndpoint (E)
+      // Line 1820: vertices.push(normalizedContinuation);  where this is RangeLimitPoint
+      //
+      // Both are on the EXACT SAME RAY from origin:
+      //   Origin -----> E -----> Continuation hit
+      //
+      // If E is beyond range limit:
+      // - Bulk processing converts E to RangeLimitPoint (no provenance)
+      // - Continuation already added RangeLimitPoint (with provenance)
+      // - TWO RangeLimitPoints on same ray = BUG
+
+      const origin = { x: 156.9, y: 586 };
+      const center = origin;
+      const radius = 480;
+
+      // Endpoint E beyond range limit
+      const pyramid = createTestSurface(
+        "pyramid-3-0",
+        { x: 700, y: 400 }, // start - beyond range
+        { x: 800, y: 500 }
+      );
+      const endpoint = startOf(pyramid);
+      const endpointXY = endpoint.computeXY();
+
+      // Verify E is beyond range
+      const distE = Math.sqrt(
+        (endpointXY.x - origin.x) ** 2 + (endpointXY.y - origin.y) ** 2
+      );
+      expect(distE).toBeGreaterThan(radius);
+
+      // Far target for continuation ray (10x extended on same ray)
+      const rayDir = {
+        x: endpointXY.x - origin.x,
+        y: endpointXY.y - origin.y,
+      };
+      const farTarget = {
+        x: origin.x + rayDir.x * 10,
+        y: origin.y + rayDir.y * 10,
+      };
+
+      console.log("\n=== SAME RAY, TWO POINTS ===");
+      console.log("Origin:", origin);
+      console.log("Endpoint E:", endpointXY, "distance:", distE);
+      console.log("Far target:", farTarget);
+
+      // What happens in the code:
+      // 1. E is pushed to vertices (line 1737)
+      // 2. Continuation ray through E finds it hits range limit
+      // 3. RangeLimitPoint(intersection, E) is pushed (line 1820)
+      // 4. Bulk processing: E is beyond range, converted to RangeLimitPoint
+
+      // Simulate the two RangeLimitPoints created:
+      const rlpFromContinuation = new RangeLimitPoint(
+        computeRangeLimitIntersection(origin, farTarget, center, radius),
+        endpoint // WITH provenance
+      );
+
+      const rlpFromBulk = new RangeLimitPoint(
+        computeRangeLimitIntersection(origin, endpointXY, center, radius)
+        // NO provenance
+      );
+
+      console.log("\nRLP from continuation:", rlpFromContinuation.computeXY());
+      console.log("RLP from bulk:", rlpFromBulk.computeXY());
+
+      // Both are on the SAME RAY, so cross product = 0
+      const aVec = {
+        x: rlpFromContinuation.computeXY().x - origin.x,
+        y: rlpFromContinuation.computeXY().y - origin.y,
+      };
+      const bVec = {
+        x: rlpFromBulk.computeXY().x - origin.x,
+        y: rlpFromBulk.computeXY().y - origin.y,
+      };
+      const cross = aVec.x * bVec.y - aVec.y * bVec.x;
+
+      console.log("Cross product:", cross);
+      expect(cross).toBe(0); // EXACTLY same ray
+
+      // And they're at the same position (when center === origin)
+      expect(rlpFromContinuation.computeXY().x).toBe(rlpFromBulk.computeXY().x);
+      expect(rlpFromContinuation.computeXY().y).toBe(rlpFromBulk.computeXY().y);
+
+      // But they have different keys!
+      console.log("\nKey 1:", rlpFromContinuation.getKey());
+      console.log("Key 2:", rlpFromBulk.getKey());
+      expect(rlpFromContinuation.getKey()).not.toBe(rlpFromBulk.getKey());
+
+      // equals() returns true because coords are identical
+      expect(rlpFromContinuation.equals(rlpFromBulk)).toBe(true);
+
+      console.log("\n=== ROOT CAUSE ===");
+      console.log("The endpoint E and its continuation are on the SAME RAY.");
+      console.log("Both get pushed to vertices, then bulk converts E to RLP.");
+      console.log("This creates TWO RLPs on same ray with different keys.");
+      console.log("When center !== origin (after reflection), coords differ,");
+      console.log("and if cross happens to be exactly 0, error is thrown.");
+    });
+
+    // Helper for this test block
+    function computeRangeLimitIntersection(
+      _origin: Vector2,
+      target: Vector2,
+      center: Vector2,
+      radius: number
+    ): Vector2 {
+      const dx = target.x - center.x;
+      const dy = target.y - center.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const scale = radius / dist;
+      return {
+        x: center.x + dx * scale,
+        y: center.y + dy * scale,
+      };
+    }
+
     it("should demonstrate the exact error condition with real coordinates", () => {
       // Use the ACTUAL coordinates from the error message
       const origin = { x: 156.90297099999924, y: 586 }; // From investigation
