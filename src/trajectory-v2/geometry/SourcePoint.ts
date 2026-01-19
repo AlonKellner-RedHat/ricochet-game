@@ -303,7 +303,7 @@ export class OriginPoint extends SourcePoint {
 }
 
 // =============================================================================
-// RANGE LIMIT POINT
+// ARC HIT POINT (formerly RangeLimitPoint)
 // =============================================================================
 
 /**
@@ -316,10 +316,14 @@ export class OriginPoint extends SourcePoint {
  * was cast through. This enables stable keys for PreComputedPairs lookup
  * even when floating-point coordinates differ slightly.
  *
- * Note: For surface-circle intersections, use IntersectionPoint instead.
+ * Note: For surface-circle intersections, use ArcIntersectionPoint instead.
+ *
+ * Named ArcHitPoint to align with HitPoint pattern:
+ * - HitPoint: generated when ray hits a surface
+ * - ArcHitPoint: generated when ray hits an arc (range limit circle)
  */
-export class RangeLimitPoint extends SourcePoint {
-  readonly type = "range_limit" as const;
+export class ArcHitPoint extends SourcePoint {
+  readonly type = "arc_hit" as const;
 
   constructor(
     readonly value: Vector2,
@@ -340,12 +344,12 @@ export class RangeLimitPoint extends SourcePoint {
 
   equals(other: SourcePoint): boolean {
     // If both have ray sources, compare by source (provenance-based)
-    if (this.raySource && other instanceof RangeLimitPoint && other.raySource) {
+    if (this.raySource && other instanceof ArcHitPoint && other.raySource) {
       return this.raySource.equals(other.raySource);
     }
     // Otherwise compare by coordinates
     return (
-      other instanceof RangeLimitPoint &&
+      other instanceof ArcHitPoint &&
       this.value.x === other.value.x &&
       this.value.y === other.value.y
     );
@@ -354,14 +358,14 @@ export class RangeLimitPoint extends SourcePoint {
   getKey(): string {
     // Provenance-based key: use ray source for stability
     if (this.raySource) {
-      return `range_limit:ray:${this.raySource.getKey()}`;
+      return `arc_hit:ray:${this.raySource.getKey()}`;
     }
     // Coordinate-based fallback for boundary hits (not from continuation rays)
-    return `range_limit:${this.value.x},${this.value.y}`;
+    return `arc_hit:${this.value.x},${this.value.y}`;
   }
 
   /**
-   * RangeLimitPoints never block - they represent the visibility boundary.
+   * ArcHitPoints never block - they represent the visibility boundary.
    */
   isBlocking(
     _orientations: Map<string, OrientationInfo>,
@@ -371,14 +375,14 @@ export class RangeLimitPoint extends SourcePoint {
   }
 
   /**
-   * RangeLimitPoints are not on any surface - exclude nothing.
+   * ArcHitPoints are not on any surface - exclude nothing.
    */
   getExcludedSurfaceIds(): string[] {
     return [];
   }
 
   /**
-   * RangeLimitPoints have no blocking in either direction.
+   * ArcHitPoints have no blocking in either direction.
    */
   getBlockingStatus(
     _orientations: Map<string, OrientationInfo>,
@@ -389,32 +393,40 @@ export class RangeLimitPoint extends SourcePoint {
 }
 
 /**
- * Type guard to check if a SourcePoint is a RangeLimitPoint.
+ * Type guard to check if a SourcePoint is an ArcHitPoint.
  */
-export function isRangeLimitPoint(point: SourcePoint): point is RangeLimitPoint {
-  return point instanceof RangeLimitPoint;
+export function isArcHitPoint(point: SourcePoint): point is ArcHitPoint {
+  return point instanceof ArcHitPoint;
 }
 
+// Legacy alias for backwards compatibility during transition
+/** @deprecated Use ArcHitPoint instead */
+export const RangeLimitPoint = ArcHitPoint;
+/** @deprecated Use isArcHitPoint instead */
+export const isRangeLimitPoint = isArcHitPoint;
+
 // =============================================================================
-// INTERSECTION POINT
+// ARC INTERSECTION POINT (formerly IntersectionPoint)
 // =============================================================================
 
 /**
  * Type of intersection - what the surface intersects with.
  */
-export type IntersectionType = "range_limit" | "surface";
+export type ArcIntersectionType = "range_limit" | "surface";
 
 /**
- * Point where a surface segment intersects another shape.
+ * Point where a surface segment intersects the range limit arc.
  *
  * Used to represent critical points for visibility polygon construction:
  * - Where a surface crosses the range limit circle
- * - Where two surfaces cross each other (mid-segment intersection)
  *
  * Carries provenance: the surface and parametric t value along that surface.
+ *
+ * Named ArcIntersectionPoint to clarify it's arc-specific.
+ * Future generic IntersectionPoint may handle surface-surface intersections.
  */
-export class IntersectionPoint extends SourcePoint {
-  readonly type = "intersection" as const;
+export class ArcIntersectionPoint extends SourcePoint {
+  readonly type = "arc_intersection" as const;
 
   constructor(
     /** The surface being intersected */
@@ -422,7 +434,7 @@ export class IntersectionPoint extends SourcePoint {
     /** Parameter along surface (0 = start, 1 = end) */
     readonly t: number,
     /** What the surface intersects with */
-    readonly intersectionType: IntersectionType
+    readonly intersectionType: ArcIntersectionType
   ) {
     super();
   }
@@ -441,18 +453,18 @@ export class IntersectionPoint extends SourcePoint {
 
   equals(other: SourcePoint): boolean {
     return (
-      other instanceof IntersectionPoint &&
+      other instanceof ArcIntersectionPoint &&
       this.surface.id === other.surface.id &&
       this.t === other.t
     );
   }
 
   getKey(): string {
-    return `intersection:${this.surface.id}:${this.t}`;
+    return `arc_intersection:${this.surface.id}:${this.t}`;
   }
 
   /**
-   * IntersectionPoints never block - continuation rays continue through.
+   * ArcIntersectionPoints never block - continuation rays continue through.
    * Like Endpoint, the intersection creates a boundary but light passes.
    */
   isBlocking(
@@ -470,7 +482,7 @@ export class IntersectionPoint extends SourcePoint {
   }
 
   /**
-   * IntersectionPoints have no blocking in either direction.
+   * ArcIntersectionPoints have no blocking in either direction.
    */
   getBlockingStatus(
     _orientations: Map<string, OrientationInfo>,
@@ -481,10 +493,120 @@ export class IntersectionPoint extends SourcePoint {
 }
 
 /**
- * Type guard to check if a SourcePoint is an IntersectionPoint.
+ * Type guard to check if a SourcePoint is an ArcIntersectionPoint.
  */
-export function isIntersectionPoint(point: SourcePoint): point is IntersectionPoint {
-  return point instanceof IntersectionPoint;
+export function isArcIntersectionPoint(point: SourcePoint): point is ArcIntersectionPoint {
+  return point instanceof ArcIntersectionPoint;
+}
+
+// Legacy aliases for backwards compatibility during transition
+/** @deprecated Use ArcIntersectionPoint instead */
+export const IntersectionPoint = ArcIntersectionPoint;
+/** @deprecated Use isArcIntersectionPoint instead */
+export const isIntersectionPoint = isArcIntersectionPoint;
+/** @deprecated Use ArcIntersectionType instead */
+export type IntersectionType = ArcIntersectionType;
+
+// =============================================================================
+// ARC JUNCTION POINT
+// =============================================================================
+
+/**
+ * Boundary type for arc junction (where on the circle the junction is).
+ */
+export type ArcJunctionBoundary = "left" | "right" | "top" | "bottom";
+
+/**
+ * Semi-circle type (which half of the circle).
+ */
+export type ArcHalf = "top" | "bottom" | "left" | "right";
+
+/**
+ * Point where two semi-circles of the range limit meet.
+ *
+ * Arc junctions are:
+ * - Ray TARGETS (rays are cast TO them, like JunctionPoints)
+ * - Always blocking (no continuation rays through them)
+ * - Located at the boundaries where two semi-circles connect
+ *
+ * For horizontal orientation (top/bottom semi-circles):
+ * - Left junction: (center.x - radius, center.y)
+ * - Right junction: (center.x + radius, center.y)
+ *
+ * For vertical orientation (left/right semi-circles):
+ * - Top junction: (center.x, center.y - radius)
+ * - Bottom junction: (center.x, center.y + radius)
+ */
+export class ArcJunctionPoint extends SourcePoint {
+  readonly type = "arc_junction" as const;
+
+  constructor(
+    /** Position of the junction point */
+    readonly position: Vector2,
+    /** First semi-circle (e.g., "top") */
+    readonly half1: ArcHalf,
+    /** Second semi-circle (e.g., "bottom") */
+    readonly half2: ArcHalf,
+    /** Which axis boundary this junction is on */
+    readonly boundary: ArcJunctionBoundary
+  ) {
+    super();
+  }
+
+  computeXY(): Vector2 {
+    return this.position;
+  }
+
+  isOnSurface(_surface: Surface): boolean {
+    // Arc junctions are never "on" a surface - they're on the arc
+    return false;
+  }
+
+  equals(other: SourcePoint): boolean {
+    return (
+      other instanceof ArcJunctionPoint &&
+      this.boundary === other.boundary
+    );
+  }
+
+  getKey(): string {
+    return `arc_junction:${this.boundary}`;
+  }
+
+  /**
+   * ArcJunctionPoints always block - they represent the transition between
+   * semi-circles, which is a hard boundary for visibility.
+   */
+  isBlocking(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): boolean {
+    return true;
+  }
+
+  /**
+   * ArcJunctionPoints are not on any surface - exclude nothing.
+   */
+  getExcludedSurfaceIds(): string[] {
+    return [];
+  }
+
+  /**
+   * ArcJunctionPoints are fully blocking (both CW and CCW).
+   */
+  getBlockingStatus(
+    _orientations: Map<string, OrientationInfo>,
+    _windowContext?: WindowContext
+  ): BlockingStatus {
+    return FULLY_BLOCKING;
+  }
+}
+
+/**
+ * Type guard to check if a SourcePoint is an ArcJunctionPoint.
+ */
+export function isArcJunctionPoint(point: SourcePoint): point is ArcJunctionPoint {
+  return point instanceof ArcJunctionPoint;
 }
 
 // =============================================================================

@@ -8,7 +8,7 @@ import { describe, it, expect } from "vitest";
 import { toVisibilityVertices } from "@/trajectory-v2/visibility/VisibilityVertexConverter";
 import {
   OriginPoint,
-  RangeLimitPoint,
+  ArcHitPoint,
   startOf,
   endOf,
 } from "@/trajectory-v2/geometry/SourcePoint";
@@ -16,10 +16,10 @@ import { createMockSurface } from "@test/helpers/surfaceHelpers";
 
 describe("toVisibilityVertices", () => {
   describe("source detection", () => {
-    it("should mark RangeLimitPoint as 'range_limit' source", () => {
+    it("should mark ArcHitPoint as 'range_limit' source", () => {
       const points = [
-        new RangeLimitPoint({ x: 100, y: 0 }),
-        new RangeLimitPoint({ x: 0, y: 100 }),
+        new ArcHitPoint({ x: 100, y: 0 }),
+        new ArcHitPoint({ x: 0, y: 100 }),
       ];
       
       const vertices = toVisibilityVertices(points);
@@ -71,7 +71,7 @@ describe("toVisibilityVertices", () => {
 
     it("should correctly extract positions", () => {
       const points = [
-        new RangeLimitPoint({ x: 123, y: 456 }),
+        new ArcHitPoint({ x: 123, y: 456 }),
         new OriginPoint({ x: 789, y: 101 }),
       ];
       
@@ -88,11 +88,11 @@ describe("toVisibilityVertices", () => {
       const obstacle = createMockSurface("obstacle-2", { x: 200, y: 100 }, { x: 300, y: 100 });
       
       const points = [
-        new RangeLimitPoint({ x: 0, y: 100 }),
+        new ArcHitPoint({ x: 0, y: 100 }),
         startOf(screenSurface),
         endOf(obstacle),
         new OriginPoint({ x: 50, y: 50 }),
-        new RangeLimitPoint({ x: 100, y: 0 }),
+        new ArcHitPoint({ x: 100, y: 0 }),
       ];
       
       const vertices = toVisibilityVertices(points);

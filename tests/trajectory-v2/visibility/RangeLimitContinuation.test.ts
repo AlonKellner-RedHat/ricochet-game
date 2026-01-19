@@ -9,7 +9,7 @@ import {
 import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { type RangeLimitConfig } from "@/trajectory-v2/visibility/ValidRegionRenderer";
 import { createRangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
-import { isRangeLimitPoint, isEndpoint, type SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
+import { isArcHitPoint, isEndpoint, type SourcePoint } from "@/trajectory-v2/geometry/SourcePoint";
 import { type Vector2 } from "@/trajectory-v2/geometry/types";
 
 // Test geometry constants
@@ -46,18 +46,18 @@ function createChainsWithScreen(
   return chains;
 }
 
-// Helper to check if any vertex has a continuationRay containing a RangeLimitPoint
+// Helper to check if any vertex has a continuationRay containing a ArcHitPoint
 function getContinuationRaysWithRangeLimit(vertices: readonly SourcePoint[]): SourcePoint[] {
   return vertices.filter((v) => {
     if (!v.continuationRay) return false;
     const finalHit = v.continuationRay.finalHit;
-    return isRangeLimitPoint(finalHit);
+    return isArcHitPoint(finalHit);
   });
 }
 
 describe("Range Limit Continuation Rays", () => {
-  describe("RangeLimitPoint creation in continuation rays", () => {
-    it("should create RangeLimitPoint when continuation ray exceeds range limit", () => {
+  describe("ArcHitPoint creation in continuation rays", () => {
+    it("should create ArcHitPoint when continuation ray exceeds range limit", () => {
       // Small surface near origin that will have a continuation ray
       const surface = createSurface(
         "test-surface",
@@ -75,12 +75,12 @@ describe("Range Limit Continuation Rays", () => {
       const cone = createFullCone(SCREEN_CENTER);
       const vertices = projectConeV2(cone, chains, undefined, undefined, undefined, rangeLimit);
 
-      // Check that at least one RangeLimitPoint was created
-      const rangeLimitVertices = vertices.filter(isRangeLimitPoint);
+      // Check that at least one ArcHitPoint was created
+      const rangeLimitVertices = vertices.filter(isArcHitPoint);
       expect(rangeLimitVertices.length).toBeGreaterThan(0);
     });
 
-    it("should have RangeLimitPoint in continuation ray final hit", () => {
+    it("should have ArcHitPoint in continuation ray final hit", () => {
       // Surface close to origin - continuation rays will extend beyond the small range limit
       // The surface needs to be small and close so its endpoint continuation rays
       // go past the range limit circle but not hit another surface first
@@ -101,18 +101,18 @@ describe("Range Limit Continuation Rays", () => {
       const cone = createFullCone(SCREEN_CENTER);
       const vertices = projectConeV2(cone, chains, undefined, undefined, undefined, rangeLimit);
 
-      // Find RangeLimitPoints that are part of continuation rays
+      // Find ArcHitPoints that are part of continuation rays
       // These are created when continuation rays exceed the range limit
-      const rangeLimitPoints = vertices.filter(isRangeLimitPoint);
+      const rangeLimitPoints = vertices.filter(isArcHitPoint);
 
-      // There should be RangeLimitPoints (continuation rays exceeding range)
+      // There should be ArcHitPoints (continuation rays exceeding range)
       expect(rangeLimitPoints.length).toBeGreaterThan(0);
 
-      // Find at least one RangeLimitPoint that has a continuationRay reference
+      // Find at least one ArcHitPoint that has a continuationRay reference
       const rangeLimitWithContRay = rangeLimitPoints.filter((p) => p.continuationRay);
 
       // At least one should have continuationRay assigned (from applyRangeLimitToContinuation)
-      // Note: Some RangeLimitPoints come from bulk application (boundary hits) and won't have it
+      // Note: Some ArcHitPoints come from bulk application (boundary hits) and won't have it
       expect(rangeLimitWithContRay.length).toBeGreaterThanOrEqual(0); // May be 0 depending on geometry
     });
 
@@ -151,8 +151,8 @@ describe("Range Limit Continuation Rays", () => {
     });
   });
 
-  describe("PreComputedPairs for RangeLimitPoint", () => {
-    it("should sort RangeLimitPoint according to shadow boundary order", () => {
+  describe("PreComputedPairs for ArcHitPoint", () => {
+    it("should sort ArcHitPoint according to shadow boundary order", () => {
       // Surface that creates a clear shadow boundary
       const surface = createSurface(
         "test-surface",
@@ -173,17 +173,17 @@ describe("Range Limit Continuation Rays", () => {
       // Verify no sorting errors occurred (would throw)
       expect(vertices.length).toBeGreaterThan(0);
 
-      // Find endpoints with continuation rays that include RangeLimitPoint
+      // Find endpoints with continuation rays that include ArcHitPoint
       const pointsWithRangeLimitContinuation = getContinuationRaysWithRangeLimit(vertices);
       
       // These points should have valid continuation rays
       for (const v of pointsWithRangeLimitContinuation) {
         expect(v.continuationRay).toBeDefined();
-        expect(isRangeLimitPoint(v.continuationRay!.finalHit)).toBe(true);
+        expect(isArcHitPoint(v.continuationRay!.finalHit)).toBe(true);
       }
     });
 
-    it("should not throw on collinear RangeLimitPoint with proper pairs", () => {
+    it("should not throw on collinear ArcHitPoint with proper pairs", () => {
       // Surface aligned with a screen corner - potential collinearity
       const surface = createSurface(
         "test-surface",
@@ -208,7 +208,7 @@ describe("Range Limit Continuation Rays", () => {
   });
 
   describe("Range limit with no obstacles", () => {
-    it("should create RangeLimitPoints for screen corner rays that exceed range", () => {
+    it("should create ArcHitPoints for screen corner rays that exceed range", () => {
       const chains = createChainsWithScreen([]);
 
       // Small range limit - all screen corners are beyond
@@ -220,8 +220,8 @@ describe("Range Limit Continuation Rays", () => {
       const cone = createFullCone(SCREEN_CENTER);
       const vertices = projectConeV2(cone, chains, undefined, undefined, undefined, rangeLimit);
 
-      // Should have RangeLimitPoints for the corners that exceed range
-      const rangeLimitVertices = vertices.filter(isRangeLimitPoint);
+      // Should have ArcHitPoints for the corners that exceed range
+      const rangeLimitVertices = vertices.filter(isArcHitPoint);
       expect(rangeLimitVertices.length).toBeGreaterThan(0);
     });
   });

@@ -9,7 +9,7 @@ import { projectConeV2, createFullCone } from "@/trajectory-v2/visibility/ConePr
 import { SurfaceChain } from "@/trajectory-v2/geometry/SurfaceChain";
 import { createScreenBoundaryChain } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { createRangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
-import { isIntersectionPoint } from "@/trajectory-v2/geometry/SourcePoint";
+import { isArcIntersectionPoint } from "@/trajectory-v2/geometry/SourcePoint";
 import { WallSurface } from "@/surfaces/WallSurface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
@@ -23,7 +23,7 @@ describe("ConeProjectionV2 with Surface-Circle Intersections", () => {
     new WallSurface(`test-surface-${index}`, { start, end });
 
   describe("intersection point detection", () => {
-    it("should add IntersectionPoint when surface crosses range limit circle", () => {
+    it("should add ArcIntersectionPoint when surface crosses range limit circle", () => {
       const player = { x: 400, y: 300 };
 
       // Surface that crosses the range limit circle
@@ -52,12 +52,12 @@ describe("ConeProjectionV2 with Surface-Circle Intersections", () => {
         rangeLimit
       );
 
-      // Should include IntersectionPoints where surface crosses range limit
-      const intersectionPoints = result.filter(isIntersectionPoint);
+      // Should include ArcIntersectionPoints where surface crosses range limit
+      const intersectionPoints = result.filter(isArcIntersectionPoint);
       expect(intersectionPoints.length).toBeGreaterThan(0);
     });
 
-    it("should NOT add IntersectionPoint for surface entirely outside circle", () => {
+    it("should NOT add ArcIntersectionPoint for surface entirely outside circle", () => {
       const player = { x: 400, y: 300 };
 
       // Surface entirely outside the range limit circle (radius 100)
@@ -84,12 +84,12 @@ describe("ConeProjectionV2 with Surface-Circle Intersections", () => {
         rangeLimit
       );
 
-      // Should NOT include IntersectionPoints for surfaces outside
-      const intersectionPoints = result.filter(isIntersectionPoint);
+      // Should NOT include ArcIntersectionPoints for surfaces outside
+      const intersectionPoints = result.filter(isArcIntersectionPoint);
       expect(intersectionPoints).toHaveLength(0);
     });
 
-    it("should NOT add IntersectionPoint for surface entirely inside circle", () => {
+    it("should NOT add ArcIntersectionPoint for surface entirely inside circle", () => {
       const player = { x: 400, y: 300 };
 
       // Surface entirely inside the range limit circle (radius 100)
@@ -116,12 +116,12 @@ describe("ConeProjectionV2 with Surface-Circle Intersections", () => {
         rangeLimit
       );
 
-      // Should NOT include IntersectionPoints for surfaces inside
-      const intersectionPoints = result.filter(isIntersectionPoint);
+      // Should NOT include ArcIntersectionPoints for surfaces inside
+      const intersectionPoints = result.filter(isArcIntersectionPoint);
       expect(intersectionPoints).toHaveLength(0);
     });
 
-    it("should NOT add IntersectionPoint at t=0 or t=1 (covered by Endpoint)", () => {
+    it("should NOT add ArcIntersectionPoint at t=0 or t=1 (covered by Endpoint)", () => {
       const player = { x: 400, y: 300 };
 
       // Surface that starts exactly on circle boundary
@@ -149,8 +149,8 @@ describe("ConeProjectionV2 with Surface-Circle Intersections", () => {
         rangeLimit
       );
 
-      // Should NOT include IntersectionPoint at t=0 (that's an Endpoint)
-      const intersectionPoints = result.filter(isIntersectionPoint);
+      // Should NOT include ArcIntersectionPoint at t=0 (that's an Endpoint)
+      const intersectionPoints = result.filter(isArcIntersectionPoint);
       // If intersection is at exactly t=0 or t=1, it should be covered by Endpoint
       for (const ip of intersectionPoints) {
         expect(ip.t).not.toBe(0);
@@ -160,7 +160,7 @@ describe("ConeProjectionV2 with Surface-Circle Intersections", () => {
   });
 
   describe("no range limit", () => {
-    it("should not create IntersectionPoints when rangeLimit is not provided", () => {
+    it("should not create ArcIntersectionPoints when rangeLimit is not provided", () => {
       const player = { x: 400, y: 300 };
 
       const obstacleChain = new SurfaceChain({
@@ -180,8 +180,8 @@ describe("ConeProjectionV2 with Surface-Circle Intersections", () => {
         allChains
       );
 
-      // Should NOT include any IntersectionPoints
-      const intersectionPoints = result.filter(isIntersectionPoint);
+      // Should NOT include any ArcIntersectionPoints
+      const intersectionPoints = result.filter(isArcIntersectionPoint);
       expect(intersectionPoints).toHaveLength(0);
     });
   });

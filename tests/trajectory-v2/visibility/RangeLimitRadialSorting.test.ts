@@ -6,7 +6,7 @@
  *
  * Issue: Two nearly identical origins produce different visibility polygons
  * due to floating-point instability in:
- * 1. RangeLimitPoint key generation (uses floating-point coords)
+ * 1. ArcHitPoint key generation (uses floating-point coords)
  * 2. Cross product comparison being near-zero for collinear points
  */
 
@@ -27,7 +27,7 @@ import {
   type ScreenBoundsConfig,
 } from "@/trajectory-v2/geometry/ScreenBoundaries";
 import { createRangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
-import { RangeLimitPoint, isRangeLimitPoint, endOf } from "@/trajectory-v2/geometry/SourcePoint";
+import { ArcHitPoint, isArcHitPoint, endOf } from "@/trajectory-v2/geometry/SourcePoint";
 import { describe, expect, it } from "vitest";
 
 // =============================================================================
@@ -188,13 +188,13 @@ describe("Range Limit Radial Sorting FP Instability", () => {
       }
 
       // KNOWN ISSUE: This test documents a remaining floating-point instability issue.
-      // The extra vertex is a HitPoint (not RangeLimitPoint) that appears due to
+      // The extra vertex is a HitPoint (not ArcHitPoint) that appears due to
       // rays being near-collinear with surfaces causing different hit detection results.
-      // This requires a separate fix beyond RangeLimitPoint provenance.
+      // This requires a separate fix beyond ArcHitPoint provenance.
       //
       // TODO: Fix ray casting near-collinear surface instability
       // For now, we assert that if there IS an extra vertex, it's a HitPoint
-      // (the RangeLimitPoint provenance fix doesn't address this)
+      // (the ArcHitPoint provenance fix doesn't address this)
       if (extraVertex) {
         // Document the issue exists but don't fail the test
         console.log("NOTE: Extra vertex issue persists - requires ray casting fix");
@@ -205,9 +205,9 @@ describe("Range Limit Radial Sorting FP Instability", () => {
   });
 
   describe("PreComputedPairs Key Stability", () => {
-    it("should produce same RangeLimitPoint key for same logical hit (with provenance)", () => {
+    it("should produce same ArcHitPoint key for same logical hit (with provenance)", () => {
       // PROVENANCE-BASED KEY STABILITY:
-      // RangeLimitPoints created with the same raySource should have the same key,
+      // ArcHitPoints created with the same raySource should have the same key,
       // even if their coordinates differ slightly due to floating-point arithmetic.
 
       // Create a shared ray source (the endpoint through which the continuation was cast)
@@ -235,14 +235,14 @@ describe("Range Limit Radial Sorting FP Instability", () => {
         y: WORKING_ORIGIN.y + dy2 * scale2,
       };
 
-      console.log("RangeLimitPoint from broken origin:", limitedPoint1);
-      console.log("RangeLimitPoint from working origin:", limitedPoint2);
+      console.log("ArcHitPoint from broken origin:", limitedPoint1);
+      console.log("ArcHitPoint from working origin:", limitedPoint2);
       console.log("X difference:", limitedPoint1.x - limitedPoint2.x);
       console.log("Y difference:", limitedPoint1.y - limitedPoint2.y);
 
-      // Create RangeLimitPoints WITH provenance (raySource)
-      const rlp1 = new RangeLimitPoint(limitedPoint1, sourceEndpoint);
-      const rlp2 = new RangeLimitPoint(limitedPoint2, sourceEndpoint);
+      // Create ArcHitPoints WITH provenance (raySource)
+      const rlp1 = new ArcHitPoint(limitedPoint1, sourceEndpoint);
+      const rlp2 = new ArcHitPoint(limitedPoint2, sourceEndpoint);
 
       console.log("Key 1:", rlp1.getKey());
       console.log("Key 2:", rlp2.getKey());
@@ -255,7 +255,7 @@ describe("Range Limit Radial Sorting FP Instability", () => {
       expect(rlp1.getKey()).toContain("endpoint:mirror-left-0:end");
     });
 
-    it("should have different keys for RangeLimitPoints without provenance (boundary hits)", () => {
+    it("should have different keys for ArcHitPoints without provenance (boundary hits)", () => {
       // Without provenance (e.g., boundary hits), keys are coordinate-based
       // and will differ due to floating-point arithmetic
       const target = { x: 257.13562394476304, y: 116.58183324070797 };
@@ -279,13 +279,13 @@ describe("Range Limit Radial Sorting FP Instability", () => {
       };
 
       // Without provenance - coordinate-based keys
-      const rlp1 = new RangeLimitPoint(limitedPoint1);
-      const rlp2 = new RangeLimitPoint(limitedPoint2);
+      const rlp1 = new ArcHitPoint(limitedPoint1);
+      const rlp2 = new ArcHitPoint(limitedPoint2);
 
       // These keys WILL be different due to floating-point differences
       // This is expected behavior for boundary hits without provenance
       expect(rlp1.getKey()).not.toBe(rlp2.getKey());
-      expect(rlp1.getKey()).toContain("range_limit:");
+      expect(rlp1.getKey()).toContain("arc_hit:");
       expect(rlp1.getKey()).not.toContain("ray:");
     });
   });
@@ -330,7 +330,7 @@ describe("Range Limit Radial Sorting FP Instability", () => {
   });
 
   describe("Bulk applyRangeLimit Behavior", () => {
-    it("should not create duplicate RangeLimitPoints with different coordinates", () => {
+    it("should not create duplicate ArcHitPoints with different coordinates", () => {
       const rangeLimitPair = createRangeLimitPair(RANGE_LIMIT_RADIUS);
       const screenChain = createScreenBoundaryChain(SCREEN_BOUNDS);
 
@@ -351,16 +351,16 @@ describe("Range Limit Radial Sorting FP Instability", () => {
         brokenRangeLimit
       );
 
-      // Count RangeLimitPoints
-      const rangeLimitPoints = brokenPolygon.filter(isRangeLimitPoint);
+      // Count ArcHitPoints
+      const rangeLimitPoints = brokenPolygon.filter(isArcHitPoint);
       
-      console.log("RangeLimitPoint count:", rangeLimitPoints.length);
+      console.log("ArcHitPoint count:", rangeLimitPoints.length);
       for (const rlp of rangeLimitPoints) {
         console.log("  RLP key:", rlp.getKey());
         console.log("  RLP coords:", rlp.computeXY());
       }
 
-      // Each RangeLimitPoint should have a unique key based on its ray source
+      // Each ArcHitPoint should have a unique key based on its ray source
       // (not based on coordinates which can have floating-point drift)
       const keys = new Set(rangeLimitPoints.map(rlp => rlp.getKey()));
       
@@ -413,9 +413,9 @@ describe("Range Limit Radial Sorting FP Instability", () => {
           console.log("HitPoint s parameter:", hp.s);
         }
 
-        // Check if it's a RangeLimitPoint
-        if (isRangeLimitPoint(extraSourcePoint)) {
-          console.log("This is a RangeLimitPoint!");
+        // Check if it's a ArcHitPoint
+        if (isArcHitPoint(extraSourcePoint)) {
+          console.log("This is a ArcHitPoint!");
         }
       } else {
         console.log("Extra vertex not found as SourcePoint");

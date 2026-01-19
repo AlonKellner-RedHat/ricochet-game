@@ -1,14 +1,14 @@
 /**
- * RangeLimitPointProvenance.test.ts
+ * ArcHitPointProvenance.test.ts
  *
- * Tests for RangeLimitPoint provenance-based keys.
- * RangeLimitPoints should have stable keys based on their ray source,
+ * Tests for ArcHitPoint provenance-based keys.
+ * ArcHitPoints should have stable keys based on their ray source,
  * not floating-point coordinates.
  */
 
 import { describe, expect, it } from "vitest";
 import {
-  RangeLimitPoint,
+  ArcHitPoint,
   startOf,
   endOf,
 } from "@/trajectory-v2/geometry/SourcePoint";
@@ -36,7 +36,7 @@ function createTestSurface(id: string, start: Vector2, end: Vector2): Surface {
 // TESTS
 // =============================================================================
 
-describe("RangeLimitPoint Provenance", () => {
+describe("ArcHitPoint Provenance", () => {
   const surface = createTestSurface(
     "mirror-left-0",
     { x: 250, y: 550 },
@@ -47,13 +47,13 @@ describe("RangeLimitPoint Provenance", () => {
     it("should have stable key based on ray source, not coordinates", () => {
       const sourceEndpoint = endOf(surface); // (250, 150)
 
-      // Two RangeLimitPoints with slightly different coordinates
+      // Two ArcHitPoints with slightly different coordinates
       // (simulating floating-point differences from different origins)
-      const rlp1 = new RangeLimitPoint(
+      const rlp1 = new ArcHitPoint(
         { x: 257.1356239447631, y: 116.58183324070785 },
         sourceEndpoint
       );
-      const rlp2 = new RangeLimitPoint(
+      const rlp2 = new ArcHitPoint(
         { x: 257.1356219945502, y: 116.58184237410796 },
         sourceEndpoint
       );
@@ -62,9 +62,9 @@ describe("RangeLimitPoint Provenance", () => {
       expect(rlp1.getKey()).toBe(rlp2.getKey());
     });
 
-    it("should include ray source key in the RangeLimitPoint key", () => {
+    it("should include ray source key in the ArcHitPoint key", () => {
       const sourceEndpoint = endOf(surface);
-      const rlp = new RangeLimitPoint(
+      const rlp = new ArcHitPoint(
         { x: 257.13, y: 116.58 },
         sourceEndpoint
       );
@@ -76,42 +76,42 @@ describe("RangeLimitPoint Provenance", () => {
       const startEndpoint = startOf(surface);
       const endEndpoint = endOf(surface);
 
-      const rlp1 = new RangeLimitPoint({ x: 100, y: 200 }, startEndpoint);
-      const rlp2 = new RangeLimitPoint({ x: 100, y: 200 }, endEndpoint);
+      const rlp1 = new ArcHitPoint({ x: 100, y: 200 }, startEndpoint);
+      const rlp2 = new ArcHitPoint({ x: 100, y: 200 }, endEndpoint);
 
       // Same coordinates but different sources = different keys
       expect(rlp1.getKey()).not.toBe(rlp2.getKey());
     });
 
     it("should fallback to coordinate-based key without ray source", () => {
-      const rlp = new RangeLimitPoint({ x: 100.5, y: 200.5 });
+      const rlp = new ArcHitPoint({ x: 100.5, y: 200.5 });
 
       // Without source, uses coordinates
-      expect(rlp.getKey()).toBe("range_limit:100.5,200.5");
+      expect(rlp.getKey()).toBe("arc_hit:100.5,200.5");
     });
   });
 
   describe("raySource property", () => {
     it("should store the ray source", () => {
       const sourceEndpoint = endOf(surface);
-      const rlp = new RangeLimitPoint({ x: 100, y: 200 }, sourceEndpoint);
+      const rlp = new ArcHitPoint({ x: 100, y: 200 }, sourceEndpoint);
 
       expect(rlp.raySource).toBe(sourceEndpoint);
     });
 
     it("should have undefined raySource when not provided", () => {
-      const rlp = new RangeLimitPoint({ x: 100, y: 200 });
+      const rlp = new ArcHitPoint({ x: 100, y: 200 });
 
       expect(rlp.raySource).toBeUndefined();
     });
   });
 
-  describe("getExcludedSurfaceIds for range limit points", () => {
+  describe("getExcludedSurfaceIds for arc hit points", () => {
     it("should return empty array (no surfaces excluded)", () => {
       const sourceEndpoint = endOf(surface);
-      const rlp = new RangeLimitPoint({ x: 100, y: 200 }, sourceEndpoint);
+      const rlp = new ArcHitPoint({ x: 100, y: 200 }, sourceEndpoint);
 
-      // RangeLimitPoints don't exclude surfaces, but when casting TOWARD them,
+      // ArcHitPoints don't exclude surfaces, but when casting TOWARD them,
       // the range limit itself should be excluded (handled by caller)
       expect(rlp.getExcludedSurfaceIds()).toEqual([]);
     });

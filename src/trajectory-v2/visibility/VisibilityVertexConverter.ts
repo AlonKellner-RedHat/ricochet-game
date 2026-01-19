@@ -5,14 +5,14 @@
  * and the edge-based rendering pipeline (VisibilityVertex[]).
  *
  * Key responsibility: detect the source/provenance of each point:
- * - RangeLimitPoint -> "range_limit"
+ * - ArcHitPoint -> "range_limit"
  * - Endpoint with screen boundary surface -> "screen"
  * - Everything else -> "surface"
  */
 
 import {
   type SourcePoint,
-  isRangeLimitPoint,
+  isArcHitPoint,
   isEndpoint,
 } from "@/trajectory-v2/geometry/SourcePoint";
 import {
@@ -37,12 +37,12 @@ function isScreenBoundaryPoint(point: SourcePoint): boolean {
  * Determine the source/provenance of a SourcePoint.
  *
  * Uses type-based detection (provenance over geometry):
- * - RangeLimitPoint -> "range_limit"
+ * - ArcHitPoint -> "range_limit"
  * - Endpoint on screen boundary -> "screen"
  * - Everything else -> "surface"
  */
 function getVertexSource(point: SourcePoint): VertexSource {
-  if (isRangeLimitPoint(point)) {
+  if (isArcHitPoint(point)) {
     return "range_limit";
   }
   if (isScreenBoundaryPoint(point)) {

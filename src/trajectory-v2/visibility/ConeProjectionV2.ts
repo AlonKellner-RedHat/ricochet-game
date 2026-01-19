@@ -21,16 +21,18 @@ import { lineLineIntersection } from "@/trajectory-v2/geometry/GeometryOps";
 import {
   type Endpoint,
   HitPoint,
-  IntersectionPoint,
+  ArcIntersectionPoint,
   OriginPoint,
-  RangeLimitPoint,
+  ArcHitPoint,
+  ArcJunctionPoint,
   type SourcePoint,
   endOf,
   isEndpoint,
   isHitPoint,
-  isIntersectionPoint,
+  isArcIntersectionPoint,
+  isArcJunctionPoint,
   isOriginPoint,
-  isRangeLimitPoint,
+  isArcHitPoint,
   startOf,
 } from "@/trajectory-v2/geometry/SourcePoint";
 import { computeLineCircleIntersections } from "@/trajectory-v2/geometry/RangeLimitOps";
@@ -811,8 +813,8 @@ function computeRangeLimitIntersection(
  * at the range limit intersection. Otherwise returns the original point.
  *
  * IMPORTANT: Some point types are excluded from range limit processing:
- * - RangeLimitPoint: Already represents a range limit hit (has provenance)
- * - IntersectionPoint with "range_limit" type: IS the range limit intersection
+ * - ArcHitPoint: Already represents a range limit hit (has provenance)
+ * - ArcIntersectionPoint with "range_limit" type: IS the range limit intersection
  * These exclusions follow the pattern of excluding the range limit when
  * casting toward range limit points - the point itself is the blocking entity.
  */
@@ -825,14 +827,14 @@ function applyRangeLimit(
     return point;
   }
 
-  // Skip RangeLimitPoints - they already have correct provenance from continuation rays
-  if (isRangeLimitPoint(point)) {
+  // Skip ArcHitPoints - they already have correct provenance from continuation rays
+  if (isArcHitPoint(point)) {
     return point;
   }
 
-  // Skip IntersectionPoints that are ON the range limit circle
+  // Skip ArcIntersectionPoints that are ON the range limit circle
   // They represent surface-circle intersections and are the correct hit points
-  if (isIntersectionPoint(point) && point.intersectionType === "range_limit") {
+  if (isArcIntersectionPoint(point) && point.intersectionType === "range_limit") {
     return point;
   }
 
@@ -842,21 +844,21 @@ function applyRangeLimit(
   }
 
   // Point exceeds range limit - compute point on range limit circle
-  // Note: This creates a RangeLimitPoint WITHOUT provenance (no raySource)
+  // Note: This creates an ArcHitPoint WITHOUT provenance (no raySource)
   // because it's a boundary hit, not from a continuation ray
   const limitedPoint = computeRangeLimitIntersection(origin, xy, rangeLimit);
-  return new RangeLimitPoint(limitedPoint);
+  return new ArcHitPoint(limitedPoint);
 }
 
 /**
  * Result of applying range limit to a continuation ray.
  */
 interface RangeLimitedContinuationResult {
-  /** The final hit (possibly replaced with RangeLimitPoint) */
+  /** The final hit (possibly replaced with ArcHitPoint) */
   hit: SourcePoint | null;
   /** Passed-through endpoints that are within range limit */
   passedThroughEndpoints: Endpoint[];
-  /** True if the final hit was replaced with a RangeLimitPoint */
+  /** True if the final hit was replaced with an ArcHitPoint */
   wasLimited: boolean;
 }
 
@@ -864,9 +866,9 @@ interface RangeLimitedContinuationResult {
  * Apply range limit to a continuation ray result.
  *
  * This filters out passed-through endpoints that exceed the range limit,
- * and replaces the final hit with a RangeLimitPoint if it exceeds the limit.
+ * and replaces the final hit with an ArcHitPoint if it exceeds the limit.
  *
- * Used during continuation ray construction so RangeLimitPoint becomes
+ * Used during continuation ray construction so ArcHitPoint becomes
  * a proper member of the ContinuationRay with correct PreComputedPairs.
  *
  * @param origin - The cone origin
@@ -904,11 +906,11 @@ function applyRangeLimitToContinuation(
     };
   }
 
-  // Hit exceeds range limit - replace with RangeLimitPoint
+  // Hit exceeds range limit - replace with ArcHitPoint
   // Pass raySource for provenance-based key stability
   const limitedPoint = computeRangeLimitIntersection(origin, hitXY, rangeLimit);
   return {
-    hit: new RangeLimitPoint(limitedPoint, raySource),
+    hit: new ArcHitPoint(limitedPoint, raySource),
     passedThroughEndpoints: filteredPassedThrough,
     wasLimited: true,
   };
@@ -1072,8 +1074,8 @@ export function projectConeV2(
 
   const effectiveObstacles = obstacles.filter((o) => !excludedIds.has(o.id));
 
-  // Collect all ray targets (Endpoints, JunctionPoints, and IntersectionPoints)
-  type RayTarget = Endpoint | JunctionPoint | IntersectionPoint;
+  // Collect all ray targets (Endpoints, JunctionPoints, ArcIntersectionPoints, ArcJunctionPoints)
+  type RayTarget = Endpoint | JunctionPoint | ArcIntersectionPoint | ArcJunctionPoint;
   const rayTargets: RayTarget[] = [];
 
   // Cache endpoints by key to ensure consistent object references
@@ -1123,7 +1125,7 @@ export function projectConeV2(
     }
   }
 
-  // Add IntersectionPoints where surfaces cross the range limit circle
+  // Add ArcIntersectionPoints where surfaces cross the range limit circle
   // These are critical points for visibility polygon construction
   if (rangeLimit) {
     for (const obstacle of obstacles) {
@@ -1137,9 +1139,50 @@ export function projectConeV2(
       for (const { t } of intersections) {
         // Only add if t is strictly in (0, 1) - endpoints are already covered by Endpoint
         if (t > 0 && t < 1) {
-          rayTargets.push(new IntersectionPoint(obstacle, t, "range_limit"));
+          rayTargets.push(new ArcIntersectionPoint(obstacle, t, "range_limit"));
         }
       }
+    }
+
+    // Add ArcJunctionPoints at semi-circle boundaries
+    // These are where the top/bottom (horizontal) or left/right (vertical) semi-circles meet
+    const { center, pair } = rangeLimit;
+    if (pair.orientation === "horizontal") {
+      // Left and right boundaries (where top and bottom meet)
+      rayTargets.push(
+        new ArcJunctionPoint(
+          { x: center.x - pair.radius, y: center.y },
+          "top",
+          "bottom",
+          "left"
+        )
+      );
+      rayTargets.push(
+        new ArcJunctionPoint(
+          { x: center.x + pair.radius, y: center.y },
+          "top",
+          "bottom",
+          "right"
+        )
+      );
+    } else {
+      // Top and bottom boundaries (where left and right meet)
+      rayTargets.push(
+        new ArcJunctionPoint(
+          { x: center.x, y: center.y - pair.radius },
+          "left",
+          "right",
+          "top"
+        )
+      );
+      rayTargets.push(
+        new ArcJunctionPoint(
+          { x: center.x, y: center.y + pair.radius },
+          "left",
+          "right",
+          "bottom"
+        )
+      );
     }
   }
 
@@ -1573,7 +1616,7 @@ export function projectConeV2(
 
           // Apply range limit to the continuation ray
           // This filters out passed-through endpoints beyond the range limit
-          // and replaces the final hit with RangeLimitPoint if needed
+          // and replaces the final hit with ArcHitPoint if needed
           // Pass 'target' (junction) as ray source for provenance
           const limitedContResult = applyRangeLimitToContinuation(origin, contResult, rangeLimit, target);
 
@@ -1653,10 +1696,10 @@ export function projectConeV2(
       continue;
     }
 
-    // Handle IntersectionPoints - where a surface crosses the range limit circle
-    // IntersectionPoints are ALWAYS fully blocking (both CW and CCW) - no continuation rays
+    // Handle ArcIntersectionPoints - where a surface crosses the range limit circle
+    // ArcIntersectionPoints are ALWAYS fully blocking (both CW and CCW) - no continuation rays
     // They represent boundaries where visibility transitions from surface to arc
-    if (isIntersectionPoint(target)) {
+    if (isArcIntersectionPoint(target)) {
       const targetXY = target.computeXY();
 
       // Cast ray to the intersection point, excluding the intersection's own surface
@@ -1695,7 +1738,7 @@ export function projectConeV2(
 
       if (reachesIntersection) {
         // Ray reaches the intersection - add it directly
-        // IntersectionPoint is fully blocking, no continuation ray
+        // ArcIntersectionPoint is fully blocking, no continuation ray
         vertices.push(target);
       } else if (blockingHit) {
         // Ray is blocked by another obstacle before reaching the intersection
@@ -1799,7 +1842,7 @@ export function projectConeV2(
 
         // Apply range limit to the continuation ray
         // This filters out passed-through endpoints beyond the range limit
-        // and replaces the final hit with RangeLimitPoint if needed
+        // and replaces the final hit with ArcHitPoint if needed
         // Pass 'targetEndpoint' as ray source for provenance
         const limitedContResult = applyRangeLimitToContinuation(origin, contResult, rangeLimit, targetEndpoint);
 
@@ -2006,12 +2049,27 @@ export function projectConeV2(
     // This eliminates floating-point instability in the oppositeSides check.
   }
 
-  // Apply range limit to remaining vertices (non-continuation vertices like boundary hits)
-  // Continuation rays are already handled by applyRangeLimitToContinuation with proper pairs.
-  // This bulk application handles cone boundary hits and blocking hits that exceed range limit.
-  // Note: These are typically not on the same ray as other points, so no PreComputedPairs needed.
+  // Filter out vertices beyond the range limit instead of converting them to ArcHitPoints.
+  // ArcHitPoints should ONLY be created by applyRangeLimitToContinuation (with provenance).
+  // Vertices beyond range are unreachable - they would have been hit by the range limit circle
+  // first, and that hit is already captured via continuation rays.
+  //
+  // Exception: ArcHitPoints and ArcIntersectionPoints are always kept (they're on the arc).
   const rangeLimitedVertices = rangeLimit
-    ? vertices.map((v) => applyRangeLimit(v, origin, rangeLimit))
+    ? vertices.filter((v) => {
+        // Always keep ArcHitPoints (they have proper provenance from continuation rays)
+        if (isArcHitPoint(v)) return true;
+        // Always keep ArcIntersectionPoints (they're on the arc by definition)
+        if (isArcIntersectionPoint(v)) return true;
+        
+        // Filter out other vertices beyond range limit
+        const xy = v.computeXY();
+        const dx = xy.x - rangeLimit.center.x;
+        const dy = xy.y - rangeLimit.center.y;
+        const distSq = dx * dx + dy * dy;
+        const radiusSq = rangeLimit.pair.radius * rangeLimit.pair.radius;
+        return distSq <= radiusSq;
+      })
     : vertices;
 
   // Remove duplicate points using equals()
@@ -2216,18 +2274,32 @@ function comparePointsCCWSimplified(
       return 0;
     }
 
-    // RangeLimitPoints represent the boundary of visibility - they should come
+    // ArcHitPoints represent the boundary of visibility - they should come
     // at their natural position on the arc. When collinear with other points,
-    // use provenance: RangeLimitPoint is the boundary (outermost visible point).
-    // For collinear RangeLimitPoint vs other point, RangeLimitPoint is always
+    // use provenance: ArcHitPoint is the boundary (outermost visible point).
+    // For collinear ArcHitPoint vs other point, ArcHitPoint is always
     // farther from origin (it's at the max range), so it comes AFTER in CCW order
-    // for entering shadow, BEFORE for exiting shadow. Since IntersectionPoints
-    // and other boundary points are fully blocking, RangeLimitPoint comes after.
-    if (isRangeLimitPoint(a) && !isRangeLimitPoint(b)) {
-      return 1; // b comes before a (RangeLimitPoint is at the boundary)
+    // for entering shadow, BEFORE for exiting shadow. Since ArcIntersectionPoints
+    // and other boundary points are fully blocking, ArcHitPoint comes after.
+    if (isArcHitPoint(a) && !isArcHitPoint(b)) {
+      return 1; // b comes before a (ArcHitPoint is at the boundary)
     }
-    if (isRangeLimitPoint(b) && !isRangeLimitPoint(a)) {
-      return -1; // a comes before b (RangeLimitPoint is at the boundary)
+    if (isArcHitPoint(b) && !isArcHitPoint(a)) {
+      return -1; // a comes before b (ArcHitPoint is at the boundary)
+    }
+
+    // ArcJunctionPoints are on opposite sides of the origin (180° apart).
+    // Order them by dot product with reference direction:
+    // The one more aligned with reference comes first (CCW order).
+    if (isArcJunctionPoint(a) && isArcJunctionPoint(b)) {
+      const aDot = aVec.x * refDirection.x + aVec.y * refDirection.y;
+      const bDot = bVec.x * refDirection.x + bVec.y * refDirection.y;
+      // Higher dot product = more aligned with reference = comes first in CCW
+      if (aDot !== bDot) {
+        return aDot > bDot ? -1 : 1;
+      }
+      // If dot products are equal (shouldn't happen), use boundary name as tiebreaker
+      return a.boundary < b.boundary ? -1 : 1;
     }
 
     // OriginPoints (window corners) are non-blocking, so they come first

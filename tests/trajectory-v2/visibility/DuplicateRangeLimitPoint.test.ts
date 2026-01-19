@@ -1,7 +1,7 @@
 /**
- * DuplicateRangeLimitPoint.test.ts
+ * DuplicateArcHitPoint.test.ts
  *
- * Tests for the bug where two RangeLimitPoints on the same ray
+ * Tests for the bug where two ArcHitPoints on the same ray
  * (one with provenance, one without) cause a sorting error.
  *
  * Bug: "Critical: Collinear points without PreComputedPairs:
@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { RangeLimitPoint, endOf, startOf, isRangeLimitPoint } from "@/trajectory-v2/geometry/SourcePoint";
+import { ArcHitPoint, endOf, startOf, isArcHitPoint } from "@/trajectory-v2/geometry/SourcePoint";
 import type { Surface } from "@/surfaces/Surface";
 import type { Vector2 } from "@/trajectory-v2/geometry/types";
 
@@ -35,7 +35,7 @@ function createTestSurface(id: string, start: Vector2, end: Vector2): Surface {
 // BUG REPRODUCTION TESTS
 // =============================================================================
 
-describe("Duplicate RangeLimitPoint Bug", () => {
+describe("Duplicate ArcHitPoint Bug", () => {
   /**
    * BUG ANALYSIS:
    *
@@ -45,14 +45,14 @@ describe("Duplicate RangeLimitPoint Bug", () => {
    *
    * Root Cause:
    * 1. Continuation ray through endpoint E hits range limit
-   *    → Creates RangeLimitPoint(coords, E) WITH provenance
+   *    → Creates ArcHitPoint(coords, E) WITH provenance
    * 2. Some OTHER vertex V on the same ray is beyond range limit
-   *    → Bulk applyRangeLimit converts V to RangeLimitPoint(coords') WITHOUT provenance
-   * 3. Both RangeLimitPoints end up in vertices list
+   *    → Bulk applyRangeLimit converts V to ArcHitPoint(coords') WITHOUT provenance
+   * 3. Both ArcHitPoints end up in vertices list
    * 4. removeDuplicatesSourcePoint doesn't dedupe them because:
    *    - equals() falls through to coordinate comparison when mixed provenance
    *    - Coordinates differ slightly due to floating-point arithmetic
-   * 5. During sorting, cross product ≈ 0 (collinear), both are RangeLimitPoints
+   * 5. During sorting, cross product ≈ 0 (collinear), both are ArcHitPoints
    * 6. No PreComputedPairs for them → Error thrown
    *
    * The OTHER vertex V could be:
@@ -61,11 +61,11 @@ describe("Duplicate RangeLimitPoint Bug", () => {
    * - A cone boundary hit
    */
 
-  describe("Root Cause: equals() mismatch between provenance and coordinate-based RangeLimitPoints", () => {
-    it("should identify when two RangeLimitPoints on same ray are not equal", () => {
+  describe("Root Cause: equals() mismatch between provenance and coordinate-based ArcHitPoints", () => {
+    it("should identify when two ArcHitPoints on same ray are not equal", () => {
       // Simulate the bug scenario:
-      // 1. Continuation ray creates RangeLimitPoint with raySource
-      // 2. Bulk processing creates RangeLimitPoint without raySource
+      // 1. Continuation ray creates ArcHitPoint with raySource
+      // 2. Bulk processing creates ArcHitPoint without raySource
       // 3. They're on the same ray but have different keys and equals() returns false
 
       const pyramid = createTestSurface(
@@ -75,15 +75,15 @@ describe("Duplicate RangeLimitPoint Bug", () => {
       );
       const endpoint = startOf(pyramid);
 
-      // RangeLimitPoint from continuation ray (with provenance)
-      const rlpWithProvenance = new RangeLimitPoint(
+      // ArcHitPoint from continuation ray (with provenance)
+      const rlpWithProvenance = new ArcHitPoint(
         { x: 766.104458500426, y: 494.59269116642594 },
         endpoint
       );
 
-      // RangeLimitPoint from bulk processing (without provenance)
+      // ArcHitPoint from bulk processing (without provenance)
       // Slightly different coordinates due to floating-point arithmetic
-      const rlpWithoutProvenance = new RangeLimitPoint(
+      const rlpWithoutProvenance = new ArcHitPoint(
         { x: 766.1044585004261, y: 494.59269116642596 } // Note: very slightly different
       );
 
@@ -109,11 +109,11 @@ describe("Duplicate RangeLimitPoint Bug", () => {
       );
       const endpoint = startOf(pyramid);
 
-      const rlp1 = new RangeLimitPoint(
+      const rlp1 = new ArcHitPoint(
         { x: 766.104458500426, y: 494.59269116642594 },
         endpoint
       );
-      const rlp2 = new RangeLimitPoint(
+      const rlp2 = new ArcHitPoint(
         { x: 766.1044585004261, y: 494.59269116642596 }, // Different coords
         endpoint // Same provenance
       );
@@ -124,27 +124,27 @@ describe("Duplicate RangeLimitPoint Bug", () => {
     });
 
     it("should show that equals() works correctly when NEITHER has provenance (exact coords)", () => {
-      const rlp1 = new RangeLimitPoint({ x: 766.104458500426, y: 494.59269116642594 });
-      const rlp2 = new RangeLimitPoint({ x: 766.104458500426, y: 494.59269116642594 });
+      const rlp1 = new ArcHitPoint({ x: 766.104458500426, y: 494.59269116642594 });
+      const rlp2 = new ArcHitPoint({ x: 766.104458500426, y: 494.59269116642594 });
 
       // Same exact coordinates, no provenance - equals() should return true
       expect(rlp1.equals(rlp2)).toBe(true);
     });
 
     it("should show that equals() fails when NEITHER has provenance (different coords)", () => {
-      const rlp1 = new RangeLimitPoint({ x: 766.104458500426, y: 494.59269116642594 });
-      const rlp2 = new RangeLimitPoint({ x: 766.1044585004261, y: 494.59269116642596 });
+      const rlp1 = new ArcHitPoint({ x: 766.104458500426, y: 494.59269116642594 });
+      const rlp2 = new ArcHitPoint({ x: 766.1044585004261, y: 494.59269116642596 });
 
       // Different coordinates, no provenance - equals() returns false
       expect(rlp1.equals(rlp2)).toBe(false);
     });
   });
 
-  describe("Hypothesis: Mixed provenance RangeLimitPoints cause the bug", () => {
+  describe("Hypothesis: Mixed provenance ArcHitPoints cause the bug", () => {
     it("should demonstrate the problematic comparison path", () => {
       // The issue is in equals():
       // ```
-      // if (this.raySource && other instanceof RangeLimitPoint && other.raySource) {
+      // if (this.raySource && other instanceof ArcHitPoint && other.raySource) {
       //   return this.raySource.equals(other.raySource);
       // }
       // // Otherwise compare by coordinates
@@ -162,8 +162,8 @@ describe("Duplicate RangeLimitPoint Bug", () => {
       );
       const endpoint = startOf(pyramid);
 
-      const rlpWith = new RangeLimitPoint({ x: 100, y: 200 }, endpoint);
-      const rlpWithout = new RangeLimitPoint({ x: 100, y: 200 }); // Same coords, no provenance
+      const rlpWith = new ArcHitPoint({ x: 100, y: 200 }, endpoint);
+      const rlpWithout = new ArcHitPoint({ x: 100, y: 200 }); // Same coords, no provenance
 
       // This should arguably be true (same position, one just has extra provenance)
       // But current implementation returns false
@@ -181,11 +181,11 @@ describe("Duplicate RangeLimitPoint Bug", () => {
   });
 
   describe("Hypothesis: comparePointsCCWSimplified doesn't handle RLP vs RLP collinear case", () => {
-    it("should identify that two RangeLimitPoints collinear with origin cause an error", () => {
-      // When two RangeLimitPoints are collinear (cross product = 0):
-      // - Code checks if a is RangeLimitPoint and b is NOT → a comes after
-      // - Code checks if b is RangeLimitPoint and a is NOT → b comes after
-      // - But when BOTH are RangeLimitPoints, neither branch triggers
+    it("should identify that two ArcHitPoints collinear with origin cause an error", () => {
+      // When two ArcHitPoints are collinear (cross product = 0):
+      // - Code checks if a is ArcHitPoint and b is NOT → a comes after
+      // - Code checks if b is ArcHitPoint and a is NOT → b comes after
+      // - But when BOTH are ArcHitPoints, neither branch triggers
       // - Falls through to the error: "Critical: Collinear points without PreComputedPairs"
 
       const pyramid = createTestSurface(
@@ -195,25 +195,25 @@ describe("Duplicate RangeLimitPoint Bug", () => {
       );
       const endpoint = startOf(pyramid);
 
-      // Two RangeLimitPoints on the same ray (collinear with origin)
-      const rlpWithProvenance = new RangeLimitPoint(
+      // Two ArcHitPoints on the same ray (collinear with origin)
+      const rlpWithProvenance = new ArcHitPoint(
         { x: 766.104458500426, y: 494.59269116642594 },
         endpoint
       );
-      const rlpWithoutProvenance = new RangeLimitPoint(
+      const rlpWithoutProvenance = new ArcHitPoint(
         { x: 766.104458500426, y: 494.59269116642594 } // Same coords but no provenance
       );
 
-      // Both are RangeLimitPoints
-      expect(isRangeLimitPoint(rlpWithProvenance)).toBe(true);
-      expect(isRangeLimitPoint(rlpWithoutProvenance)).toBe(true);
+      // Both are ArcHitPoints
+      expect(isArcHitPoint(rlpWithProvenance)).toBe(true);
+      expect(isArcHitPoint(rlpWithoutProvenance)).toBe(true);
 
       // The comparePointsCCWSimplified logic:
-      // if (isRangeLimitPoint(a) && !isRangeLimitPoint(b)) return 1;
-      // if (isRangeLimitPoint(b) && !isRangeLimitPoint(a)) return -1;
-      // Neither branch triggers when BOTH are RangeLimitPoints!
+      // if (isArcHitPoint(a) && !isArcHitPoint(b)) return 1;
+      // if (isArcHitPoint(b) && !isArcHitPoint(a)) return -1;
+      // Neither branch triggers when BOTH are ArcHitPoints!
 
-      console.log("Both are RangeLimitPoints - current logic has no handler for this case");
+      console.log("Both are ArcHitPoints - current logic has no handler for this case");
       console.log("This causes the error to be thrown in comparePointsCCWSimplified");
 
       // Document: Need to add handling for RLP vs RLP collinear case
@@ -223,12 +223,12 @@ describe("Duplicate RangeLimitPoint Bug", () => {
       // POTENTIAL FIXES:
       //
       // 1. In applyRangeLimit: If a vertex V is on the same ray as an existing
-      //    RangeLimitPoint with provenance, don't create a new one (use the existing)
+      //    ArcHitPoint with provenance, don't create a new one (use the existing)
       //
-      // 2. In removeDuplicatesSourcePoint: When deduplicating RangeLimitPoints,
+      // 2. In removeDuplicatesSourcePoint: When deduplicating ArcHitPoints,
       //    prefer the one with provenance if they're at same/similar position
       //
-      // 3. In comparePointsCCWSimplified: When two RangeLimitPoints are collinear,
+      // 3. In comparePointsCCWSimplified: When two ArcHitPoints are collinear,
       //    use provenance to order them (one with provenance > one without)
       //
       // 4. In equals(): When comparing RLP with provenance vs RLP without,
@@ -248,13 +248,13 @@ describe("Duplicate RangeLimitPoint Bug", () => {
      *
      * The error occurs in comparePointsCCWSimplified when:
      * 1. cross product === 0 (exactly zero)
-     * 2. Both points are RangeLimitPoints
+     * 2. Both points are ArcHitPoints
      * 3. No PreComputedPairs entry exists
      *
      * For cross === 0 (exactly), both points must be computed such that:
      *   aVec.x * bVec.y - aVec.y * bVec.x === 0
      *
-     * This happens when both RangeLimitPoints are on the SAME ray from origin.
+     * This happens when both ArcHitPoints are on the SAME ray from origin.
      */
 
     // Simulate computeRangeLimitIntersection from ConeProjectionV2.ts
@@ -395,11 +395,11 @@ describe("Duplicate RangeLimitPoint Bug", () => {
         center,
         radius
       );
-      const rlp1 = new RangeLimitPoint(rlp1Coords, endpoint);
+      const rlp1 = new ArcHitPoint(rlp1Coords, endpoint);
 
       // RLP from bulk processing (without provenance)
       const rlp2Coords = computeRangeLimitIntersection(origin, endpointXY, center, radius);
-      const rlp2 = new RangeLimitPoint(rlp2Coords);
+      const rlp2 = new ArcHitPoint(rlp2Coords);
 
       console.log("\n=== BUG SCENARIO ===");
       console.log("RLP1 (continuation):", rlp1.computeXY(), "key:", rlp1.getKey());
@@ -452,11 +452,11 @@ describe("Duplicate RangeLimitPoint Bug", () => {
         center,
         radius
       );
-      const rlp1 = new RangeLimitPoint(rlp1Coords, endpoint);
+      const rlp1 = new ArcHitPoint(rlp1Coords, endpoint);
 
       // RLP from bulk processing (also uses center)
       const rlp2Coords = computeRangeLimitIntersection(origin, endpointXY, center, radius);
-      const rlp2 = new RangeLimitPoint(rlp2Coords);
+      const rlp2 = new ArcHitPoint(rlp2Coords);
 
       console.log("\n=== UNSTABLE CONDITION: center !== origin ===");
       console.log("Origin:", origin);
@@ -499,15 +499,15 @@ describe("Duplicate RangeLimitPoint Bug", () => {
       // THE ACTUAL BUG SCENARIO:
       //
       // Line 1737: vertices.push(hit);  where hit === targetEndpoint (E)
-      // Line 1820: vertices.push(normalizedContinuation);  where this is RangeLimitPoint
+      // Line 1820: vertices.push(normalizedContinuation);  where this is ArcHitPoint
       //
       // Both are on the EXACT SAME RAY from origin:
       //   Origin -----> E -----> Continuation hit
       //
       // If E is beyond range limit:
-      // - Bulk processing converts E to RangeLimitPoint (no provenance)
-      // - Continuation already added RangeLimitPoint (with provenance)
-      // - TWO RangeLimitPoints on same ray = BUG
+      // - Bulk processing converts E to ArcHitPoint (no provenance)
+      // - Continuation already added ArcHitPoint (with provenance)
+      // - TWO ArcHitPoints on same ray = BUG
 
       const origin = { x: 156.9, y: 586 };
       const center = origin;
@@ -546,16 +546,16 @@ describe("Duplicate RangeLimitPoint Bug", () => {
       // What happens in the code:
       // 1. E is pushed to vertices (line 1737)
       // 2. Continuation ray through E finds it hits range limit
-      // 3. RangeLimitPoint(intersection, E) is pushed (line 1820)
-      // 4. Bulk processing: E is beyond range, converted to RangeLimitPoint
+      // 3. ArcHitPoint(intersection, E) is pushed (line 1820)
+      // 4. Bulk processing: E is beyond range, converted to ArcHitPoint
 
-      // Simulate the two RangeLimitPoints created:
-      const rlpFromContinuation = new RangeLimitPoint(
+      // Simulate the two ArcHitPoints created:
+      const rlpFromContinuation = new ArcHitPoint(
         computeRangeLimitIntersection(origin, farTarget, center, radius),
         endpoint // WITH provenance
       );
 
-      const rlpFromBulk = new RangeLimitPoint(
+      const rlpFromBulk = new ArcHitPoint(
         computeRangeLimitIntersection(origin, endpointXY, center, radius)
         // NO provenance
       );
@@ -636,10 +636,10 @@ describe("Duplicate RangeLimitPoint Bug", () => {
         center,
         radius
       );
-      const rlpWithProv = new RangeLimitPoint(rlpWithProvCoords, endpoint);
+      const rlpWithProv = new ArcHitPoint(rlpWithProvCoords, endpoint);
 
       // Create RLP without provenance (same coords but different object)
-      const rlpWithoutProv = new RangeLimitPoint(rlpWithProvCoords);
+      const rlpWithoutProv = new ArcHitPoint(rlpWithProvCoords);
 
       console.log("\n=== EXACT ERROR CONDITION ===");
       console.log("RLP with prov key:", rlpWithProv.getKey());
@@ -655,16 +655,16 @@ describe("Duplicate RangeLimitPoint Bug", () => {
       //
       // The error ONLY occurs when:
       // 1. Two different vertices on same ray from origin
-      // 2. Each converted to RangeLimitPoint by different code paths
+      // 2. Each converted to ArcHitPoint by different code paths
       // 3. Coordinates differ slightly due to different targets
       // 4. Cross === 0 (same direction from origin)
       // 5. equals() === false (different coords)
       // 6. No PreComputedPairs
-      // 7. Both are RangeLimitPoints
+      // 7. Both are ArcHitPoints
 
       console.log("\nCONCLUSION:");
       console.log("The error requires two DIFFERENT vertices on the same ray");
-      console.log("being converted to RangeLimitPoints with different coords.");
+      console.log("being converted to ArcHitPoints with different coords.");
       console.log("This happens when:");
       console.log("- Endpoint E is on the ray");
       console.log("- Continuation ray hits something at H (different from E)");
