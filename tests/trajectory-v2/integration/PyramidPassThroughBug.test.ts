@@ -46,7 +46,6 @@ describe("Pyramid Pass-Through Bug Regression", () => {
 
       const result = tracePath(propagator, allSurfaces, {
         mode: "physical",
-        maxReflections: 10,
       });
 
       // Verify we got some segments
@@ -68,7 +67,6 @@ describe("Pyramid Pass-Through Bug Regression", () => {
 
       const result = tracePath(propagator, allSurfaces, {
         mode: "physical",
-        maxReflections: 5,
       });
 
       // First segment must start at player
@@ -85,7 +83,6 @@ describe("Pyramid Pass-Through Bug Regression", () => {
 
       const result = tracePath(propagator, allSurfaces, {
         mode: "physical",
-        maxReflections: 10,
       });
 
       // For each segment, verify it doesn't "jump" across a surface

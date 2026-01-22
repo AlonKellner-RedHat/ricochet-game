@@ -13,7 +13,8 @@
 import type { Vector2 } from "@/types";
 import type { Surface } from "@/surfaces/Surface";
 import type { RayPropagator } from "./RayPropagator";
-import { findNextHit, type HitDetectionMode, type RangeLimitOption } from "@/trajectory-v2/geometry/RayCasting";
+import { findNextHit } from "@/trajectory-v2/geometry/RayCasting";
+import type { HitDetectionMode, RangeLimitOption } from "@/trajectory-v2/geometry/RayCasting";
 import { HitPoint } from "@/trajectory-v2/geometry/SourcePoint";
 import { registerStrategySurfaces } from "./TracePath";
 import type { RangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
@@ -180,13 +181,100 @@ export function createPhysicalStrategy(
 export function createPlannedStrategy(
   plannedSurfaces: readonly Surface[]
 ): HitDetectionStrategy {
-  const mode: HitDetectionMode = "planned";
+  // Use physical mode for on-segment-only detection
+  // This ensures planned path matches physical path behavior
+  const mode: HitDetectionMode = "physical";
 
   function findNextHitImpl(propagator: RayPropagator): StrategyHitResult | null {
     const ray = propagator.getRay();
     const state = propagator.getState();
 
     const hit = findNextHit(ray, plannedSurfaces, {
+      mode,
+      startLine: state.startLine ?? undefined,
+      startLineSurface: state.lastSurface ?? undefined,
+      // No range limit for planned paths
+    });
+
+    if (!hit) {
+      return null;
+    }
+
+    const point = hit.hitPoint.computeXY();
+
+    return {
+      point,
+      surface: hit.hitPoint.hitSurface,
+      onSegment: hit.onSegment,
+      // In planned mode, surfaces are always considered reflective
+      canReflect: true,
+      hitPoint: hit.hitPoint,
+      hitType: "surface",
+    };
+  }
+
+  const strategy: HitDetectionStrategy = {
+    findNextHit: findNextHitImpl,
+    mode,
+    getRangeLimitPair: () => undefined,
+  };
+
+  // Register surfaces for continueFromPosition support
+  registerStrategySurfaces(strategy, plannedSurfaces);
+
+  return strategy;
+}
+
+// =============================================================================
+// ORDERED PLANNED STRATEGY
+// =============================================================================
+
+/**
+ * Create a strategy for planned path hit detection that respects surface order.
+ *
+ * Unlike createPlannedStrategy which finds the closest hit among ALL surfaces,
+ * this strategy uses the propagator's depth to only check the NEXT planned
+ * surface in order:
+ *
+ * - depth=0: Only check plannedSurfaces[0]
+ * - depth=1: Only check plannedSurfaces[1] (after reflecting through [0])
+ * - depth >= length: Return null (all surfaces hit, reach cursor)
+ *
+ * This follows the project principle: provenance over geometry.
+ * The propagator's depth (provenance) determines which surface comes next,
+ * not geometric inference.
+ *
+ * Planned mode behavior:
+ * - Detects hits on extended lines (not just segments)
+ * - Always allows reflection (planned surfaces are assumed reflective)
+ * - Does NOT use range limit (planned paths ignore range restrictions)
+ *
+ * @param plannedSurfaces The planned surfaces in order
+ * @returns An ordered planned hit detection strategy
+ */
+export function createOrderedPlannedStrategy(
+  plannedSurfaces: readonly Surface[]
+): HitDetectionStrategy {
+  // Use physical mode for on-segment-only detection
+  // This ensures planned path matches physical path behavior
+  const mode: HitDetectionMode = "physical";
+
+  function findNextHitImpl(propagator: RayPropagator): StrategyHitResult | null {
+    const ray = propagator.getRay();
+    const state = propagator.getState();
+
+    // Use depth to determine which surface to check (provenance over geometry)
+    const surfaceIndex = state.depth;
+
+    // If we've hit all planned surfaces, no more planned hits
+    if (surfaceIndex >= plannedSurfaces.length) {
+      return null;
+    }
+
+    // Only check the NEXT surface in order
+    const targetSurface = plannedSurfaces[surfaceIndex]!;
+
+    const hit = findNextHit(ray, [targetSurface], {
       mode,
       startLine: state.startLine ?? undefined,
       startLineSurface: state.lastSurface ?? undefined,

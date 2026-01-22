@@ -434,6 +434,7 @@ export function computeContext(
     planValidity,
     lightReachesCursor,
     screenBounds,
+    plannedSurfaces,
   };
 }
 

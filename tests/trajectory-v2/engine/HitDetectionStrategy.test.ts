@@ -156,7 +156,7 @@ describe("HitDetectionStrategy", () => {
   });
 
   describe("PlannedStrategy", () => {
-    it("should accept off-segment hits on extended lines", () => {
+    it("should reject off-segment hits (uses physical mode)", () => {
       // Surface that's off to the side
       const surface = createMockSurface(
         "surface",
@@ -164,7 +164,7 @@ describe("HitDetectionStrategy", () => {
         { x: 200, y: 150 }
       );
 
-      // Ray would hit extended line at y=200
+      // Ray would hit extended line at y=200 but not the segment
       const propagator = createRayPropagator(
         { x: 100, y: 200 },
         { x: 300, y: 200 }
@@ -173,11 +173,8 @@ describe("HitDetectionStrategy", () => {
       const strategy = createPlannedStrategy([surface]);
       const hit = strategy.findNextHit(propagator);
 
-      // Should return the off-segment hit
-      expect(hit).not.toBeNull();
-      expect(hit!.onSegment).toBe(false);
-      expect(hit!.point.x).toBeCloseTo(200);
-      expect(hit!.point.y).toBeCloseTo(200);
+      // Should return null (off-segment hit rejected in physical mode)
+      expect(hit).toBeNull();
     });
 
     it("should only use planned surfaces", () => {
@@ -228,9 +225,10 @@ describe("HitDetectionStrategy", () => {
       expect(hit!.canReflect).toBe(true);
     });
 
-    it("should return mode as 'planned'", () => {
+    it("should return mode as 'physical' (on-segment only)", () => {
+      // Planned strategy now uses physical mode for on-segment-only detection
       const strategy = createPlannedStrategy([]);
-      expect(strategy.mode).toBe("planned");
+      expect(strategy.mode).toBe("physical");
     });
 
     it("should use startLine from propagator state after reflection", () => {
@@ -295,7 +293,8 @@ describe("HitDetectionStrategy", () => {
       expect(physicalHit!.point.y).toBeCloseTo(plannedHit!.point.y);
     });
 
-    it("should differ on off-segment hits", () => {
+    it("should behave identically for off-segment (both return null)", () => {
+      // Both strategies now use physical mode (on-segment only)
       const surface = createMockSurface(
         "surface",
         { x: 200, y: 50 },
@@ -313,8 +312,9 @@ describe("HitDetectionStrategy", () => {
       const physicalHit = physicalStrategy.findNextHit(propagator);
       const plannedHit = plannedStrategy.findNextHit(propagator);
 
-      expect(physicalHit).toBeNull(); // Off-segment, no hit
-      expect(plannedHit).not.toBeNull(); // Off-segment hit on extended line
+      // Both reject off-segment hits
+      expect(physicalHit).toBeNull();
+      expect(plannedHit).toBeNull();
     });
   });
 });

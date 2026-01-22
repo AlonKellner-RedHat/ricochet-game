@@ -127,6 +127,9 @@ export interface InvariantContext {
 
   /** Screen bounds */
   readonly screenBounds: ScreenBounds;
+
+  /** Planned surfaces for the current sequence */
+  readonly plannedSurfaces: Surface[];
 }
 
 /**

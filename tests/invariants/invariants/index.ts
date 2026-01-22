@@ -11,6 +11,8 @@ import { polygonEdgesInvariant } from "./polygon-edges";
 import { noSelfIntersectionInvariant } from "./polygon-self-intersection";
 import { noUnobstructedPathInvariant } from "./no-unobstructed-path";
 import { adjacentVerticesRelatedInvariant } from "./adjacent-vertices-related";
+import { physicalPathInvariant } from "./physical-path-invariant";
+import { plannedPathInvariant } from "./planned-path-invariant";
 
 /**
  * All invariants to test.
@@ -27,6 +29,9 @@ export const ALL_INVARIANTS: Invariant[] = [
   noSelfIntersectionInvariant,
   noUnobstructedPathInvariant,
   adjacentVerticesRelatedInvariant,
+  // Path consistency invariants
+  physicalPathInvariant,
+  plannedPathInvariant,
 ];
 
 export { v5CursorReachabilityInvariant } from "./V5-cursor-reachability";
@@ -35,4 +40,5 @@ export { polygonEdgesInvariant } from "./polygon-edges";
 export { noSelfIntersectionInvariant } from "./polygon-self-intersection";
 export { noUnobstructedPathInvariant } from "./no-unobstructed-path";
 export { adjacentVerticesRelatedInvariant } from "./adjacent-vertices-related";
-
+export { physicalPathInvariant } from "./physical-path-invariant";
+export { plannedPathInvariant } from "./planned-path-invariant";
