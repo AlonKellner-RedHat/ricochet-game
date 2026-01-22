@@ -23,7 +23,7 @@ import {
   type HitDetectionStrategy,
   type StrategyHitResult,
   createPhysicalStrategy,
-  createPlannedStrategy,
+  createOrderedPlannedStrategy,
 } from "./HitDetectionStrategy";
 import { type RayPropagator, createRayPropagator } from "./RayPropagator";
 import { type TraceSegment, traceWithStrategy } from "./TracePath";
@@ -191,13 +191,18 @@ export function calculateMergedPath(
   const propagator = createRayPropagator(player, initialTarget, reflectionCache);
 
   const physicalStrategy = createPhysicalStrategy(allSurfaces, { rangeLimit: rangeLimitPair });
-  const plannedStrategy = createPlannedStrategy(plannedSurfaces);
+  const plannedStrategy = createOrderedPlannedStrategy(plannedSurfaces);
 
   const segments: TraceSegment[] = [];
   let currentPropagator = propagator;
-  const maxReflections = 10;
 
-  for (let i = 0; i < maxReflections; i++) {
+  // Safety iteration limit to prevent infinite loops in edge cases
+  // Normal termination is via: cursor reached, wall hit, divergence, or no hit (range limit)
+  const MAX_SAFETY_ITERATIONS = 1000;
+  let iterations = 0;
+
+  while (iterations < MAX_SAFETY_ITERATIONS) {
+    iterations++;
     const ray = currentPropagator.getRay();
     const state = currentPropagator.getState();
     const segmentStart = computeSegmentStart(ray.source, ray.target, state.startLine);
@@ -232,8 +237,6 @@ export function calculateMergedPath(
       // We use continueFromPosition to start the first segment from cursor.
       const continuation = traceWithStrategy(currentPropagator, physicalStrategy, {
         continueFromPosition: cursor,
-        maxReflections: maxReflections - i,
-        maxDistance: 10000,
       });
 
       // Add continuation segments to merged
@@ -264,7 +267,8 @@ export function calculateMergedPath(
       });
 
       // If can't reflect, stop (but still merged up to here)
-      if (!hit.canReflect) {
+      // This includes range limit hits (surface is null) and walls
+      if (!hit.canReflect || !hit.surface) {
         return {
           segments,
           divergencePoint: null,
@@ -275,7 +279,7 @@ export function calculateMergedPath(
         };
       }
 
-      // Reflect and continue
+      // Reflect and continue (surface is guaranteed non-null here)
       currentPropagator = currentPropagator.reflectThrough(hit.surface);
     } else {
       // Divergence detected!
@@ -313,14 +317,4 @@ export function calculateMergedPath(
       };
     }
   }
-
-  // Hit max reflections - considered aligned up to here
-  return {
-    segments,
-    divergencePoint: null,
-    divergenceSurface: null,
-    propagatorAtDivergence: currentPropagator,
-    isFullyAligned: true,
-    reachedCursor: false,
-  };
 }

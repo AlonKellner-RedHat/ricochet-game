@@ -134,7 +134,6 @@ describe("tracePath", () => {
 
       const result = tracePath(propagator, surfaces, {
         mode: "physical",
-        maxReflections: 5,
       });
 
       // The returned propagator should have been updated after reflection
@@ -160,7 +159,6 @@ describe("tracePath", () => {
 
       const result = tracePath(propagator, surfaces, {
         mode: "physical",
-        maxReflections: 10,
       });
 
       // Should have at least 2 segments from bouncing between surfaces
@@ -182,7 +180,6 @@ describe("tracePath", () => {
 
       const result = tracePath(propagator, [surface1, surface2], {
         mode: "physical",
-        maxReflections: 5,
       });
 
       // Should have at least 2 segments
@@ -209,7 +206,6 @@ describe("tracePath", () => {
 
       const result = tracePath(propagator, [surface], {
         mode: "physical",
-        maxReflections: 3,
       });
 
       // First segment must start at origin
@@ -277,7 +273,6 @@ describe("tracePath", () => {
 
       const result = tracePath(propagator, [surface1, surface2], {
         mode: "physical",
-        maxReflections: 5,
       });
 
       // If reflections occurred, cache should have been used
@@ -303,7 +298,6 @@ describe("tracePath", () => {
       // Trace with enough reflections to actually bounce
       const result = tracePath(propagator, [surface1, surface2], {
         mode: "physical",
-        maxReflections: 3,
       });
 
       // After bouncing, should have updated propagator depth
@@ -312,7 +306,6 @@ describe("tracePath", () => {
       // Just verify we can use it
       const continueResult = tracePath(result.propagator, [surface1, surface2], {
         mode: "physical",
-        maxReflections: 2,
       });
       expect(continueResult.segments.length).toBeGreaterThanOrEqual(0);
     });
@@ -408,29 +401,6 @@ describe("tracePath", () => {
       });
 
       expect(result.cursorSegmentIndex).toBe(-1);
-    });
-  });
-
-  describe("max reflections limit", () => {
-    it("should stop at maxReflections", () => {
-      const origin = { x: 100, y: 150 };
-      const target = { x: 100, y: 300 };
-      const propagator = createRayPropagator(origin, target);
-
-      // Two parallel surfaces for bouncing
-      const surface1 = createHorizontalSurface("s1", 200, 50, 150);
-      const surface2 = createHorizontalSurface("s2", 100, 50, 150);
-
-      const result = tracePath(propagator, [surface1, surface2], {
-        mode: "physical",
-        maxReflections: 3,
-      });
-
-      // Should have at most 3 segments (one per reflection)
-      expect(result.segments.length).toBeLessThanOrEqual(4);
-      if (result.segments.length === 4) {
-        expect(result.terminationType).toBe("max_reflections");
-      }
     });
   });
 

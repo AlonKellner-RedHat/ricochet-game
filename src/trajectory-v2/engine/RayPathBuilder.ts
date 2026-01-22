@@ -56,7 +56,7 @@ export interface RayPath {
   /** Surface hits along the path */
   readonly hits: readonly RayPathHit[];
   /** How the path terminated */
-  readonly termination: "cursor" | "wall" | "max_distance" | "max_reflections";
+  readonly termination: "cursor" | "wall" | "max_distance" | "range_limit";
   /** Position of cursor on path (null if not on path) */
   readonly cursorPosition: {
     readonly rayIndex: number;
@@ -143,6 +143,12 @@ export function buildPlannedRayPath(chain: ImageChain): RayPath {
 // =============================================================================
 
 /**
+ * Large constant for ray endpoint when no hit is found.
+ * This should never be reached in normal gameplay due to range limits.
+ */
+const RAY_INFINITY = 100000;
+
+/**
  * Build actual path using forward physics simulation.
  *
  * Uses ImageChain for initial direction, then performs forward ray casting
@@ -150,15 +156,11 @@ export function buildPlannedRayPath(chain: ImageChain): RayPath {
  *
  * @param chain The ImageChain for initial direction
  * @param allSurfaces All surfaces in the scene
- * @param maxReflections Maximum reflections (default 10)
- * @param maxDistance Maximum path length (default 2000)
  * @returns RayPath with actual trajectory
  */
 export function buildActualRayPath(
   chain: ImageChain,
-  allSurfaces: readonly Surface[],
-  maxReflections = 10,
-  maxDistance = 2000
+  allSurfaces: readonly Surface[]
 ): RayPath {
   const rays: Ray[] = [];
   const hits: RayPathHit[] = [];
@@ -167,16 +169,21 @@ export function buildActualRayPath(
   const initialRay = chain.getRay(0);
   let currentRay = initialRay;
   let currentPoint = chain.player;
-  let remainingDistance = maxDistance;
   let lastHitSurface: Surface | null = null;
-  let termination: RayPath["termination"] = "max_distance";
+  let termination: RayPath["termination"] = "range_limit";
   let cursorPosition: RayPath["cursorPosition"] = null;
 
   // Track how many planned surfaces have been hit
   let plannedSurfacesHit = 0;
   const totalPlannedSurfaces = chain.surfaces.length;
 
-  for (let i = 0; i < maxReflections && remainingDistance > 0; i++) {
+  // Safety iteration limit to prevent infinite loops in edge cases
+  // Normal termination is via: cursor reached, wall hit, or range limit
+  const MAX_SAFETY_ITERATIONS = 1000;
+  let iterations = 0;
+
+  while (iterations < MAX_SAFETY_ITERATIONS) {
+    iterations++;
     // Find first intersection with any surface
     let closestHit: RayHit | null = null;
     let closestSurface: Surface | null = null;
@@ -195,13 +202,9 @@ export function buildActualRayPath(
       const hit = intersectRaySegment(currentRay, segment);
 
       if (hit && hit.t > 0 && hit.onSegment) {
-        // Check if this hit is within remaining distance
-        const hitDist = computeDistance(currentPoint, hit.point);
-        if (hitDist <= remainingDistance) {
-          if (!closestHit || hit.t < closestHit.t) {
-            closestHit = hit;
-            closestSurface = surface;
-          }
+        if (!closestHit || hit.t < closestHit.t) {
+          closestHit = hit;
+          closestSurface = surface;
         }
       }
     }
@@ -246,10 +249,6 @@ export function buildActualRayPath(
         plannedSurfacesHit++;
       }
 
-      // Update remaining distance
-      const hitDist = computeDistance(currentPoint, closestHit.point);
-      remainingDistance -= hitDist;
-
       // Check if surface allows reflection
       const direction = getRayDirection(currentRay);
       const canReflect = closestSurface.canReflectFrom(normalize(direction));
@@ -270,24 +269,19 @@ export function buildActualRayPath(
       currentPoint = closestHit.point;
       lastHitSurface = closestSurface;
     } else {
-      // No hit - extend to max distance
+      // No hit - extend to infinity (should be caught by range limit in normal gameplay)
       const dir = getRayDirection(currentRay);
       const dirLen = Math.sqrt(dir.x * dir.x + dir.y * dir.y);
       if (dirLen > 0) {
         const endPoint = {
-          x: currentPoint.x + (dir.x / dirLen) * remainingDistance,
-          y: currentPoint.y + (dir.y / dirLen) * remainingDistance,
+          x: currentPoint.x + (dir.x / dirLen) * RAY_INFINITY,
+          y: currentPoint.y + (dir.y / dirLen) * RAY_INFINITY,
         };
         rays.push(createRay(currentPoint, endPoint));
       }
-      termination = "max_distance";
+      termination = "range_limit";
       break;
     }
-  }
-
-  // Check if we hit max reflections
-  if (rays.length >= maxReflections) {
-    termination = "max_reflections";
   }
 
   return {

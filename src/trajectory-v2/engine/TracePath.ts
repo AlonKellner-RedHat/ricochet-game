@@ -35,10 +35,6 @@ export interface TraceOptions {
   readonly mode: "physical" | "planned";
   /** If provided, stop when cursor is reached */
   readonly stopAtCursor?: Vector2;
-  /** Maximum number of reflections (default: 10) */
-  readonly maxReflections?: number;
-  /** Maximum distance to trace (default: 10000) */
-  readonly maxDistance?: number;
   /** Surfaces to exclude from hit detection */
   readonly excludeSurfaces?: readonly Surface[];
 }
@@ -66,8 +62,7 @@ export type TerminationType =
   | "cursor"          // Stopped at cursor position
   | "wall"            // Hit a non-reflective surface
   | "off_segment"     // Physical mode hit extended line (not segment)
-  | "max_reflections" // Reached max reflection limit
-  | "no_hit";         // No surface intersection found
+  | "no_hit";         // No surface intersection found (range limit hit or no surfaces)
 
 /**
  * Result of tracing a path.
@@ -101,10 +96,6 @@ export interface TraceStrategyOptions {
    * but first segment starts from the waypoint position.
    */
   readonly continueFromPosition?: Vector2;
-  /** Maximum number of reflections (default: 10) */
-  readonly maxReflections?: number;
-  /** Maximum distance to trace (default: 10000) */
-  readonly maxDistance?: number;
 }
 
 // =============================================================================
@@ -153,12 +144,19 @@ function pointOnSegment(
 }
 
 /**
+ * Large constant for ray endpoint when no hit is found.
+ * This should never be reached in normal gameplay due to range limits.
+ */
+const RAY_INFINITY = 100000;
+
+/**
  * Compute endpoint for a ray segment when no hit is found.
+ * Uses RAY_INFINITY as the endpoint distance since range limits
+ * should terminate the ray before this is needed.
  */
 function computeRayEndpoint(
   source: Vector2,
-  target: Vector2,
-  maxDistance: number
+  target: Vector2
 ): Vector2 {
   const dx = target.x - source.x;
   const dy = target.y - source.y;
@@ -169,8 +167,8 @@ function computeRayEndpoint(
   }
 
   return {
-    x: source.x + (dx / len) * maxDistance,
-    y: source.y + (dy / len) * maxDistance,
+    x: source.x + (dx / len) * RAY_INFINITY,
+    y: source.y + (dy / len) * RAY_INFINITY,
   };
 }
 
@@ -229,8 +227,6 @@ export function tracePath(
   const {
     mode,
     stopAtCursor,
-    maxReflections = 10,
-    maxDistance = 10000,
     excludeSurfaces = [],
   } = options;
 
@@ -239,8 +235,14 @@ export function tracePath(
   let cursorSegmentIndex = -1;
   let cursorT = 0;
   let terminationType: TerminationType = "no_hit";
+  
+  // Safety iteration limit to prevent infinite loops in edge cases
+  // Normal termination is via: cursor reached, wall hit, off-segment, or no hit (range limit)
+  const MAX_SAFETY_ITERATIONS = 1000;
+  let iterations = 0;
 
-  for (let i = 0; i < maxReflections; i++) {
+  while (iterations < MAX_SAFETY_ITERATIONS) {
+    iterations++;
     const ray = currentPropagator.getRay();
     const state = currentPropagator.getState();
 
@@ -267,7 +269,7 @@ export function tracePath(
       if (hit) {
         segmentEnd = hit.hitPoint.computeXY();
       } else {
-        segmentEnd = computeRayEndpoint(segmentStart, ray.target, maxDistance);
+        segmentEnd = computeRayEndpoint(segmentStart, ray.target);
       }
 
       const cursorPos = pointOnSegment(stopAtCursor, segmentStart, segmentEnd);
@@ -298,7 +300,7 @@ export function tracePath(
 
     if (!hit) {
       // No hit - add final segment and terminate
-      const endpoint = computeRayEndpoint(segmentStart, ray.target, maxDistance);
+      const endpoint = computeRayEndpoint(segmentStart, ray.target);
       segments.push({
         start: segmentStart,
         end: endpoint,
@@ -335,18 +337,6 @@ export function tracePath(
 
     // Reflect propagator - this automatically sets startLine to surface.segment
     currentPropagator = currentPropagator.reflectThrough(hit.hitPoint.hitSurface);
-  }
-
-  // Determine final termination type
-  // If we have segments with surface hits and no explicit termination (wall/off_segment/cursor),
-  // and the last segment can reflect, we must have hit max_reflections
-  if (
-    terminationType === "no_hit" &&
-    segments.length > 0 &&
-    segments[segments.length - 1]!.surface !== null &&
-    segments[segments.length - 1]!.canReflect
-  ) {
-    terminationType = "max_reflections";
   }
 
   return {
@@ -456,8 +446,6 @@ export function traceWithStrategy(
   const {
     stopAtCursor,
     continueFromPosition,
-    maxReflections = 10,
-    maxDistance = 10000,
   } = options;
 
   const segments: TraceSegment[] = [];
@@ -465,8 +453,15 @@ export function traceWithStrategy(
   let cursorSegmentIndex = -1;
   let cursorT = 0;
   let terminationType: TerminationType = "no_hit";
+  let isFirstIteration = true;
 
-  for (let i = 0; i < maxReflections; i++) {
+  // Safety iteration limit to prevent infinite loops in edge cases
+  // Normal termination is via: cursor reached, wall hit, off-segment, or no hit (range limit)
+  const MAX_SAFETY_ITERATIONS = 1000;
+  let iterations = 0;
+
+  while (iterations < MAX_SAFETY_ITERATIONS) {
+    iterations++;
     const ray = currentPropagator.getRay();
     const state = currentPropagator.getState();
 
@@ -474,7 +469,7 @@ export function traceWithStrategy(
     // For the first segment with continueFromPosition, use that position instead
     // of the computed segment start. This allows continuation from a mid-segment
     // waypoint (like cursor) without creating a new propagator.
-    const segmentStart = (i === 0 && continueFromPosition)
+    const segmentStart = (isFirstIteration && continueFromPosition)
       ? continueFromPosition
       : computeSegmentStart(ray, state.startLine);
 
@@ -485,7 +480,7 @@ export function traceWithStrategy(
     let hit = strategy.findNextHit(currentPropagator);
 
     // If continueFromPosition is set for the first segment, filter hits
-    if (i === 0 && continueFromPosition && hit) {
+    if (isFirstIteration && continueFromPosition && hit) {
       // Compute t of continueFromPosition on the ray
       const dx = ray.target.x - ray.source.x;
       const dy = ray.target.y - ray.source.y;
@@ -524,13 +519,16 @@ export function traceWithStrategy(
       }
     }
 
+    // Mark first iteration as complete
+    isFirstIteration = false;
+
     // Check for cursor on this segment before processing hit
     if (stopAtCursor) {
       let segmentEnd: Vector2;
       if (hit) {
         segmentEnd = hit.point;
       } else {
-        segmentEnd = computeRayEndpoint(segmentStart, ray.target, maxDistance);
+        segmentEnd = computeRayEndpoint(segmentStart, ray.target);
       }
 
       const cursorPos = pointOnSegment(stopAtCursor, segmentStart, segmentEnd);
@@ -561,7 +559,7 @@ export function traceWithStrategy(
 
     if (!hit) {
       // No hit - add final segment and terminate
-      const endpoint = computeRayEndpoint(segmentStart, ray.target, maxDistance);
+      const endpoint = computeRayEndpoint(segmentStart, ray.target);
       segments.push({
         start: segmentStart,
         end: endpoint,
@@ -584,7 +582,8 @@ export function traceWithStrategy(
     });
 
     // Check termination conditions
-    if (!hit.canReflect) {
+    // This includes range limit hits (surface is null) and walls
+    if (!hit.canReflect || !hit.surface) {
       terminationType = "wall";
       break;
     }
@@ -595,20 +594,8 @@ export function traceWithStrategy(
       break;
     }
 
-    // Reflect propagator
+    // Reflect propagator (surface is guaranteed non-null here)
     currentPropagator = currentPropagator.reflectThrough(hit.surface);
-  }
-
-  // Determine final termination type
-  // If we have segments with surface hits and no explicit termination (wall/off_segment/cursor),
-  // and the last segment can reflect, we must have hit max_reflections
-  if (
-    terminationType === "no_hit" &&
-    segments.length > 0 &&
-    segments[segments.length - 1]!.surface !== null &&
-    segments[segments.length - 1]!.canReflect
-  ) {
-    terminationType = "max_reflections";
   }
 
   return {

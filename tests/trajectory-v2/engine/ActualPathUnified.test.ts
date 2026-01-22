@@ -179,45 +179,6 @@ describe("calculateActualPathUnified", () => {
       expect(result.waypoints.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("should respect maxReflections limit", () => {
-      const player: Vector2 = { x: 100, y: 150 };
-      const cursor: Vector2 = { x: 100, y: 500 };
-
-      // Two parallel surfaces for bouncing
-      const surface1 = createHorizontalSurface("s1", 200, 50, 150);
-      const surface2 = createHorizontalSurface("s2", 100, 50, 150);
-
-      const result = calculateActualPathUnified(
-        player,
-        cursor,
-        [surface1, surface2],
-        undefined, // externalCache
-        3, // maxReflections
-        10000
-      );
-
-      // Should not exceed max reflections
-      expect(result.hits.length).toBeLessThanOrEqual(3);
-    });
-
-    it("should respect maxDistance limit", () => {
-      const player: Vector2 = { x: 100, y: 100 };
-      const cursor: Vector2 = { x: 100, y: 10000 }; // Very far
-
-      const result = calculateActualPathUnified(
-        player,
-        cursor,
-        [],
-        undefined, // externalCache
-        10,
-        500 // maxDistance
-      );
-
-      // Path should be limited by distance
-      const lastWaypoint = result.waypoints[result.waypoints.length - 1]!;
-      const totalDist = Math.abs(lastWaypoint.y - player.y);
-      expect(totalDist).toBeLessThanOrEqual(600); // Some tolerance
-    });
   });
 
   describe("external cache support", () => {

@@ -271,8 +271,7 @@ export type SegmentPlanAlignment =
 export type TerminationReason =
   | { type: "cursor_reached" }
   | { type: "wall_hit"; surface: Surface }
-  | { type: "max_distance" }
-  | { type: "max_reflections" };
+  | { type: "range_limit" };
 
 /**
  * A single segment of the unified trajectory path.

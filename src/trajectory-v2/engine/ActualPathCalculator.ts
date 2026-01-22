@@ -132,8 +132,7 @@ export interface ActualPathUnified extends ActualPath {
  * @param cursor Cursor position (path ends here if reached)
  * @param allSurfaces All surfaces in the scene
  * @param externalCache Optional external ReflectionCache for sharing with other systems
- * @param maxReflections Maximum number of reflections (default 10)
- * @param maxDistance Maximum total path distance (default 2000)
+ * @param rangeLimitPair Range limit for trajectory termination
  * @returns ActualPathUnified with waypoints, hit info, and propagator state
  */
 export function calculateActualPathUnified(
@@ -141,8 +140,6 @@ export function calculateActualPathUnified(
   cursor: Vector2,
   allSurfaces: readonly Surface[],
   externalCache?: ReflectionCache,
-  maxReflections: number = 10,
-  maxDistance: number = 2000,
   rangeLimitPair?: RangeLimitPair
 ): ActualPathUnified {
   // Handle degenerate case where player and cursor are the same
@@ -169,8 +166,6 @@ export function calculateActualPathUnified(
   const toCursorResult = tracePath(propagator, allSurfaces, {
     mode: "physical",
     stopAtCursor: cursor,
-    maxReflections,
-    maxDistance,
   });
 
   // Convert TraceResult to ActualPath format
@@ -224,8 +219,6 @@ export function calculateActualPathUnified(
     const physicalStrategy = createPhysicalStrategy(allSurfaces, { rangeLimit: rangeLimitPair });
     const forwardResult = traceWithStrategy(toCursorResult.propagator, physicalStrategy, {
       continueFromPosition: cursor,
-      maxReflections: maxReflections - toCursorResult.segments.length,
-      maxDistance,
     });
 
     // Convert forward projection segments

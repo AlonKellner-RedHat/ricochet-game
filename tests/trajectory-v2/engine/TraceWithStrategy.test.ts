@@ -37,10 +37,7 @@ describe("traceWithStrategy", () => {
     );
 
     const strategy = createPhysicalStrategy([mirror1, mirror2]);
-    const options: TraceStrategyOptions = {
-      maxReflections: 5,
-      maxDistance: 1000,
-    };
+    const options: TraceStrategyOptions = {};
 
     const result = traceWithStrategy(propagator, strategy, options);
 
@@ -77,10 +74,7 @@ describe("traceWithStrategy", () => {
     );
 
     const strategy = createPhysicalStrategy([mirror, wall]);
-    const result = traceWithStrategy(propagator, strategy, {
-      maxReflections: 5,
-      maxDistance: 1000,
-    });
+    const result = traceWithStrategy(propagator, strategy, {});
 
     // Should hit mirror, reflect, then hit wall
     expect(result.segments.length).toBe(2);
@@ -100,10 +94,7 @@ describe("traceWithStrategy", () => {
     );
 
     const strategy = createPhysicalStrategy([]);
-    const result = traceWithStrategy(propagator, strategy, {
-      maxReflections: 5,
-      maxDistance: 500,
-    });
+    const result = traceWithStrategy(propagator, strategy, {});
 
     // Should have one segment going to maxDistance
     expect(result.segments.length).toBe(1);
@@ -127,10 +118,7 @@ describe("traceWithStrategy", () => {
     );
 
     const strategy = createPhysicalStrategy([wall]);
-    const result = traceWithStrategy(propagator, strategy, {
-      maxReflections: 5,
-      maxDistance: 1000,
-    });
+    const result = traceWithStrategy(propagator, strategy, {});
 
     // Should hit wall and stop (not reflect)
     expect(result.segments.length).toBe(1);
@@ -152,10 +140,7 @@ describe("traceWithStrategy", () => {
     );
 
     const strategy = createPhysicalStrategy([mirror]);
-    const result = traceWithStrategy(propagator, strategy, {
-      maxReflections: 2, // Allow reflection, then stop at second iteration
-      maxDistance: 1000,
-    });
+    const result = traceWithStrategy(propagator, strategy, {});
 
     // The returned propagator should have been reflected through the mirror
     expect(result.propagator).toBeDefined();
@@ -177,8 +162,6 @@ describe("traceWithStrategy", () => {
 
     const strategy = createPhysicalStrategy([]);
     const result = traceWithStrategy(propagator, strategy, {
-      maxReflections: 5,
-      maxDistance: 1000,
       stopAtCursor: cursor,
     });
 
@@ -189,39 +172,8 @@ describe("traceWithStrategy", () => {
     expect(result.segments[0]!.end.y).toBeCloseTo(cursor.y);
   });
 
-  it("should respect maxReflections limit", () => {
-    // Two parallel mirrors for many reflections
-    // mirror1 at x=100, normal pointing RIGHT
-    const mirror1 = createMockSurface(
-      "mirror1",
-      { x: 100, y: 400 },
-      { x: 100, y: 0 }
-    );
-    // mirror2 at x=300, normal pointing LEFT
-    const mirror2 = createMockSurface(
-      "mirror2",
-      { x: 300, y: 0 },
-      { x: 300, y: 400 }
-    );
-
-    const propagator = createRayPropagator(
-      { x: 150, y: 200 },
-      { x: 400, y: 200 }
-    );
-
-    const strategy = createPhysicalStrategy([mirror1, mirror2]);
-    const result = traceWithStrategy(propagator, strategy, {
-      maxReflections: 3,
-      maxDistance: 1000,
-    });
-
-    // Should stop at 3 reflections
-    expect(result.segments.length).toBe(3);
-    expect(result.terminationType).toBe("max_reflections");
-  });
-
-  it("should work with planned strategy for off-segment hits", () => {
-    // Surface with small segment that ray would miss physically
+  it("should reject off-segment hits in planned strategy (uses physical mode)", () => {
+    // Surface with small segment that ray would miss
     const surface = createMockSurface(
       "planned-surface",
       { x: 200, y: 50 },  // segment from y=50 to y=150
@@ -235,21 +187,14 @@ describe("traceWithStrategy", () => {
 
     // Physical strategy should NOT hit
     const physicalStrategy = createPhysicalStrategy([surface]);
-    const physicalResult = traceWithStrategy(propagator, physicalStrategy, {
-      maxReflections: 1,
-      maxDistance: 1000,
-    });
+    const physicalResult = traceWithStrategy(propagator, physicalStrategy, {});
     expect(physicalResult.terminationType).toBe("no_hit");
 
-    // Planned strategy SHOULD hit (extended line)
+    // Planned strategy also should NOT hit (now uses physical mode)
     const plannedStrategy = createPlannedStrategy([surface]);
-    const plannedResult = traceWithStrategy(propagator, plannedStrategy, {
-      maxReflections: 1,
-      maxDistance: 1000,
-    });
-    expect(plannedResult.segments.length).toBe(1);
-    expect(plannedResult.segments[0]!.surface?.id).toBe("planned-surface");
-    expect(plannedResult.segments[0]!.onSegment).toBe(false);
+    const plannedResult = traceWithStrategy(propagator, plannedStrategy, {});
+    // Both strategies now behave the same for off-segment hits
+    expect(plannedResult.terminationType).toBe("no_hit");
   });
 
   describe("continueFromPosition", () => {
@@ -272,8 +217,6 @@ describe("traceWithStrategy", () => {
       const strategy = createPhysicalStrategy([wall]);
       const result = traceWithStrategy(propagator, strategy, {
         continueFromPosition: continueFrom,
-        maxReflections: 5,
-        maxDistance: 1000,
       });
 
       // First segment should start from continueFromPosition, not from origin
@@ -306,8 +249,6 @@ describe("traceWithStrategy", () => {
       const strategy = createPhysicalStrategy([wallAhead, wallBehind]);
       const result = traceWithStrategy(propagator, strategy, {
         continueFromPosition: { x: 100, y: 0 },
-        maxReflections: 5,
-        maxDistance: 1000,
       });
 
       // Should only hit wall-ahead, not wall-behind
@@ -336,8 +277,6 @@ describe("traceWithStrategy", () => {
       // First trace: stop at cursor
       const toCursor = traceWithStrategy(propagator, strategy, {
         stopAtCursor: cursor,
-        maxReflections: 5,
-        maxDistance: 1000,
       });
 
       expect(toCursor.terminationType).toBe("cursor");
@@ -346,8 +285,6 @@ describe("traceWithStrategy", () => {
       // Continue from cursor using SAME propagator (not a new one!)
       const fromCursor = traceWithStrategy(toCursor.propagator, strategy, {
         continueFromPosition: cursor,
-        maxReflections: 5,
-        maxDistance: 1000,
       });
 
       // Should continue and hit wall

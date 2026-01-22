@@ -22,7 +22,7 @@ import {
 } from "@/trajectory-v2/geometry/ReflectionCache";
 import type { Vector2 } from "@/types";
 import type { RangeLimitPair } from "@/trajectory-v2/obstacles/RangeLimit";
-import { createPhysicalStrategy, createPlannedStrategy } from "./HitDetectionStrategy";
+import { createPhysicalStrategy, createOrderedPlannedStrategy } from "./HitDetectionStrategy";
 import { calculateMergedPath } from "./MergedPathCalculator";
 import type { RayPropagator } from "./RayPropagator";
 import { type TraceSegment, traceWithStrategy } from "./TracePath";
@@ -128,24 +128,28 @@ export function calculateFullTrajectory(
     const reflectedPropagator = propagatorAtDivergence.reflectThrough(
       mergedResult.divergenceSurface.physical
     );
-    const physicalResult = traceWithStrategy(reflectedPropagator, physicalStrategy, {
-      maxReflections: 10,
-      maxDistance: 10000,
-    });
+    const physicalResult = traceWithStrategy(reflectedPropagator, physicalStrategy, {});
     physicalDivergent = physicalResult.segments;
   }
 
   // Step 2b: Planned path to cursor
-  // Use the SAME propagatorAtDivergence with continueFromPosition.
-  // The propagator has the correct (originImage, targetImage) pair.
-  const plannedStrategy = createPlannedStrategy(plannedSurfaces);
+  // If divergence was caused by the planned strategy finding a hit,
+  // we need to reflect through the planned surface before continuing.
+  const plannedStrategy = createOrderedPlannedStrategy(plannedSurfaces);
+
+  // Reflect through planned surface if it caused divergence
+  // This mirrors how physicalDivergent handles reflection through physical surface
+  let propagatorForPlanned = propagatorAtDivergence;
+  if (mergedResult.divergenceSurface?.planned) {
+    propagatorForPlanned = propagatorAtDivergence.reflectThrough(
+      mergedResult.divergenceSurface.planned
+    );
+  }
 
   // Trace planned path from divergence to cursor using continueFromPosition
-  const plannedToCursorResult = traceWithStrategy(propagatorAtDivergence, plannedStrategy, {
+  const plannedToCursorResult = traceWithStrategy(propagatorForPlanned, plannedStrategy, {
     continueFromPosition: divergencePoint,
     stopAtCursor: cursor,
-    maxReflections: 10,
-    maxDistance: 10000,
   });
 
   const plannedToCursor: TraceSegment[] = [...plannedToCursorResult.segments];
@@ -155,8 +159,6 @@ export function calculateFullTrajectory(
   // Continue from cursor using continueFromPosition.
   const fromCursorResult = traceWithStrategy(plannedToCursorResult.propagator, physicalStrategy, {
     continueFromPosition: cursor,
-    maxReflections: 10,
-    maxDistance: 10000,
   });
 
   return {

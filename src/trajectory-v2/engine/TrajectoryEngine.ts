@@ -365,8 +365,6 @@ export class TrajectoryEngine implements ITrajectoryEngine {
         this.cursor,
         this.allSurfaces,
         this.getReflectionCache(),
-        10, // maxReflections
-        2000, // maxDistance
         this.rangeLimitPair
       );
       this.dirty.actualPathUnified = false;
